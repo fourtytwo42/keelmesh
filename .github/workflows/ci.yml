@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test Go code
+        run: go test ./...
+
+      - name: Vet Go code
+        run: go vet ./...
+
+      - name: Validate Compose
+        run: docker compose config --quiet
+
+      - name: Build mission appliance
+        run: docker build --tag keelmesh/core:ci .

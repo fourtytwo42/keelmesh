@@ -232,12 +232,13 @@ repeatable fallback and powers the verification script.
 
 ## 8. Milestones and Acceptance Gates
 
-### M0 - Identity and baseline (30-60 minutes)
+### M0 - Identity and baseline (completed 2026-09-01)
 
-- Choose an independent product/repository name.
-- Rename modules, paths, service labels, UI copy, VM label if desired, and docs.
-- Create the private GitHub repository from the VM and push the baseline.
-- Add CI for Go tests, Python tests, TypeScript checks, and Compose validation.
+- Chosen independent product/repository name: KeelMesh / `keelmesh`.
+- Renamed modules, paths, service labels, UI copy, VM label, and docs.
+- Created private repository `fourtytwo42/keelmesh` from VM 214 and pushed `main`.
+- Added baseline CI for Go tests/vet, Compose validation, and container build.
+- Captured Proxmox snapshot `m0-keelmesh-baseline` after health verification.
 
 Gate: clean checkout builds the bootstrap image and `/healthz` passes.
 
@@ -330,7 +331,7 @@ produces a timestamped evidence bundle with pass/fail results and measurements.
 
 ### Tuesday, September 1 - Make the product real
 
-1. Resolve naming and push the baseline.
+1. Start M1 from the pushed KeelMesh baseline.
 2. Complete M1 end to end.
 3. Start M2 with link-state and mission-tape contracts.
 4. Record a screen capture of the working golden path before adding infrastructure.

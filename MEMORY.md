@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: Finish M0 by creating/pushing the private KeelMesh repository from VM 214 and checkpointing the verified baseline.
-- Last meaningful change: Chose KeelMesh, renamed the code/module/container and VM 214, moved the application root to `/srv/keelmesh`, migrated key-only access to the `keelmesh` account, and verified the renamed container health.
-- Next step: Create `fourtytwo42/keelmesh`, push the baseline, verify GitHub state, and take the M0 Proxmox snapshot.
+- Current task: Begin M1, the deterministic golden mission loop, from the pushed KeelMesh baseline.
+- Last meaningful change: Completed M0: private repository `fourtytwo42/keelmesh` is on `main`, the renamed container is healthy, baseline CI is defined, and VM snapshot `m0-keelmesh-baseline` exists.
+- Next step: Scaffold canonical contracts, React/TypeScript/MapLibre UI, and the deterministic Go simulator for typed intent -> two candidates -> preview -> policy -> authorization -> motion.
 - Blockers: None.
 
 ## Current State
@@ -55,6 +55,8 @@ When sources conflict, use this order:
 - Start/build: `docker compose -f /srv/keelmesh/compose.yaml --project-directory /srv/keelmesh up -d --build`.
 - Verify LAN health: `curl --fail http://127.0.0.1:8080/healthz` on the VM or `curl http://192.168.50.214:8080/healthz` on the LAN.
 - The currently tested Cloudflare endpoint is an account-less Quick Tunnel and is ephemeral; replace it with a named tunnel before relying on a stable demo hostname.
+- M0 recovery point: Proxmox snapshot `m0-keelmesh-baseline`, created 2026-09-01 after commit `d91201b` was pushed and `/healthz` passed.
+- Private repository: `https://github.com/fourtytwo42/keelmesh`; default branch `main`.
 
 ## Project Map
 
@@ -131,7 +133,8 @@ When sources conflict, use this order:
 - 2026-09-01: Verified cluster-wide VMID 214 was available and `192.168.50.214` did not answer repeated LAN ARP discovery before allocation. Provisioned Ubuntu Server 24.04.4 LTS from the official Noble cloud image and matched its SHA-256 checksum to Ubuntu's published checksum.
 - 2026-09-01: Verified VM cloud-init completion, static address, 92 GiB expanded root filesystem, key-only SSH, disabled SSH password authentication, active Docker and QEMU guest-agent services, and `keelmesh` membership in the Docker group.
 - 2026-09-01: Built and launched `keelmesh/core:bootstrap`; verified Docker health, LAN `/healthz`, and an outbound Cloudflare Quick Tunnel `/healthz` response.
-- 2026-09-01: Completed GitHub CLI device authorization on VM 214 and verified active API and HTTPS Git access for account `fourtytwo42`; no repository has been created or pushed yet.
+- 2026-09-01: Completed GitHub CLI device authorization on VM 214 and verified active API and HTTPS Git access for account `fourtytwo42` before repository creation.
+- 2026-09-01: Created private repository `fourtytwo42/keelmesh` from `/srv/keelmesh`, pushed root commit `d91201b` to `main`, verified remote visibility/default branch, and created Proxmox snapshot `m0-keelmesh-baseline`.
 - 2026-07-12: Read `AGENTS.md` and `MEMORY.md`; identified stale project-specific memory and preserved the repository-local instruction logic.
 - 2026-07-12: Checked the workspace root; confirmed `AGENTS.md` and `MEMORY.md` are present and no `.git` directory is present at this level.
 
@@ -255,16 +258,17 @@ When sources conflict, use this order:
 
 ## Known Issues
 
-- No project issues are currently documented.
+- Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
 
+- 2026-09-01: Completed M0 naming, repository, VM/application identity migration, healthy renamed container, initial private GitHub push, baseline CI definition, and Proxmox snapshot.
 - 2026-09-01: Created the initial comprehensive `PRD.md`, including source alignment, traceability, UX, planner, guardrails, cutaway, scale, resilience, stack, MCP contract, data contracts, evaluations, priorities, and acceptance criteria.
 - 2026-07-12: Reset stale project-specific memory while retaining the durable memory-management logic.
 
 ## Open Follow-ups
 
-- Finish M0 by pushing the private KeelMesh baseline and taking the verified VM snapshot, then execute M1 from `IMPLEMENTATION_PLAN.md`.
+- Execute M1 from `IMPLEMENTATION_PLAN.md`: scaffold contracts/UI and complete the deterministic golden mission loop.
 - Replace the ephemeral Cloudflare Quick Tunnel with a named tunnel and stable hostname after the Cloudflare account/domain choice is available.
 - Prioritize the deterministic Go mesh/PNT digital twin and its visible failure controls in the first vertical slice.
 - Implement the rolling mission tape, link scoring/peer egress, and safe rejoin state machine before adding real networking or broad infrastructure services.
