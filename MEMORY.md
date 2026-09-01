@@ -1,0 +1,283 @@
+# Project Memory
+
+Durable project context lives here. Update this file whenever information should survive chat context compression or future agent handoff.
+
+## Active Handoff
+
+- Current task: Finish M0 by creating/pushing the private KeelMesh repository from VM 214 and checkpointing the verified baseline.
+- Last meaningful change: Chose KeelMesh, renamed the code/module/container and VM 214, moved the application root to `/srv/keelmesh`, migrated key-only access to the `keelmesh` account, and verified the renamed container health.
+- Next step: Create `fourtytwo42/keelmesh`, push the baseline, verify GitHub state, and take the M0 Proxmox snapshot.
+- Blockers: None.
+
+## Current State
+
+- Project concept: an offline-first one-operator/many-vessel peer-autonomy demonstration for a Havoc AI infrastructure interview.
+- Core scenario: the operator defines a simulated search mission through the map, suggestions, voice, or chat; the system previews and simulates a constrained plan before authorization.
+- Core demo thesis: “Program the mission once. Coordinate locally. Adapt together. Degrade safely when the uplink disappears.” The mesh transports signed state and proposals; authenticated edge nodes make bounded decisions under the Group Mission Contract.
+- `PRD.md` is the product source of truth. A minimal Go bootstrap service, embedded status page, Dockerfile, and Compose deployment now exist and are running on the dedicated VM; product functionality is not implemented yet.
+- `IMPLEMENTATION_PLAN.md` is the Friday delivery plan. It sequences the work as visible vertical slices with acceptance gates, a three-day schedule, contingency cuts, API/contracts, verification evidence, and a six-minute rehearsal.
+- `ROLE_ALIGNMENT_AUDIT.md` is the coverage contract against the recruiter transcript and job posting. It requires both an Operator workflow and a scoped Autonomy Engineer incident-to-eval workflow.
+
+## User Preferences
+
+- Keep `MEMORY.md` updated consistently with durable context that should survive chat compression.
+- Agents should read `AGENTS.md` at startup and check `MEMORY.md` whenever context is missing, stale, or uncertain.
+- Use uppercase filenames `AGENTS.md` and `MEMORY.md`.
+- The user likes Rust/Tauri portable applications but explicitly decided not to force Rust or Tauri into this demo; prefer the stack most strongly supported by Havoc's disclosures.
+
+## Source Of Truth
+
+When sources conflict, use this order:
+
+1. Current files in the workspace.
+2. Latest command output or freshly verified tool output.
+3. This `MEMORY.md` file.
+4. Chat history.
+
+## Freshness Rules
+
+- Treat browser state, email state, authentication state, and external service results as stale unless verified in the current session.
+- Treat documented repo structure, user preferences, and decisions as durable unless current files or fresh verification contradict them.
+- Use `Last verified YYYY-MM-DD` for facts that can drift.
+
+## Privacy Rules
+
+- Do not store secrets, tokens, passwords, private keys, or sensitive personal data.
+- Store only the minimum information needed for future handoff, especially when external systems or personal data are involved.
+
+## Setup And Commands
+
+- Dedicated environment, last verified 2026-09-01: Proxmox VMID `214`, name `keelmesh-demo`, Ubuntu Server 24.04.4 LTS, static `192.168.50.214/24`, gateway/DNS `192.168.50.1`, 8 vCPU, 16 GiB RAM with 8 GiB balloon floor, and 96 GiB disk.
+- VM application root: `/srv/keelmesh`; LAN bootstrap URL: `http://192.168.50.214:8080`.
+- Access uses the `keelmesh` account and a dedicated key-only SSH identity kept outside the repository. Password SSH authentication is disabled. Do not store the private key or any supplied host credentials in the repository or memory.
+- Bootstrap host packages: Docker Engine 29.7.2, Compose 5.5.0, cloudflared 2026.8.3, GitHub CLI 2.45.0, and QEMU guest agent. These versions can drift.
+- Re-run the idempotent host bootstrap with `sudo bash /srv/keelmesh/infrastructure/bootstrap-vm.sh` after the repository exists, or from the copied script under `/home/keelmesh/infrastructure` before Git setup.
+- Start/build: `docker compose -f /srv/keelmesh/compose.yaml --project-directory /srv/keelmesh up -d --build`.
+- Verify LAN health: `curl --fail http://127.0.0.1:8080/healthz` on the VM or `curl http://192.168.50.214:8080/healthz` on the LAN.
+- The currently tested Cloudflare endpoint is an account-less Quick Tunnel and is ephemeral; replace it with a named tunnel before relying on a stable demo hostname.
+
+## Project Map
+
+- Project purpose: Demonstrate resilient AI infrastructure, bounded autonomy, human authorization, observability, and local/cloud model failover for a simulated maritime fleet.
+- Main workflow: operator intent -> typed mission intent -> deterministic planner -> policy/mission-lease validation -> map simulation preview -> authorization -> simulated execution -> audit/replay.
+- External systems: Planned local STT, local TTS, local LLM provider, and optional cloud LLM provider behind a provider gateway; exact integrations are not yet implemented.
+- Important paths:
+  - `AGENTS.md`: repository-local agent workflow and memory rules.
+  - `MEMORY.md`: durable context store.
+  - `PRD.md`: product requirements, stack alignment, demo narrative, priorities, and acceptance criteria.
+  - `IMPLEMENTATION_PLAN.md`: implementation architecture, Friday scope contract, milestones, schedule, verification matrix, and rehearsal order.
+  - `ROLE_ALIGNMENT_AUDIT.md`: transcript/posting traceability, scale proof contract, autonomy-tooling proof contract, live/supporting tool choices, and remaining gaps.
+  - `README.md`: repository overview and bootstrap quick start.
+  - `infrastructure/bootstrap-vm.sh`: idempotent Ubuntu host bootstrap for Docker, GitHub CLI, cloudflared, and base tooling.
+  - `infrastructure/README.md`: non-secret VM specification and operations notes.
+  - `cmd/keelmesh-core/`: first Go bootstrap service and embedded status page.
+  - `Dockerfile` and `compose.yaml`: first one-container mission-appliance bootstrap; the planned four-container application boundary is not yet implemented.
+
+## Architecture Notes
+
+- The LLM may retrieve history, recommend options, rank suggestions, ask clarifying questions, and produce typed plan requests. It must not directly control simulated vessels or authorize its own proposal.
+- The main UI is a map with a compact command dock: up to three contextual suggestions, hold-to-talk, typed command entry, and an expandable chat drawer.
+- Suggestions are grounded in current fleet state, approved runbooks, and similar historical missions. Each suggestion maps to a typed action template and shows its reason and provenance.
+- Selecting a suggestion opens a planner preview. The planner displays routes, assignments, sequence, timing, resource projections, constraints, and icons/text on the map before execution.
+- A deterministic policy gateway classifies plans as within the active mission lease, approval-required, or prohibited. Approval is bound to the exact plan version/hash.
+- The simulated mission and safety controller must continue if cloud inference, local inference, voice, or connectivity fails.
+- Every operator and vessel instance is modeled as an authenticated peer node with local policy, signed mission-package cache, monotonic lease timer, local event log, store-and-forward routing, resilient PNT, and optional local inference.
+- Starlink is the preferred internet/cloud path, but it is not the control spine. Every authorized node may advertise healthy Starlink egress to peers. Simulated Wi-Fi HaLow is the local radio/MAC underlay; routing, store-and-forward delivery, security, and peer egress are implemented above it rather than assuming every HaLow product provides native mobile mesh.
+- Network reachability is separate from authority. Relays may forward signed/encrypted bundles but cannot mint leases, rewrite plans, or bypass destination-side policy.
+- The communication overlay is BPv7-inspired: transport-independent signed bundles, local queues, store-and-forward delivery, priorities, lifetimes, hop limits, bounded replication, deduplication, and eventual event reconciliation.
+- Each vessel carries a 60-second rolling mission tape, initially six immutable ten-second trajectory-envelope segments. Segments contain corridors, speed envelopes, preconditions, expiry, failure behavior, hash, and signature; they are not raw rudder/throttle instructions.
+- Mission-tape traffic, acknowledgements, clock/lease data, and safety events outrank telemetry, voice, and bulk data. Critical segments may be sent over direct Starlink and HaLow-to-peer-egress paths simultaneously and deduplicated at the destination.
+- Segment lifecycle is `received -> validated -> armed -> started -> completed|skipped|expired|rejected|preempted`. Plan revisions activate at a future boundary only for the signed asset set that acknowledged `armed` before commit.
+- Reconnection never replays late segments or accelerates a vessel through missed work. The vessel reports actual state plus its execution high-watermark, expires missed segments, and follows a policy-validated bridge to a future synchronization point. Autonomous bridging is allowed only within the active mission lease.
+- The tape uses a signed mission activation reference plus local monotonic time; GNSS or wall-clock time is not authoritative for segment execution.
+- Every vessel carries a signed communications-recovery behavior graph separate from ordinary mission segments. It starts passive discovery before tape exhaustion and may seek contact only through pre-authorized rendezvous corridors with hard time, distance, reserve, PNT, traffic, and geofence budgets.
+- Communications recovery is subordinate to collision/grounding avoidance, geofence compliance, PNT integrity, and reserve limits. It never uses naive RSSI hill climbing. If recovery becomes unsafe or exhausts its budget, the vessel enters the lease-defined safe termination state while keeping passive discovery active.
+- Deterministic rendezvous assignments and peer relay roles prevent every isolated vessel from chasing the same moving peer. Contact must be authenticated before state exchange, tape refill, and bridge-to-future rejoin.
+- Quiet Fleet is a low-radio-duty coordination mode for small signed cells, not radio silence or a stealth claim. It uses scheduled compact HaLow windows, a bounded byte/round budget, local bulk-data suppression, and an urgent-safety exception.
+- Node-local LLMs are advisory and may be correlated. They produce typed group-adaptation candidates; deterministic local planners validate assignments. Coupled changes require a majority of the original eligible membership plus `armed` from every affected vessel and a signed future commit.
+- Local collision/grounding responses need no vote. Individual changes inside a current envelope may execute locally. Mission-scope, operating-area, membership, quorum, or authority changes always require a new operator-signed Group Mission Contract.
+- A partitioned subgroup cannot lower quorum or redefine membership. Without quorum, it follows only the prior compatible group tape and explicitly leased partition behavior, then falls back to individual tape, communications recovery, or safe termination.
+- P0 may simulate per-vessel edge agents as node-isolated contexts multiplexed through one local inference server, clearly labeled `simulated edge inference`; physically separate vessel GPUs are not required for the interview demo.
+- The live demo is packaged as one mission appliance, not distributed across AWS or Proxmox hosts. Required runtime containers are `keelmesh-core`, `keelmesh-ai`, one official Apache Kafka KRaft broker, and PostgreSQL/pgvector; an optional local-model profile may add a fifth container.
+- `keelmesh-core` is a modular Go monolith containing the simulator, logical peer nodes, planner/policy, mission tapes, Quiet Fleet, workers, metrics, API/WebSocket, and a React production build embedded and served from the same binary. Logical vessels are actors with isolated state, not one container each.
+- Only the core application port is exposed. The AI service, Kafka, and PostgreSQL remain on the private Compose network. Metrics and the live cutaway are rendered inside the product; Prometheus server, Grafana, MinIO, MLflow, Dagster, Kubernetes, AWS, and homelab services are not live-demo dependencies.
+- The mission-appliance bundle includes Compose, pinned images/offline archive option, one config file, local maps/runbooks/fixtures, deterministic provider fallback, one data root, and launcher commands for start/stop/status/verify/reset/export. It can run on the laptop or one Proxmox VM with no dependency on the rest of the cluster.
+- Each node's deterministic PNT arbiter outputs fused pose plus uncertainty, integrity state, contributing/excluded sources, and reason codes. It cross-checks GNSS against dissimilar evidence such as INS, radar/shoreline, speed, depth/bathymetry, vision, and authenticated relative observations.
+- PNT states are `trusted`, `suspect`, `denied`, and `unsafe`. Action scope and speed shrink as uncertainty grows; exceeding the lease threshold enters a scenario-specific pre-authorized contingency. Dead reckoning is never presented as indefinite and anchoring is not assumed universally safe.
+- Multi-constellation GNSS is useful cross-checking but not a fully independent backup because the RF systems share common failure modes. Peer-reported positions are corroborating evidence, not truth, especially under correlated spoofing.
+- Local inference is the availability baseline; cloud inference is an optional quality accelerator. Provider retries and failover must not duplicate actions.
+- The product should have separate Operator and Platform views. The Operator view stays focused on a small active mission; the Platform view exposes aggregate fleet load, service topology, queue lag, storage throughput, model-provider health, and failure recovery.
+- Scale is demonstrated through a configurable synthetic fleet/load generator using the same ingestion path as the visible mission. Raw telemetry is not sent directly to an LLM; streaming/aggregation workers produce incidents and summaries that agents inspect on demand.
+- Planned scalable data path: edge buffering -> durable event bus -> horizontally scalable ingestion/normalization -> hot operational store plus immutable object storage -> asynchronous aggregation/indexing -> agent tools/RAG.
+- Scale claims must be supported by reproducible measured results: event throughput, end-to-end latency percentiles, consumer lag, dropped/duplicate/quarantined records, recovery time, and provider latency. Do not pre-claim unmeasured capacity.
+- Verified stack alignment (last verified 2026-09-01): recruiter transcript explicitly names Linux, Go, AWS, heavy containerization/multi-zone deployment, React, TypeScript, WebGL geospatial mapping, Semantic Kernel-like usage, vector databases/RAG, Kubernetes, and Docker.
+- The supplied job posting additionally names Python, C++, MCP, LangGraph/LangChain/LlamaIndex/Semantic Kernel, OpenAI/Anthropic/local models, Ray/Airflow/Dagster, MLflow/W&B, Kafka, Postgres, and S3-compatible storage as relevant or preferred examples; do not claim all are Havoc production dependencies.
+- Chosen demo boundary: Go for simulator/control/data/high-throughput services; Python for agent orchestration, MCP client, RAG, evals, and ML workflows; React/TypeScript/WebGL for the browser UI. Rust/Tauri is intentionally excluded from the core demo.
+- Chosen live-demo infrastructure: one Go core with embedded UI and in-product Prometheus-compatible metrics, one Python AI container, Kafka, PostgreSQL/pgvector, and Docker Compose. MinIO, standalone observability backends, and Kubernetes manifests are optional P1/Scale Lab or production-shape material, not required runtime dependencies. These are project choices sourced from the posting, not confirmed Havoc deployment details.
+- Deployment profiles: Local Demo runs the complete stack in Docker Compose; Scale Lab uses the same images/contracts with additional workers and synthetic load; Production Shape maps the services to AWS/Kubernetes without claiming access to Havoc's private topology.
+- Havoc's public architecture (last verified 2026-09-01) is described as four product layers: Havoc C2 for one-to-many operator control, Havoc Insights for real-time stream analytics, Havoc Connect for resilient peer-to-peer DDIL data exchange, and Havoc OS for edge autonomy. The recruiter transcript adds a Linux/Go core, AWS multi-zone containers, and React/TypeScript/WebGL UI.
+- Working inference, not confirmed fact: their operational autonomy platform is more mature than their internal agent/ML infrastructure. The open role likely exists to standardize connectors, MCP, RAG, data curation, evaluations, observability, and AI-specific security around existing telemetry, simulation, data lake, code, and documentation systems.
+- Do not claim Havoc uses Kafka, Postgres, MinIO, MLflow, or Dagster today. These are posting-aligned implementation choices or preferred examples.
+- Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
+
+## Verification Ledger
+
+- 2026-09-01: Queried Vurra's read-only local catalog and transcript for asset `8d9083fc944e`; verified the recruiter stack and scale statements at approximately 00:07:40-00:13:50 and 00:18:24.
+- 2026-09-01: Read the supplied AI Infrastructure Engineer job posting and incorporated agent, MCP, RAG, ML workflow, eval, observability, security, documentation, and infrastructure requirements into `PRD.md`.
+- 2026-09-01: Reviewed `PRD.md` for stale NATS/JetStream references after choosing Kafka; none remain.
+- 2026-09-01: Verified Wi-Fi HaLow's sub-1-GHz PHY/MAC role with IEEE/Wireless Broadband Alliance material and delay-tolerant store-carry-forward concepts with IETF RFC 9171. The demo treats multi-hop routing and peer egress as an overlay, not a capability guaranteed by every HaLow product.
+- 2026-09-01: Rendered and visually checked `resilient-peer-fleet.html` at 736px, 360px, and 320px; verified the GNSS-spoof interaction updates metrics, `aria-pressed`, narrative, and rejected-source visualization.
+- 2026-09-01: Rendered and visually checked `mission-tape-mesh.html` at 736px, 360px, and 320px in light/dark modes. Verified the reconnect interaction shows two expired segments, one bridge segment, a future-plan executor, and no late replay.
+- 2026-09-01: Verified cluster-wide VMID 214 was available and `192.168.50.214` did not answer repeated LAN ARP discovery before allocation. Provisioned Ubuntu Server 24.04.4 LTS from the official Noble cloud image and matched its SHA-256 checksum to Ubuntu's published checksum.
+- 2026-09-01: Verified VM cloud-init completion, static address, 92 GiB expanded root filesystem, key-only SSH, disabled SSH password authentication, active Docker and QEMU guest-agent services, and `keelmesh` membership in the Docker group.
+- 2026-09-01: Built and launched `keelmesh/core:bootstrap`; verified Docker health, LAN `/healthz`, and an outbound Cloudflare Quick Tunnel `/healthz` response.
+- 2026-09-01: Completed GitHub CLI device authorization on VM 214 and verified active API and HTTPS Git access for account `fourtytwo42`; no repository has been created or pushed yet.
+- 2026-07-12: Read `AGENTS.md` and `MEMORY.md`; identified stale project-specific memory and preserved the repository-local instruction logic.
+- 2026-07-12: Checked the workspace root; confirmed `AGENTS.md` and `MEMORY.md` are present and no `.git` directory is present at this level.
+
+## Decisions
+
+### 2026-09-01 - Name the Project KeelMesh
+
+- Context: The initial working name was unrelated to Havoc but collided with existing software brands; the repository also should not use Havoc's company name.
+- Decision: Use **KeelMesh** for the product and `keelmesh` for repository, module, service, image, VM, and application-path identifiers. “Keel” communicates stability and bounded safe behavior; “Mesh” communicates peer coordination and resilient infrastructure.
+- Files: Repository-wide branding/module rename; VM 214 renamed `keelmesh-demo`; application root moved to `/srv/keelmesh`.
+- Result: Exact-name web and GitHub searches found no obvious AI/autonomy software collision or existing `fourtytwo42/keelmesh` repository. The renamed Docker image built and `/healthz` returned `keelmesh-core`.
+- Follow-up: Treat naming availability as a practical project check, not trademark clearance.
+
+### 2026-09-01 - Add an Autonomy Engineering Data Flywheel and Real Scale Proof
+
+- Context: Auditing the Friday plan against the recruiter transcript and posting showed that the C2/autonomy product path was strong, but the actual role centers on internal AI infrastructure, ETL, autonomy tooling, MCP, RAG, evaluation, curation, observability, security, and infrastructure at scale.
+- Decision: Keep the Operator mission demo and add a short Autonomy Engineer workflow that investigates the Vessel 4 incident through scoped MCP tools, retrieves cited runbook/history evidence through pgvector, replays the deterministic seed, requires human approval for eval promotion, and runs the versioned regression. Promote real multi-process Kafka consumer rebalance and end-to-end OpenTelemetry tracing to P0.
+- Files: `PRD.md`, `IMPLEMENTATION_PLAN.md`, `ROLE_ALIGNMENT_AUDIT.md`.
+- Result: Every major transcript/posting requirement is now assigned to live proof, measured evidence, or an explicit production-shape artifact; overlapping named frameworks remain intentional non-choices rather than checklist dependencies.
+- Follow-up: Implement the golden mission loop first, then preserve the same Vessel 4 incident as the artifact that flows through telemetry, retrieval, replay, curation, and eval. Do not claim throughput until the VM benchmark is measured.
+
+### 2026-09-01 - Vertical-Slice Friday Implementation Plan
+
+- Context: The PRD's P0 contains many coupled product and infrastructure goals with only three build days before the interview.
+- Decision: Implement in five gated slices: golden mission loop, resilient edge path, durable platform/cutaway, bounded AI/provider failover, then Quiet Fleet/release hardening. Every slice must leave a visible working product; deterministic Go behavior and fixtures precede optional AI/voice integrations.
+- Files: `IMPLEMENTATION_PLAN.md`.
+- Result: The build now has concrete package boundaries, contracts, APIs, scenario states, acceptance gates, a Tuesday-through-Friday schedule, contingency cuts, and an automated evidence matrix.
+- Follow-up: Resolve the independent project name, push the baseline, and begin M1. Do not start Kafka, voice, or model integration before the golden mission loop works end to end.
+
+### 2026-09-01 - Offline-First Peer Fabric and Resilient PNT
+
+- Context: The prior architecture still made internet/cloud ingestion look like a linear control spine with many serial failure points. The user proposed giving every vessel and operator device multiple radios, local GPU/compute, and peer relay capability.
+- Decision: Model every operator and vessel as an authenticated offline-first node. Use satellite, Wi-Fi HaLow, and development LAN as communication underlays beneath a signed store-and-forward overlay. AWS is an optional peer domain. Add a deterministic PNT arbiter and uncertainty-driven degradation for GNSS spoofing/denial.
+- Files: `PRD.md` Draft 0.2 and `C:\Users\hendo420\.codex\visualizations\2026\09\01\01a05e24-30af-7ee1-8641-a026835396e6\resilient-peer-fleet.html`.
+- Result: The demo story now shows satellite-to-peer route failover, complete partition with cached-lease execution, post-contact reconciliation, spoofed-GNSS rejection, and safe degradation without cloud or LLM dependence.
+- Follow-up: Implement the deterministic Go link/PNT digital twin first. Do not attempt physical radios, anti-jam hardware, certified navigation, or a complete BPv7 stack before the interview.
+
+### 2026-09-01 - Starlink/HaLow with a Rolling Mission Tape
+
+- Context: The user chose to remove LoRa from the target design and asked for a CD anti-skip-like mechanism that lets a vessel remain coordinated through short Starlink/HaLow interruptions.
+- Decision: Use Starlink as preferred internet egress and HaLow as the peer underlay. Add a 60-second rolling mission tape of signed, expiring, policy-validated trajectory envelopes; direct and relayed paths may carry duplicate critical segments with destination deduplication. A disconnected vessel executes only validated onboard work, then enters its lease-defined contingency.
+- Files: `PRD.md` Draft 0.3 and `C:\Users\hendo420\.codex\visualizations\2026\09\01\01a05e24-30af-7ee1-8641-a026835396e6\mission-tape-mesh.html`.
+- Result: The demo sequence is now normal direct Starlink, local Starlink loss with HaLow peer egress, degraded HaLow with priority refill, a 30-second partition that drains the tape, a 70-second partition that enters contingency, and reconnect with expiration plus a deterministic future rejoin.
+- Follow-up: Implement six ten-second segments first and make tape depth, segment lifecycle, active path, execution high-watermark, and bridge rejoin visible. Treat the older `resilient-peer-fleet.html` radio topology as superseded, while retaining its resilient-PNT concept.
+
+### 2026-09-01 - Bounded Communications Recovery
+
+- Context: The user proposed a preprogrammed tape-empty behavior in which an isolated vessel seeks a usable HaLow mesh path.
+- Decision: Add an always-resident signed recovery graph with passive discovery, tape-critical preparation, bounded seek-contact behavior, deterministic peer-assisted rendezvous, authenticated refill, and safe termination. Signal acquisition never outranks collision avoidance, water/geofence constraints, PNT integrity, or reserve limits.
+- Files: `PRD.md` Draft 0.4, section 9.5, FR-38, acceptance criterion 17, UX copy, and risk controls.
+- Result: Tape exhaustion is no longer a behavioral cliff. The vessel can intentionally recover connectivity without replaying mission work, chasing noisy RSSI, exceeding authority, or wandering indefinitely.
+- Follow-up: Add this state machine to the link/mission-tape digital twin and expose recovery corridor, target peer/rendezvous, remaining recovery budget, and terminal safe state in the map and cutaway.
+
+### 2026-09-01 - Quiet Fleet Cooperative Adaptation
+
+- Context: The user proposed placing a group into a low-radio-noise HaLow mode where each vessel follows a preset mission, uses an onboard LLM to adapt, and votes on individual or whole-group compensation.
+- Decision: Add Quiet Fleet for cells of three to eight vessels. Use node-local LLMs only to create typed candidates; deterministic planners produce signed `armed|reject|abstain` decisions. Coupled changes require original-membership quorum, every affected vessel armed, and future commit. Local safety always preempts without voting.
+- Files: `PRD.md` Draft 0.5, executive summary, demo narrative, section 9.6, section 15.8, observability, evals, FR-39/FR-40, P0 scope, acceptance criterion 18, UX copy, and risks.
+- Result: The design demonstrates distributed edge AI and collective autonomy without relying on free-text model votes, continuous chatter, split-brain authority, or identical-model agreement as safety evidence.
+- Follow-up: Implement only one four-vessel scripted scenario before Friday: Vessel 4 slows, one candidate assignment is rejected locally, a revised allocation reaches quorum/all-affected arm, and the map activates it at a future mission tick while showing measured coordination bytes.
+
+### 2026-09-01 - One-Machine Mission Appliance
+
+- Context: The user wants the complete demonstration packaged without a dozen services scattered across cloud providers or the Proxmox cluster.
+- Decision: Ship one Docker Compose appliance with four required containers: a modular `keelmesh-core` Go binary with embedded React UI, one `keelmesh-ai` Python container, one official Apache Kafka broker in single-node KRaft combined mode, and PostgreSQL/pgvector. Add local-model, scale, and tools only as optional profiles.
+- Files: `PRD.md` Draft 0.6, sections 13.3-13.6, FR-41, P0 scope, acceptance criterion 19, and deployment risks.
+- Result: The live system starts with one command, exposes one URL/port, keeps dependencies private, needs no live cloud/Kubernetes/homelab service, and still preserves production-shaped module contracts and optional scale roles.
+- Follow-up: Scaffold the four-container Compose release first; use one local model endpoint or deterministic fallback, bundle offline maps/fixtures, and implement a single verification command before adding optional infrastructure.
+
+### 2026-09-01 - Use the Havoc-Aligned Web Stack
+
+- Context: A Tauri desktop shell was technically coherent but introduced a framework Havoc did not mention and another architectural story to defend.
+- Decision: Use React/TypeScript/WebGL as a browser UI, Go platform services, Python agent/ML services, and containerized infrastructure. Do not include Rust/Tauri in the P0 architecture.
+- Files: `PRD.md` sections 13.4-13.6.
+- Result: The demo now maximizes direct stack and role alignment and starts through a pinned Docker Compose profile.
+- Follow-up: Scaffold the Go/Python/React monorepo and preserve portability through containers rather than a desktop wrapper.
+
+### 2026-09-01 - Superseded: Tauri Desktop with Deployable Sidecars
+
+- Context: The user specializes in portable Rust/Tauri applications and wants the interface, local AI, and platform clients packaged cohesively.
+- Decision: Use Tauri 2 as the desktop/security/supervision boundary, React/TypeScript/WebGL in the webview, one Go platform sidecar, and one standalone Python agent sidecar. Keep platform contracts network-deployable so the same UI can connect to Scale Lab services.
+- Files: `PRD.md` sections 13.4-13.6.
+- Result: Rust has a justified product role while Go remains aligned with Havoc's platform and Python remains aligned with agent/ML infrastructure.
+- Follow-up: Implement Windows x86-64 first; keep Tauri capabilities narrow, use ephemeral loopback credentials, and do not require system Go/Python runtimes.
+- Status: Superseded later on 2026-09-01 by the Havoc-aligned web-stack decision above.
+
+### 2026-09-01 - Havoc-Aligned Polyglot Stack
+
+- Context: The interview transcript explicitly describes a Go platform and React/TypeScript/WebGL UI; the job posting emphasizes Python and a broad AI/ML infrastructure ecosystem.
+- Decision: Use Go for resilient platform and fleet/data services, Python for agents/RAG/evaluations/ML workflows, and React/TypeScript/WebGL for the interface. Use MCP as the agent-to-platform boundary and Kafka/Postgres/S3-compatible storage to demonstrate posting-aligned distributed data patterns.
+- Files: `PRD.md`.
+- Result: The demo matches the role without using multiple languages arbitrarily or presenting preferred technologies as confirmed Havoc internals.
+- Follow-up: Keep P0 implementation small enough to run reliably from Docker Compose; add MLflow, Dagster, and Kubernetes only after the core mission path is stable.
+
+### 2026-09-01 - Live System Cutaway Presentation
+
+- Context: The user wants infrastructure scale to be visually understandable without leaving the simulator/control interface.
+- Decision: Add an Operator/Cutaway transition. The active map remains visible while the interface expands downward into animated AI assistance, planning, mission control, and telemetry/data-platform layers. A Cloud Outage state reroutes the visible flow to local inference while mission and telemetry layers remain healthy.
+- Files: Interactive concept at `C:\Users\hendo420\.codex\visualizations\2026\09\01\01a05e24-30af-7ee1-8641-a026835396e6\live-system-cutaway.html`.
+- Result: The demo can explain product behavior and infrastructure internals as one continuous story rather than switching to a separate generic dashboard.
+- Follow-up: Reproduce this transition in the application and connect every displayed metric/state to real simulator and service telemetry.
+
+### 2026-09-01 - Demonstrate Measured Horizontal Scale
+
+- Context: The recruiter repeatedly emphasized infrastructure operating at large data and fleet scale.
+- Decision: Use the same application for a simple visible mission and a configurable high-volume background fleet. Add a Platform view and scripted load/failure sequence showing backpressure, horizontal consumer scaling, durable recovery, deduplication, and replay.
+- Result: The demo can prove infrastructure behavior on one development machine without pretending to store production-scale data.
+- Follow-up: Select the event bus/storage stack, define load profiles, and establish reproducible benchmark targets after measuring the available hardware.
+
+### 2026-09-01 - Visible Plan-Before-Action UX
+
+- Context: The operator needs simple suggestions, voice, and chat without allowing opaque agent actions.
+- Decision: Every agent recommendation becomes a selectable plan candidate. A deterministic planner renders and simulates the proposed action on the map before it can be authorized or executed.
+- Result: The primary interaction becomes suggest/ask -> preview plan -> simulate -> explain -> authorize when required -> execute and audit.
+- Follow-up: Define the plan schema, map visualization states, approval tiers, and Friday demo scenario.
+
+### 2026-07-12 - Reset Stale Project Context
+
+- Removed old project identity, history, setup details, external-system references, and follow-ups from this memory file.
+- Preserved the memory-system rules, privacy guidance, source-of-truth ordering, freshness rules, and handoff structure.
+
+## Known Issues
+
+- No project issues are currently documented.
+
+## Completed Work
+
+- 2026-09-01: Created the initial comprehensive `PRD.md`, including source alignment, traceability, UX, planner, guardrails, cutaway, scale, resilience, stack, MCP contract, data contracts, evaluations, priorities, and acceptance criteria.
+- 2026-07-12: Reset stale project-specific memory while retaining the durable memory-management logic.
+
+## Open Follow-ups
+
+- Finish M0 by pushing the private KeelMesh baseline and taking the verified VM snapshot, then execute M1 from `IMPLEMENTATION_PLAN.md`.
+- Replace the ephemeral Cloudflare Quick Tunnel with a named tunnel and stable hostname after the Cloudflare account/domain choice is available.
+- Prioritize the deterministic Go mesh/PNT digital twin and its visible failure controls in the first vertical slice.
+- Implement the rolling mission tape, link scoring/peer egress, and safe rejoin state machine before adding real networking or broad infrastructure services.
+- Validate the available local model/STT/TTS runtimes and benchmark hardware before selecting exact models.
+- Convert the PRD's data-contract sketches into versioned schemas and tests.
+- Implement the P0 vertical slice before adding MLflow, Dagster, Kubernetes, or broad eval coverage.
+
+## Do Not Forget
+
+- Read `AGENTS.md` and `MEMORY.md` before making future changes in this workspace.
+- Update `MEMORY.md` after durable discoveries, decisions, fixes, verification results, blocked work, and handoffs.
+- Never store secrets, tokens, passwords, private keys, or sensitive personal data in `MEMORY.md`.
+
+## Archive
+
+- 2026-09-01: Maritime LoRa range research was completed but the radio was removed from the target demo architecture. Findings remain historical only: rough-sea links are highly sensitive to antenna height, Fresnel clearance, motion/polarization, multipath, and wave blockage; marketing range is not a reliability guarantee.
