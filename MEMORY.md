@@ -283,6 +283,7 @@ When sources conflict, use this order:
 - Read `AGENTS.md` and `MEMORY.md` before making future changes in this workspace.
 - Update `MEMORY.md` after durable discoveries, decisions, fixes, verification results, blocked work, and handoffs.
 - Never store secrets, tokens, passwords, private keys, or sensitive personal data in `MEMORY.md`.
+- Proxmox storage is thin-provisioned and warned of aggregate virtual allocation beyond physical pool capacity. Before every new snapshot, inspect pool data/metadata utilization, free capacity, and VM 214's existing snapshots. Create no routine/redundant snapshots, and never delete or roll back one without explicit user approval.
 
 ## Archive
 

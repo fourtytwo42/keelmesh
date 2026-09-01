@@ -49,6 +49,16 @@ Update `MEMORY.md` after any meaningful checkpoint:
 - Work is paused, blocked, or handed off.
 - A previous memory is found to be stale or wrong.
 
+## Proxmox Snapshot Safety
+
+- Treat Proxmox thin-pool capacity as constrained and potentially over-provisioned.
+- Before creating any VM snapshot, inspect current thin-pool data/metadata utilization, free capacity, and the target VM's existing snapshots.
+- Do not create routine or redundant snapshots. Prefer the smallest number of named recovery checkpoints required by the implementation plan.
+- Never assume virtual provisioned capacity is physically available.
+- Do not delete, consolidate, or roll back a snapshot without explicit user authorization and exact target verification.
+- Record every created snapshot, its purpose, and the observed storage state in `MEMORY.md`.
+- If utilization or over-provisioning makes another snapshot unsafe, stop and report the storage condition instead of creating it.
+
 ## Entry Quality
 
 - Keep entries concise, factual, and easy to scan.
