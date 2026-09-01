@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "intent-contract-fixture",
+  "trace_id": "trace-contract-fixture",
+  "source_state_version": 2,
+  "objective": "search_area",
+  "area": {
+    "type": "Polygon",
+    "coordinates": [[[-70.0, 40.008], [-69.978, 40.008], [-69.978, 40.02], [-70.0, 40.02], [-70.0, 40.008]]]
+  },
+  "requested_asset_count": 6,
+  "constraints": {
+    "minimum_reserve": 0.3,
+    "maximum_duration_minutes": 20,
+    "avoid_zones": ["exclusion-2"]
+  },
+  "source_text": "Search this area with six vessels. Maintain 30% reserve and avoid the exclusion zone.",
+  "content_hash": "sha256:fixture"
+}
+

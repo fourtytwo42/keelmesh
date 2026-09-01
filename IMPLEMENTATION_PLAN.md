@@ -242,7 +242,7 @@ repeatable fallback and powers the verification script.
 
 Gate: clean checkout builds the bootstrap image and `/healthz` passes.
 
-### M1 - Golden mission loop
+### M1 - Golden mission loop (completed 2026-09-01)
 
 - Create canonical contracts and deterministic fixtures.
 - Scaffold React/TypeScript UI embedded by Go.
@@ -254,6 +254,10 @@ Gate: clean checkout builds the bootstrap image and `/healthz` passes.
 
 Gate: a fresh observer can create, compare, preview, authorize, and watch one
 mission without Python, Kafka, PostgreSQL, internet, or voice.
+
+Result: the gate passes in Compose on VM 214 through the shared contract tests,
+Go planner/policy/execution tests, API verifier, and Playwright suggested-area
+and hand-drawn-area workflows.
 
 ### M2 - Resilient edge wow path
 

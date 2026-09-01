@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: Begin M1, the deterministic golden mission loop, from the pushed KeelMesh baseline.
-- Last meaningful change: Completed M0: private repository `fourtytwo42/keelmesh` is on `main`, the renamed container is healthy, clean hosted CI passed, VM snapshot `m0-keelmesh-baseline` exists, and the superseded VM login is disabled.
-- Next step: Scaffold canonical contracts, React/TypeScript/MapLibre UI, and the deterministic Go simulator for typed intent -> two candidates -> preview -> policy -> authorization -> motion.
+- Current task: Finalize and hand off M1, the deterministic golden mission loop.
+- Last meaningful change: M1 is implemented and verified on VM 214: local map UI, six vessels, typed/drawn intent, two computed plans, immutable preview, exact-hash authorization, signed lease, idempotent start, execution, audit, and reconnect refresh.
+- Next step: Push the verified M1 checkpoint, confirm hosted CI, then begin M2 link graph and rolling mission tape.
 - Blockers: None.
 
 ## Current State
@@ -14,7 +14,7 @@ Durable project context lives here. Update this file whenever information should
 - Project concept: an offline-first one-operator/many-vessel peer-autonomy demonstration for a Havoc AI infrastructure interview.
 - Core scenario: the operator defines a simulated search mission through the map, suggestions, voice, or chat; the system previews and simulates a constrained plan before authorization.
 - Core demo thesis: “Program the mission once. Coordinate locally. Adapt together. Degrade safely when the uplink disappears.” The mesh transports signed state and proposals; authenticated edge nodes make bounded decisions under the Group Mission Contract.
-- `PRD.md` is the product source of truth. A minimal Go bootstrap service, embedded status page, Dockerfile, and Compose deployment now exist and are running on the dedicated VM; product functionality is not implemented yet.
+- `PRD.md` is the product source of truth. The M1 React/TypeScript/MapLibre interface and deterministic Go mission authority are embedded in one offline Compose appliance running on VM 214.
 - `IMPLEMENTATION_PLAN.md` is the Friday delivery plan. It sequences the work as visible vertical slices with acceptance gates, a three-day schedule, contingency cuts, API/contracts, verification evidence, and a six-minute rehearsal.
 - `ROLE_ALIGNMENT_AUDIT.md` is the coverage contract against the recruiter transcript and job posting. It requires both an Operator workflow and a scoped Autonomy Engineer incident-to-eval workflow.
 
@@ -123,6 +123,11 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+- 2026-09-01: Completed M1 on VM 214. Go tests/vet cover contract decoding, polygon validation, deterministic plan/hash output, segment-level exclusion avoidance, policy validity, preview immutability, stale-state rejection, tamper rejection, idempotent start, and authorized movement.
+- 2026-09-01: Frontend dependency audit reported zero vulnerabilities; Vitest, strict TypeScript, and production Vite build passed. The production MapLibre 6 worker is bundled with Vite `?worker&url`, preventing the silent missing-worker failure seen during visual QA.
+- 2026-09-01: `scripts/verify_m1.py` passed against the clean Compose deployment with two plans, 1,165 one-second samples, required audit events, preview stability, exact-hash rejection/authorization, idempotency, and vessel movement.
+- 2026-09-01: Playwright passed both suggested-area and hand-drawn-area workflows against VM 214. Visual QA confirmed local search/exclusion/holding geometry, computed route overlays, six vessel markers in DOM, plan comparison, and reconnect bootstrap refresh.
 
 - 2026-09-01: Queried Vurra's read-only local catalog and transcript for asset `8d9083fc944e`; verified the recruiter stack and scale statements at approximately 00:07:40-00:13:50 and 00:18:24.
 - 2026-09-01: Read the supplied AI Infrastructure Engineer job posting and incorporated agent, MCP, RAG, ML workflow, eval, observability, security, documentation, and infrastructure requirements into `PRD.md`.
@@ -270,12 +275,13 @@ When sources conflict, use this order:
 
 ## Open Follow-ups
 
-- Execute M1 from `IMPLEMENTATION_PLAN.md`: scaffold contracts/UI and complete the deterministic golden mission loop.
+- Push M1 and confirm the expanded hosted CI workflow passes from a clean checkout.
+- Begin M2 with the deterministic link graph, signed peer bundle, and six-segment mission tape; preserve the current M1 flow as a regression gate.
 - Replace the ephemeral Cloudflare Quick Tunnel with a named tunnel and stable hostname after the Cloudflare account/domain choice is available.
 - Prioritize the deterministic Go mesh/PNT digital twin and its visible failure controls in the first vertical slice.
 - Implement the rolling mission tape, link scoring/peer egress, and safe rejoin state machine before adding real networking or broad infrastructure services.
 - Validate the available local model/STT/TTS runtimes and benchmark hardware before selecting exact models.
-- Convert the PRD's data-contract sketches into versioned schemas and tests.
+- Expand the M1 shared fixture pattern into JSON Schemas for M2 peer-bundle, tape, and PNT contracts.
 - Implement the P0 vertical slice before adding MLflow, Dagster, Kubernetes, or broad eval coverage.
 
 ## Do Not Forget
