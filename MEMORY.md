@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: Begin M1, the deterministic golden mission loop, from the pushed KeelMesh baseline.
-- Last meaningful change: Completed M0: private repository `fourtytwo42/keelmesh` is on `main`, the renamed container is healthy, baseline CI is defined, and VM snapshot `m0-keelmesh-baseline` exists.
+- Last meaningful change: Completed M0: private repository `fourtytwo42/keelmesh` is on `main`, the renamed container is healthy, clean hosted CI passed, VM snapshot `m0-keelmesh-baseline` exists, and the superseded VM login is disabled.
 - Next step: Scaffold canonical contracts, React/TypeScript/MapLibre UI, and the deterministic Go simulator for typed intent -> two candidates -> preview -> policy -> authorization -> motion.
 - Blockers: None.
 
@@ -136,6 +136,7 @@ When sources conflict, use this order:
 - 2026-09-01: Completed GitHub CLI device authorization on VM 214 and verified active API and HTTPS Git access for account `fourtytwo42` before repository creation.
 - 2026-09-01: Created private repository `fourtytwo42/keelmesh` from `/srv/keelmesh`, pushed root commit `d91201b` to `main`, verified remote visibility/default branch, and created Proxmox snapshot `m0-keelmesh-baseline`.
 - 2026-09-01: GitHub Actions run `33569548528` passed Go test/vet, Compose validation, and container build for M0; action majors were then updated to the current official v7 releases and caching disabled until a `go.sum` exists.
+- 2026-09-01: Clean GitHub Actions run `33569697081` passed all M0 checks with official `actions/checkout@v7` and `actions/setup-go@v7`. Verified key-only `keelmesh` login, passwordless sudo, Docker/GitHub access, then locked the superseded VM account, changed its shell to `nologin`, and moved its old authorized-key/sudo files to root-only rollback locations.
 - 2026-07-12: Read `AGENTS.md` and `MEMORY.md`; identified stale project-specific memory and preserved the repository-local instruction logic.
 - 2026-07-12: Checked the workspace root; confirmed `AGENTS.md` and `MEMORY.md` are present and no `.git` directory is present at this level.
 
