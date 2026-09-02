@@ -313,8 +313,8 @@ test("dragged geometry follows the exact preview, authorization, and execution p
   await expect(missionTab.getByText("paused", { exact: true })).toBeVisible();
   await missionTab.getByRole("button", { name: /Resume / }).click();
   await expect(missionTab.getByText("executing", { exact: true })).toBeVisible();
-  page.once("dialog", dialog => dialog.accept());
   await missionTab.getByRole("button", { name: /Delete / }).click();
+  await page.getByRole("dialog", { name: /Delete .*\?/ }).getByRole("button", { name: "Delete mission" }).click();
   await expect(page.locator(".mission-tabs .mission-tab.active")).toHaveCount(0);
 });
 
@@ -348,14 +348,14 @@ test("mission numbering, direct controls, window restore, and confirmed draft de
   await first.locator(".mission-tab-main").click();
   await expect(planner).toBeVisible();
 
-  page.once("dialog", dialog => dialog.accept());
   await first.getByRole("button", { name: "Delete Mission 1" }).click();
+  await page.getByRole("dialog", { name: "Delete Mission 1?" }).getByRole("button", { name: "Delete mission" }).click();
   await expect(first).toHaveCount(0);
   await expect(second).toBeVisible();
   await second.locator(".mission-tab-main").click();
   await expect(planner.getByText("Mission 2", { exact: true })).toBeVisible();
-  page.once("dialog", dialog => dialog.accept());
   await planner.getByRole("button", { name: "Delete Mission 2" }).click();
+  await page.getByRole("dialog", { name: "Delete Mission 2?" }).getByRole("button", { name: "Delete mission" }).click();
   await expect(page.locator(".mission-tab")).toHaveCount(0);
   await expect(planner).toBeHidden();
 });

@@ -4,8 +4,8 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: Mission lifecycle and workspace controls are deployed on VM 214 and all twelve vessel nodes; preserve direct, confirmation-gated mission deletion and collision-free persisted names while continuing M7 hardening.
-- Last meaningful change: Mission names are now unique across active and draft workspaces, mission tabs and planner windows expose direct pause/delete controls, tab clicks restore minimized planners, and deletion removes PostgreSQL-backed drafts instead of allowing them to reappear after restart.
+- Current task: Race-safe mission deletion and corrected mission-tab controls are deployed on VM 214 and all twelve vessel nodes; preserve durable confirmation-gated deletion while continuing M7 hardening.
+- Last meaningful change: Native browser confirmation was replaced by a visible in-app delete dialog, mission action icons are centered exactly, and persistence generations plus serialized database writes prevent an older asynchronous snapshot from resurrecting a deleted mission.
 - Next step: add first-class select/delete/clear controls for operating and exclusion polygons, and improve the planner's explanation when every returned strategy is policy-prohibited. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -138,6 +138,7 @@ When sources conflict, use this order:
 
 ## Verification Ledger
 
+- 2026-09-02: Corrected mission deletion passed strict TypeScript, seven Vitest assertions, production Vite build, Playwright test discovery, all Go tests/vet, live browser confirmation-sheet inspection, exact zero-pixel icon-center deltas, and an immediate create/delete race proof followed by core restart (`0` matching API missions and `0` PostgreSQL rows). VM 214 and all twelve nodes run binary SHA-256 `882858d8fce265d1ca79699247e82f176cf10f4985261b52fb1afc515ab8de60`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Mission lifecycle changes passed all Go tests/vet, strict TypeScript, seven Vitest assertions, production Vite build, Playwright test discovery, live browser control/state inspection, and a durable API deletion followed by core restart. Existing persisted duplicates were deterministically repaired to `Mission 1` and `Mission 2`; all twelve vessel nodes are healthy on binary SHA-256 `5c8c74aac153c7e0ab4f8f4203665eb4ea45b0f5864501ed7aa73d6fa0356b82`. The full Playwright suite was not run because its reset hook would delete the user's current missions. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: New Mission plus alignment passed strict TypeScript, seven Vitest assertions, production Vite build, and a Playwright geometry assertion requiring the icon and tab centers to differ by less than two pixels on both axes. VM 214 and all twelve nodes run binary SHA-256 `ec8c2dd0363f02b0f59d34c88efa2799d3d5f6338c376f3cefcb59cdd31bf77f`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Workspace semantics passed all Go tests/vet, strict TypeScript, seven Vitest assertions, production Vite build, ten unchanged Playwright workflows, and the corrected dedicated window workflow on VM 214. Coverage proves top-nav primary windows never enter the lower taskbar or expose Close, context/detail windows minimize/restore/delete through the taskbar, mission pause/resume/delete is state-backed, and Cutaway retains legacy controls. VM 214 and all twelve nodes run binary SHA-256 `306a0cb2fa84937b628c4fa53111f615cc357052f7cb637e7636b84e2c6144a6`. No snapshot or GitHub-hosted workflow ran.
@@ -344,6 +345,15 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Race-safe mission deletion and centered controls
+
+- Context: The first durable-delete implementation removed PostgreSQL rows synchronously but did not serialize older `persistAsync` snapshots. A snapshot captured during mission creation could finish after deletion and reinsert the row. The native confirmation dialog was also easy to suppress or miss, and inherited two-row button CSS placed action icons in the upper half of each tab.
+- Decision: Invalidate stale persistence generations, serialize asynchronous snapshots and deletes behind a dedicated mutex, fail the API without changing memory if the durable transaction cannot commit, replace native confirmation with a visible application dialog, and reset action-button grid rows explicitly.
+- Files: `internal/fleetops/manager.go`, `web/src/FleetWorkspace.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: strict TypeScript, seven Vitest assertions, production frontend build, Playwright discovery, full Go tests/vet, live browser DOM/geometry inspection, and a create-immediate-delete test followed by core restart and direct API/PostgreSQL checks.
+- Result: Delete confirmation is always visible in the workspace, failure cannot be reported as success before durable commit, stale snapshots cannot resurrect deleted workspaces, and every pause/trash icon is centered with zero measured x/y offset. VM 214 and all twelve nodes run binary SHA-256 `882858d8fce265d1ca79699247e82f176cf10f4985261b52fb1afc515ab8de60`. No snapshot or hosted workflow.
+- Follow-up: None.
 
 ### 2026-09-02 - Mission lifecycle and durable deletion
 

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
@@ -101,20 +102,22 @@ type PlanActionRequest struct {
 }
 
 type Manager struct {
-	mu           sync.RWMutex
-	logger       *slog.Logger
-	databaseURL  string
-	secret       []byte
-	fleetVersion int64
-	vessels      map[string]domain.VesselProfileV2
-	groups       map[string]domain.OperationalGroupV2
-	collections  map[string]domain.SavedCollectionV2
-	missions     map[string]domain.MissionWorkspaceV2
-	drafts       map[string]domain.CommandDraftV2
-	plans        map[string]domain.FleetPlanV2
-	leases       map[string]domain.FleetLeaseV2
-	idempotency  map[string]string
-	startedPlans map[string]string
+	mu                    sync.RWMutex
+	persistenceMu         sync.Mutex
+	persistenceGeneration atomic.Uint64
+	logger                *slog.Logger
+	databaseURL           string
+	secret                []byte
+	fleetVersion          int64
+	vessels               map[string]domain.VesselProfileV2
+	groups                map[string]domain.OperationalGroupV2
+	collections           map[string]domain.SavedCollectionV2
+	missions              map[string]domain.MissionWorkspaceV2
+	drafts                map[string]domain.CommandDraftV2
+	plans                 map[string]domain.FleetPlanV2
+	leases                map[string]domain.FleetLeaseV2
+	idempotency           map[string]string
+	startedPlans          map[string]string
 }
 
 var callsigns = []string{"Gannet", "Osprey", "Tern", "Petrel", "Shearwater", "Cormorant", "Harrier", "Kite", "Merlin", "Plover", "Skua", "Fulmar", "Albatross", "Razorbill", "Puffin", "Heron", "Kittiwake", "Curlew", "Jaeger", "Avocet", "Sanderling", "Grebe", "Dunlin", "Egret", "Bittern", "Sandpiper", "Stormbird", "Kingfisher", "Loon", "Murre", "Nighthawk", "Pelican", "Rail", "Sparrowhawk", "Turnstone", "Whimbrel", "Auk", "Bunting", "Caspian", "Diver", "Eider", "Frigate", "Godwit", "Hobby", "Ibis", "Junco", "Lapwing", "Merganser"}
@@ -635,6 +638,14 @@ func (m *Manager) DeleteMission(id string, req Mutation) error {
 	if err := m.check(req, v.Version); err != nil {
 		return err
 	}
+	// Invalidate every older asynchronous persistence snapshot before the
+	// durable delete. The persistence mutex then guarantees that a snapshot
+	// already in flight finishes before the row is removed, while snapshots
+	// still waiting observe the newer generation and cannot resurrect it.
+	m.persistenceGeneration.Add(1)
+	if err := m.deleteMissionPersistence(id); err != nil {
+		return &Error{"MISSION_PERSISTENCE_FAILED", "Mission deletion could not be committed. Nothing was deleted."}
+	}
 	for vesselID, vessel := range m.vessels {
 		if vessel.Telemetry.MissionID != id {
 			continue
@@ -669,7 +680,6 @@ func (m *Manager) DeleteMission(id string, req Mutation) error {
 	}
 	delete(m.missions, id)
 	m.fleetVersion++
-	m.deleteMissionPersistence(id)
 	m.persistAsync()
 	return nil
 }
@@ -1777,8 +1787,14 @@ func (m *Manager) persistAsync() {
 	if m.databaseURL == "" {
 		return
 	}
+	generation := m.persistenceGeneration.Add(1)
 	snapshot := m.snapshotLocked()
 	go func() {
+		m.persistenceMu.Lock()
+		defer m.persistenceMu.Unlock()
+		if generation != m.persistenceGeneration.Load() {
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		pool, err := pgxpool.New(ctx, m.databaseURL)
@@ -1808,7 +1824,13 @@ func (m *Manager) clearMissionPersistenceAsync() {
 	if m.databaseURL == "" {
 		return
 	}
+	generation := m.persistenceGeneration.Add(1)
 	go func() {
+		m.persistenceMu.Lock()
+		defer m.persistenceMu.Unlock()
+		if generation != m.persistenceGeneration.Load() {
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		pool, err := pgxpool.New(ctx, m.databaseURL)
@@ -1823,22 +1845,24 @@ func (m *Manager) clearMissionPersistenceAsync() {
 // deleteMissionPersistence makes workspace deletion durable. Previously the
 // in-memory mission disappeared but its PostgreSQL row survived and was loaded
 // again after a core restart.
-func (m *Manager) deleteMissionPersistence(id string) {
+func (m *Manager) deleteMissionPersistence(id string) error {
 	if m.databaseURL == "" {
-		return
+		return nil
 	}
+	m.persistenceMu.Lock()
+	defer m.persistenceMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	pool, err := pgxpool.New(ctx, m.databaseURL)
 	if err != nil {
 		m.logger.Warn("mission persistence deletion unavailable", "mission_id", id, "error", err)
-		return
+		return err
 	}
 	defer pool.Close()
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		m.logger.Warn("mission persistence deletion could not start", "mission_id", id, "error", err)
-		return
+		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err = tx.Exec(ctx, `DELETE FROM mission_command_drafts WHERE mission_id=$1`, id); err == nil {
@@ -1853,6 +1877,7 @@ func (m *Manager) deleteMissionPersistence(id string) {
 	if err != nil {
 		m.logger.Warn("mission persistence deletion failed", "mission_id", id, "error", err)
 	}
+	return err
 }
 func (m *Manager) loadPersistent(ctx context.Context) {
 	if m.databaseURL == "" {
