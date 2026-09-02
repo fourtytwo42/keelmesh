@@ -83,26 +83,32 @@ class Runtime:
                 wav.writeframes(pcm.tobytes())
             return output.getvalue()
 
-    def transcribe(self, audio: bytes, suffix: str) -> dict[str, Any]:
+    def load_stt(self) -> Any:
+        if self.stt_model is not None:
+            return self.stt_model
+        if not (STT_ROOT / "model.bin").is_file():
+            raise RuntimeError("verified local STT model is unavailable")
         from faster_whisper import WhisperModel
 
+        self.stt_model = WhisperModel(
+            str(STT_ROOT), device="cpu", compute_type="int8", cpu_threads=max(1, min(8, os.cpu_count() or 1))
+        )
+        return self.stt_model
+
+    def transcribe(self, audio: bytes, suffix: str) -> dict[str, Any]:
         with self.stt_lock:
-            if self.stt_model is None:
-                if not (STT_ROOT / "model.bin").is_file():
-                    raise RuntimeError("verified local STT model is unavailable")
-                self.stt_model = WhisperModel(
-                    str(STT_ROOT), device="cpu", compute_type="int8", cpu_threads=max(1, min(8, os.cpu_count() or 1))
-                )
+            model = self.load_stt()
             started = time.monotonic()
             with tempfile.NamedTemporaryFile(suffix=suffix) as source:
                 source.write(audio)
                 source.flush()
-                segments, info = self.stt_model.transcribe(
+                segments, info = model.transcribe(
                     source.name,
                     language="en",
-                    beam_size=1,
-                    best_of=1,
+                    beam_size=3,
+                    best_of=3,
                     vad_filter=True,
+                    vad_parameters={"min_silence_duration_ms": 350, "speech_pad_ms": 250},
                     condition_on_previous_text=False,
                 )
                 parts = [segment.text.strip() for segment in segments if segment.text.strip()]
@@ -113,7 +119,7 @@ class Runtime:
                 "text": " ".join(parts),
                 "route": "colocated-node",
                 "engine": "faster-whisper",
-                "model": "tiny.en-int8",
+                "model": "distil-small.en-int8",
                 "language": getattr(info, "language", "en"),
                 "duration_seconds": duration,
                 "latency_ms": round(elapsed * 1000, 1),
@@ -131,6 +137,7 @@ def warm_default_voice() -> None:
     """Move the expensive model/voice load to appliance startup, not first speech."""
     try:
         RUNTIME.voice("morgan")
+        RUNTIME.load_stt()
     except RuntimeError:
         # Health remains degraded and visible text stays authoritative.
         return
@@ -144,7 +151,7 @@ def health() -> dict[str, Any]:
     except (RuntimeError, OSError):
         ready = False
     stt_ready = (STT_ROOT / "model.bin").is_file()
-    return {"status": "ready" if ready else "degraded", "engine": "Pocket TTS", "version": "2.1.0", "default_voice": "morgan", "offline_ready": ready, "loaded": RUNTIME.model is not None, "stt_ready": stt_ready, "stt_engine": "faster-whisper", "stt_model": "tiny.en-int8"}
+    return {"status": "ready" if ready else "degraded", "engine": "Pocket TTS", "version": "2.1.0", "default_voice": "morgan", "offline_ready": ready, "loaded": RUNTIME.model is not None, "stt_ready": stt_ready, "stt_engine": "faster-whisper", "stt_model": "distil-small.en-int8"}
 
 
 @app.get("/v1/voices")

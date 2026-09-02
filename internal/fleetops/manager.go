@@ -125,6 +125,21 @@ var spawnCenters = []domain.GeoPointV2{{-71.385, 41.43}, {-71.30, 41.43}, {-71.2
 var legacySpawnCenters = []domain.GeoPointV2{{-71.375, 41.49}, {-71.315, 41.47}, {-71.24, 41.45}, {-71.43, 41.39}, {-71.33, 41.37}, {-71.23, 41.35}, {-71.47, 41.25}, {-71.30, 41.20}}
 var reserveAfterLabel = regexp.MustCompile(`(?i)(?:reserve|battery)[^0-9]{0,24}([0-9]{1,3})\s*%`)
 var reserveBeforeLabel = regexp.MustCompile(`(?i)([0-9]{1,3})\s*%\s*(?:reserve|battery)`)
+var coastalDistance = regexp.MustCompile(`(?i)(?:within|inside|no more than|max(?:imum)?(?: distance)?(?: of)?)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:nm|nmi|nautical\s*miles?)`)
+
+// coastalDepthRoutes are deterministic samples from the packaged NOAA ETOPO
+// 5 m contour. They let natural-language coastal missions use the same local
+// bathymetry shown on the map without requiring network or model availability.
+var coastalDepthRoutes = [][]domain.GeoPointV2{
+	{{-71.34792, 41.47334}, {-71.35312, 41.46875}, {-71.35185, 41.45208}, {-71.34792, 41.44572}, {-71.33169, 41.45208}, {-71.31458, 41.45531}, {-71.29792, 41.46140}},
+	{{-71.35185, 41.45208}, {-71.34792, 41.44572}, {-71.33169, 41.45208}, {-71.31458, 41.45531}, {-71.29792, 41.46140}, {-71.28909, 41.46875}, {-71.28125, 41.48033}},
+	{{-71.26636, 41.48542}, {-71.26458, 41.48565}, {-71.26348, 41.48542}, {-71.24792, 41.47723}, {-71.23742, 41.48542}, {-71.23125, 41.50600}, {-71.21972, 41.51875}},
+	{{-71.48125, 41.36472}, {-71.46781, 41.38542}, {-71.46458, 41.38772}, {-71.45566, 41.40208}, {-71.45011, 41.43542}, {-71.44792, 41.43737}, {-71.43125, 41.44532}},
+	{{-71.34792, 41.47334}, {-71.35312, 41.46875}, {-71.35185, 41.45208}, {-71.34792, 41.44572}, {-71.33169, 41.45208}, {-71.31458, 41.45531}, {-71.29792, 41.46140}},
+	{{-71.19792, 41.48613}, {-71.19686, 41.48542}, {-71.19032, 41.46875}, {-71.18125, 41.46228}, {-71.16458, 41.46952}, {-71.14792, 41.47542}, {-71.13675, 41.48542}},
+	{{-71.54941, 41.16875}, {-71.56285, 41.18542}, {-71.55508, 41.20208}, {-71.55360, 41.21875}, {-71.56458, 41.22894}},
+	{{-71.56458, 41.13877}, {-71.54792, 41.14806}, {-71.54494, 41.15208}, {-71.54792, 41.16451}, {-71.54941, 41.16875}, {-71.56285, 41.18542}, {-71.55508, 41.20208}},
+}
 
 func New(databaseURL string, logger *slog.Logger) *Manager {
 	m := &Manager{logger: logger, databaseURL: databaseURL, secret: []byte("keelmesh-m6-runtime-authority"), fleetVersion: 1, vessels: map[string]domain.VesselProfileV2{}, groups: map[string]domain.OperationalGroupV2{}, collections: map[string]domain.SavedCollectionV2{}, missions: map[string]domain.MissionWorkspaceV2{}, drafts: map[string]domain.CommandDraftV2{}, plans: map[string]domain.FleetPlanV2{}, leases: map[string]domain.FleetLeaseV2{}, idempotency: map[string]string{}, startedPlans: map[string]string{}}
@@ -659,11 +674,17 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 			mission.UpdatedAt = time.Now().UTC()
 			wps = route
 			geometrySource = source
-			notes = append(notes, "Operating area and patrol loop resolved to the nearest water-safe shoreline sector; review the map before authorization.")
+			notes = append(notes, "Operating corridor and patrol route resolved from target positions and the map's local 5 m depth contour; review the exact route before authorization.")
 			missionChanged = true
 		}
 	}
 	constraints := mission.Constraints
+	if distance, ok := requestedCoastalDistance(req.Text); ok {
+		constraints.MaximumShoreDistanceM = distance
+		mission.Constraints.MaximumShoreDistanceM = distance
+		missionChanged = true
+		notes = append(notes, fmt.Sprintf("Coastal offset limited to %.2f nautical miles (%.0f m); shallow or land-intersecting portions are excluded by the depth-aware corridor.", distance/1852, distance))
+	}
 	if requested, ok := requestedReserve(req.Text); ok {
 		if requested > constraints.MinimumReserve {
 			constraints.MinimumReserve = requested
@@ -692,7 +713,15 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 
 func (m *Manager) resolveNamedGeometry(text string, targets []string) ([][]float64, []domain.GeoPointV2, string, bool) {
 	lower := strings.ToLower(text)
-	if !strings.Contains(lower, "shoreline") && !strings.Contains(lower, "coast") && !strings.Contains(lower, "shore patrol") {
+	coastal := []string{"shoreline", "coast", "coastal", "shore patrol", "beach", "beaches", "nearshore", "near shore", "littoral"}
+	matched := false
+	for _, term := range coastal {
+		if strings.Contains(lower, term) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
 		return nil, nil, "", false
 	}
 	centroid := domain.GeoPointV2{}
@@ -711,13 +740,41 @@ func (m *Manager) resolveNamedGeometry(text string, targets []string) ([][]float
 			minimum, nearest = distance, i
 		}
 	}
-	center := spawnCenters[nearest]
-	polygon := [][]float64{{center[0] - .022, center[1]}, {center[0] + .022, center[1]}, {center[0] + .022, center[1] + .028}, {center[0] - .022, center[1] + .028}, {center[0] - .022, center[1]}}
-	route := make([]domain.GeoPointV2, len(polygon))
-	for i, point := range polygon {
-		route[i] = domain.GeoPointV2{point[0], point[1]}
+	route := clonePoints(coastalDepthRoutes[nearest])
+	// Patrol back over the same depth-validated corridor rather than closing a
+	// polygon with an unvalidated cross-land leg.
+	for i := len(coastalDepthRoutes[nearest]) - 2; i >= 0; i-- {
+		route = append(route, coastalDepthRoutes[nearest][i])
 	}
-	return polygon, route, fmt.Sprintf("intent:shoreline-sector-%02d", nearest+1), true
+	distance, ok := requestedCoastalDistance(text)
+	if !ok {
+		distance = 1852
+	}
+	polygon := coastalBounds(route, distance)
+	return polygon, route, fmt.Sprintf("intent:map-depth-coastal-corridor-%02d", nearest+1), true
+}
+
+func requestedCoastalDistance(text string) (float64, bool) {
+	match := coastalDistance.FindStringSubmatch(text)
+	if len(match) != 2 {
+		return 0, false
+	}
+	value, err := strconv.ParseFloat(match[1], 64)
+	if err != nil || value <= 0 || value > 10 {
+		return 0, false
+	}
+	return value * 1852, true
+}
+
+func coastalBounds(route []domain.GeoPointV2, distanceM float64) [][]float64 {
+	minX, maxX, minY, maxY := route[0][0], route[0][0], route[0][1], route[0][1]
+	for _, point := range route[1:] {
+		minX, maxX = math.Min(minX, point[0]), math.Max(maxX, point[0])
+		minY, maxY = math.Min(minY, point[1]), math.Max(maxY, point[1])
+	}
+	latPad := distanceM / 111_000
+	lonPad := distanceM / (111_000 * math.Cos(((minY+maxY)/2)*math.Pi/180))
+	return [][]float64{{minX - lonPad, minY - latPad}, {maxX + lonPad, minY - latPad}, {maxX + lonPad, maxY + latPad}, {minX - lonPad, maxY + latPad}, {minX - lonPad, minY - latPad}}
 }
 
 func requestedReserve(text string) (float64, bool) {
@@ -1097,6 +1154,9 @@ func conservative(a, b domain.ConstraintSetV2) domain.ConstraintSetV2 {
 	if a.MaximumPNTUncertaintyM == 0 || a.MaximumPNTUncertaintyM > b.MaximumPNTUncertaintyM {
 		a.MaximumPNTUncertaintyM = b.MaximumPNTUncertaintyM
 	}
+	if b.MaximumShoreDistanceM > 0 && (a.MaximumShoreDistanceM == 0 || a.MaximumShoreDistanceM > b.MaximumShoreDistanceM) {
+		a.MaximumShoreDistanceM = b.MaximumShoreDistanceM
+	}
 	return a
 }
 func formationOffset(f string, i, n int, spacing float64) domain.GeoPointV2 {
@@ -1166,6 +1226,9 @@ func routeDistance(route []domain.GeoPointV2) float64 {
 	return d
 }
 func planScore(p domain.FleetPlanV2) float64 {
+	if p.PolicyStatus == "prohibited" {
+		return -1_000_000
+	}
 	return p.CoveragePercent*.5 + p.MinimumReserve*100*.3 + math.Max(0, 100-p.DurationMinutes)*.2
 }
 func shortHash(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:])[:12] }

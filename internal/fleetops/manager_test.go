@@ -249,10 +249,10 @@ func TestCompileResolvesShorelineIntentWithoutDrawnGeometry(t *testing.T) {
 	if len(draft.Ambiguities) != 0 {
 		t.Fatalf("unexpected ambiguities: %v", draft.Ambiguities)
 	}
-	if draft.GeometrySource != "intent:shoreline-sector-01" {
+	if draft.GeometrySource != "intent:map-depth-coastal-corridor-01" {
 		t.Fatalf("geometry source = %q", draft.GeometrySource)
 	}
-	if len(draft.Waypoints) != 5 || draft.GuidanceKind != "patrol" {
+	if len(draft.Waypoints) != 13 || draft.GuidanceKind != "patrol" {
 		t.Fatalf("resolved guidance = %s, waypoints = %d", draft.GuidanceKind, len(draft.Waypoints))
 	}
 	if draft.Constraints.MinimumReserve != .30 {
@@ -262,7 +262,7 @@ func TestCompileResolvesShorelineIntentWithoutDrawnGeometry(t *testing.T) {
 		t.Fatalf("resolution notes = %v", draft.ResolutionNotes)
 	}
 	current := m.missions[mission.ID]
-	if current.Version != mission.Version+1 || current.Geometry.Revision != mission.Geometry.Revision+1 || len(current.Geometry.IncludedAreas) != 1 || len(current.Geometry.Waypoints) != 5 {
+	if current.Version != mission.Version+1 || current.Geometry.Revision != mission.Geometry.Revision+1 || len(current.Geometry.IncludedAreas) != 1 || len(current.Geometry.Waypoints) != 13 {
 		t.Fatalf("mission was not updated with resolved geometry: %#v", current)
 	}
 	plans, err := m.GeneratePlans(mission.ID, PlansRequest{
@@ -274,6 +274,49 @@ func TestCompileResolvesShorelineIntentWithoutDrawnGeometry(t *testing.T) {
 	}
 	if len(plans) != 3 {
 		t.Fatalf("plans = %d", len(plans))
+	}
+}
+
+func TestCompileResolvesBeachDepthAndNauticalMileIntent(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation:  Mutation{RequestID: "beach-mission", IdempotencyKey: "beach-mission", ExpectedVersion: snapshot.FleetVersion},
+		Name:      "Beach patrol",
+		TargetIDs: m.groups["group-01"].MemberIDs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation: Mutation{RequestID: "beach-compile", IdempotencyKey: "beach-compile", ExpectedVersion: mission.Version},
+		Text:     "patrol the beach, stay within 1nm from the beach as long as ocean depth permits",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(draft.Ambiguities) != 0 || draft.GeometrySource != "intent:map-depth-coastal-corridor-01" {
+		t.Fatalf("beach intent was not resolved: %#v", draft)
+	}
+	if draft.Constraints.MaximumShoreDistanceM != 1852 {
+		t.Fatalf("maximum shore distance = %.1f", draft.Constraints.MaximumShoreDistanceM)
+	}
+	if len(draft.Waypoints) != 13 || len(draft.ResolutionNotes) != 2 {
+		t.Fatalf("resolved route/notes = %d / %v", len(draft.Waypoints), draft.ResolutionNotes)
+	}
+	current := m.missions[mission.ID]
+	if current.Constraints.MaximumShoreDistanceM != 1852 || len(current.Geometry.IncludedAreas) != 1 {
+		t.Fatalf("mission did not retain inferred coastal limits: %#v", current)
+	}
+	plans, err := m.GeneratePlans(mission.ID, PlansRequest{
+		Mutation: Mutation{RequestID: "beach-plans", IdempotencyKey: "beach-plans", ExpectedVersion: current.Version},
+		DraftID:  draft.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plans[0].Recommended || plans[0].PolicyStatus == "prohibited" {
+		t.Fatalf("recommended plan must be policy-valid: %#v", plans[0])
 	}
 }
 

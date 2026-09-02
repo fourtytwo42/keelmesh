@@ -9,8 +9,8 @@ from pathlib import Path
 from huggingface_hub import snapshot_download
 
 
-MODEL_ID = "Systran/faster-whisper-tiny.en"
-MODEL_REVISION = "0d3d19a32d3338f10357c0889762bd8d64bbdeba"
+MODEL_ID = "Systran/faster-distil-whisper-small.en"
+MODEL_REVISION = "ef77d90526ccd62cde3808ee70626a01e5cf83e4"
 
 
 target = Path(sys.argv[1] if len(sys.argv) > 1 else "/out")

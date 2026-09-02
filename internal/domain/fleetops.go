@@ -104,6 +104,7 @@ type ConstraintSetV2 struct {
 	MaximumPNTUncertaintyM      float64 `json:"maximum_pnt_uncertainty_m"`
 	MaximumDurationMinutes      float64 `json:"maximum_duration_minutes"`
 	MaximumRouteDistanceKM      float64 `json:"maximum_route_distance_km"`
+	MaximumShoreDistanceM       float64 `json:"maximum_shore_distance_m,omitempty"`
 	MinimumTapeWatermarkSeconds int     `json:"minimum_tape_watermark_seconds"`
 	Formation                   string  `json:"formation"`
 	FormationSpacingM           float64 `json:"formation_spacing_m"`

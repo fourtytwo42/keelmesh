@@ -218,22 +218,22 @@ test("workspace windows move, minimize, restore, dock, and retain legacy tools",
   await expect(page.getByRole("region", { name: "Quiet Fleet", exact: true })).toBeVisible();
 });
 
-test("shoreline intent resolves its operating area and preserves the reserve floor", async ({ page }) => {
+test("beach intent resolves a depth-aware one-nautical-mile coastal patrol", async ({ page }) => {
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
   await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).dblclick();
   const dock = page.locator(".intent-dock");
   await expect(dock).toContainText("WS WATCH SHOAL · 6 GROUP ASSETS");
   await expect(dock).toContainText("Ready to generate options for this operational group");
-  await dock.locator("input").fill("Patrol the shoreline and reserve 20% battery.");
+  await dock.locator("input").fill("patrol the beach, stay within 1nm from the beach as long as ocean depth permits");
   await dock.getByRole("button", { name: "GENERATE OPTIONS" }).click();
   const planner = page.getByRole("region", { name: "Mission Planner" });
 
   await expect(planner.getByText("1 operating", { exact: true })).toBeVisible();
-  await expect(planner.getByText("5 waypoints", { exact: true })).toBeVisible();
+  await expect(planner.getByText("13 waypoints", { exact: true })).toBeVisible();
   await expect(planner.getByText("INTENT-DERIVED GEOMETRY", { exact: true })).toBeVisible();
-  await expect(planner.locator(".intent-resolution code")).toHaveText(/intent:shoreline-sector-\d{2}/);
-  await expect(planner.getByText("Requested 20% reserve; standing policy keeps the effective minimum at 30%.", { exact: true })).toBeVisible();
+  await expect(planner.locator(".intent-resolution code")).toHaveText(/intent:map-depth-coastal-corridor-\d{2}/);
+  await expect(planner.getByText(/Coastal offset limited to 1.00 nautical miles \(1852 m\)/)).toBeVisible();
   await expect(planner.locator(".candidate-list > button")).toHaveCount(3);
   await planner.getByRole("button", { name: "Preview exact routes" }).click();
   await expect(planner.getByText("Nothing has been sent yet.")).toBeVisible();
