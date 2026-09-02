@@ -89,6 +89,30 @@ test("fleet rail, search, group, and filtered selection resolve exact targets", 
   await expect(page.getByRole("region", { name: "Group · WS", exact: true })).toContainText("PRIMARY OPERATIONAL GROUP");
 });
 
+test("map multi-click gestures expand selection from viewport to accessible fleet", async ({ page }) => {
+  await page.goto("/");
+  const canvas = page.locator(".operations-map .maplibregl-canvas");
+  await page.waitForTimeout(1_000);
+  await canvas.click({ position: { x: 570, y: 160 }, button: "right" });
+  const groupMenu = page.getByRole("menu");
+  await expect(groupMenu.getByRole("menuitem", { name: "Operational group" })).toBeEnabled();
+  await groupMenu.getByRole("menuitem", { name: "Operational group" }).click();
+  await expect(page.locator(".selection-ribbon > strong")).toHaveText("6");
+  await page.keyboard.press("Escape");
+  await canvas.dispatchEvent("click", { detail: 3, bubbles: true, clientX: 700, clientY: 250 });
+  await expect(page.locator(".selection-ribbon > strong")).toHaveText("48");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".selection-ribbon > strong")).toHaveText("0");
+  await canvas.dispatchEvent("click", { detail: 4, bubbles: true, clientX: 700, clientY: 250 });
+  await expect(page.locator(".selection-ribbon > strong")).toHaveText("48");
+  await page.keyboard.press("Escape");
+  await canvas.click({ position: { x: 700, y: 250 }, button: "right" });
+  const allMenu = page.getByRole("menu");
+  await expect(allMenu.getByRole("menuitem", { name: "Operational group" })).toBeVisible();
+  await allMenu.getByRole("menuitem", { name: "All accessible vessels" }).click();
+  await expect(page.locator(".selection-ribbon > strong")).toHaveText("48");
+});
+
 test("dragged geometry follows the exact preview, authorization, and execution path", async ({ page }) => {
   test.setTimeout(45_000);
   await page.goto("/");
@@ -147,11 +171,13 @@ test("workspace windows move, minimize, restore, dock, and retain legacy tools",
 test("shoreline intent resolves its operating area and preserves the reserve floor", async ({ page }) => {
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
-  await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
-  await rail.getByRole("button", { name: "Create mission from 6 selected" }).click();
+  await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).dblclick();
+  const dock = page.locator(".intent-dock");
+  await expect(dock).toContainText("WS WATCH SHOAL · 6 GROUP ASSETS");
+  await expect(dock).toContainText("Ready to generate options for this operational group");
+  await dock.locator("input").fill("Patrol the shoreline and reserve 20% battery.");
+  await dock.getByRole("button", { name: "GENERATE OPTIONS" }).click();
   const planner = page.getByRole("region", { name: "Mission Planner" });
-  await planner.getByLabel("PLAIN-ENGLISH INTENT").fill("Patrol the shoreline and reserve 20% battery.");
-  await planner.getByRole("button", { name: "Generate formation options" }).click();
 
   await expect(planner.getByText("1 operating", { exact: true })).toBeVisible();
   await expect(planner.getByText("5 waypoints", { exact: true })).toBeVisible();

@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: M6 plain-English mission compilation now resolves recognized shoreline/coast patrol language into the nearest deterministic water-safe operating sector and closed patrol route when the operator has not drawn geometry. Reserve percentages are parsed from intent but cannot weaken the standing fleet minimum; the planner shows the inferred geometry and safety-bound resolution before authorization.
+- Last meaningful change: M6 map selection now has explicit scope escalation: double-click chooses a vessel's operational group and binds it to the bottom planning dock; triple-click selects every vessel in the geographic viewport; quadruple-click selects the full accessible fleet. A right-click menu exposes operational-group, visible-vessel, and accessible-vessel selection without relying on hidden gestures.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -64,6 +64,7 @@ When sources conflict, use this order:
 - Verify LAN health: `curl --fail http://127.0.0.1:8080/healthz` on the VM or `curl http://192.168.50.214:8080/healthz` on the LAN.
 - The currently tested Cloudflare endpoint is an account-less Quick Tunnel and is ephemeral; replace it with a named tunnel before relying on a stable demo hostname.
 - Player B Quick Tunnel, last verified 2026-09-02: `https://exhibits-prominent-quizzes-fold.trycloudflare.com/?arena=1`. It terminates at the loopback-only faction ingress on VM 214 and follows Player B's advertised coordinator.
+- Player A/main Quick Tunnel, last verified 2026-09-02: `https://frequently-kde-bureau-ware.trycloudflare.com/`. It terminates at the main VM 214 workspace. Both Quick Tunnel hostnames are ephemeral.
 - M0 recovery point: Proxmox snapshot `m0-keelmesh-baseline`, created 2026-09-01 after commit `d91201b` was pushed and `/healthz` passed.
 - Private repository: `https://github.com/fourtytwo42/keelmesh`; default branch `main`.
 
@@ -322,6 +323,14 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Planning-aware multi-scope map selection
+
+- Context: Double-click selected six grouped vessels on the map, but the bottom Generate Options dock remained bound to a previous mission; broader viewport/fleet selection also required separate controls.
+- Decision: Bind exact operational-group selections to the planning dock without mutating mission state. Generate Options reuses a matching active mission or creates a new frozen mission for the selected scope. Add double/group, triple/viewport, quadruple/accessible-fleet gestures plus a discoverable right-click scope menu.
+- Files: `web/src/FleetWorkspace.tsx`, `web/src/OperationsMap.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: TypeScript typecheck, seven Vitest assertions, Vite production build; nine Playwright workflows across the full suite, with targeted group planning, multi-click, and context-menu coverage; all twelve node health checks.
+- Result: Group selection is visible in the bottom planning dock and Generate Options plans for that exact group. Right-click supports operational group, all visible vessels, and all accessible vessels. VM 214 and all twelve vessel nodes run binary SHA-256 `aaf92a1196b968f4f7ee439384c2c21924b3d2ad84671c354e904e2111f058b0`. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - Intent-derived shoreline patrol geometry
 
