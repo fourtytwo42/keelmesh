@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: the two-faction Arena, faction-filtered Player B ingress, exact-hash fictional engagement flow, coordinator-failover demonstration, and twelve dual-plane Proxmox nodes are live. Physical radio faults are constrained to `eth1` with rollback; management and inference remain on `eth0`.
+- Last meaningful change: a pinned Lucide icon system and persistent Navy/Pirate presentation mode are deployed on VM 214 and all twelve vessel VMs. The coarse beige NOAA/placeholder map fills were removed; Pirate mode changes workspace terminology and Morgan's voice while preserving exact-hash approval and authority boundaries.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -21,6 +21,7 @@ Durable project context lives here. Update this file whenever information should
 - M5 is live. Quiet Fleet coordinates Vessels 2–5 under a signed fixed-membership contract: the unsafe first proposal reaches quorum but cannot commit after Vessel 2 rejects it; the safe revision arms all affected nodes and activates atomically at a future tape boundary. VM-local release commands cover startup, status, reset, verification, offline proof, restart recovery, evidence, rehearsal, and stop.
 - M6 is live on VM 214. It serves a graphite MapLibre workspace with a packaged NOAA NCDS chart extract, 48 persistent named vessels in eight exclusive operational groups, overlapping saved collections, scalable symbol layers, fleet/group/search/box/map selection, vessel/environment/reachability inspection, movable/dockable windows, PostgreSQL-backed mission workspaces, deterministic formation candidates, and exact-plan authorization. Pocket TTS exposes all twelve voices with Morgan default; faster-whisper tiny.en provides VM-local HTTP/WebSocket transcription with typed fallback. Browser WebGPU/WASM and trusted-peer speech routing are accurately labeled future tiers, not completed redundancy.
 - M7 is live as a deterministic Arena vertical slice plus a physical node fabric. VM 214 exposes neutral/referee state and coordinator-aware Player B ingress; twelve Ubuntu vessel VMs run the same Go/UI node binary with faction-pinned APIs across separate management (`192.168.50.0/24`) and simulated-radio (`10.77.0.0/24`) interfaces. The UI demonstrates knowledge filtering, protected planes, 20× time, coordinator failover, semantic workspace actions, and human-approved fictional engagement effects. Real distributed Raft replication, node mTLS enforcement, and twelve independent Python/TTS/STT runtimes remain follow-ups and must not be claimed complete.
+- Visual system, last verified 2026-09-02: `lucide-react` 1.39.0 provides coherent UI icons. Navy mode shows a skull control to enter Pirate mode; Pirate mode shows an anchor control to return. The selected mode persists in local storage, changes workspace/Arena nomenclature and palette, and sends a typed persona to Morgan. Persona changes never grant additional tools or bypass exact-plan/effect approval.
 - `IMPLEMENTATION_PLAN.md` is the Friday delivery plan. It sequences the work as visible vertical slices with acceptance gates, a three-day schedule, contingency cuts, API/contracts, verification evidence, and a six-minute rehearsal.
 - `ROLE_ALIGNMENT_AUDIT.md` is the coverage contract against the recruiter transcript and job posting. It requires both an Operator workflow and a scoped Autonomy Engineer incident-to-eval workflow.
 
@@ -321,6 +322,14 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Icon system, clean map, and Pirate/Navy watch
+
+- Context: The M6/M7 workspace mixed text/Unicode controls, and coarse NOAA/placeholder polygons appeared as beige rectangular overlays over the map.
+- Decision: Pin `lucide-react` 1.39.0, use semantic icons throughout the workspace, remove the rendered raster and coarse land-fill layers, and add a persistent Pirate/Navy presentation toggle. Keep all mission and engagement authority semantics identical between personas.
+- Files: `web/package.json`, `web/package-lock.json`, `web/src/FleetWorkspace.tsx`, `web/src/ArenaView.tsx`, `web/src/OperationsMap.tsx`, `web/src/WindowManager.tsx`, `web/src/app.css`, `web/e2e/mission.spec.ts`, `internal/arena/manager.go`, `internal/arena/manager_test.go`.
+- Commands/tests: local TypeScript typecheck, seven Vitest assertions, production Vite build; VM Go arena/API tests; six Playwright mission/theme/map workflows.
+- Result: Deployed on VM 214 and all twelve vessel VMs with binary SHA-256 `a7795d72d50e417869638c84ed8b4a9dab5ebf1a6cf780d5b816921178a0d82a`; no Proxmox snapshot and no GitHub-hosted workflow.
 
 - 2026-09-02: Completed the M7 deterministic Arena/API/UI vertical slice, coordinator-aware faction ingress, twelve physical dual-plane vessel VMs, VM node deployment, and protected radio-fault tooling. Remaining distributed-consensus and per-node AI runtime work is explicitly recorded rather than presented as complete.
 - 2026-09-02: Released and pushed `v0.5.0-interview` with two validated evidence bundles, repeated rehearsals, offline proof, restart isolation, and disabled GitHub Actions. Snapshot creation remains intentionally separate and requires Proxmox storage inspection plus explicit user authorization.

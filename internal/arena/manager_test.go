@@ -69,6 +69,34 @@ func TestCoordinatorFailoverKeepsQuorumAndInference(t *testing.T) {
 	}
 }
 
+func TestPiratePersonaChangesVoiceWithoutExpandingAuthority(t *testing.T) {
+	m := New()
+	s := m.Snapshot("A")
+	session, err := m.CreateSession(AgentMessageRequest{
+		ArenaMutationV1: mutation(s.StateVersion, "pirate-session"),
+		Faction:         "A",
+		Persona:         "pirate",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(session.Message, "Aye, Captain") || !strings.Contains(session.Message, "no authority beyond") {
+		t.Fatalf("pirate session omitted persona or authority boundary: %q", session.Message)
+	}
+	turn, err := m.AgentMessage(session.ID, AgentMessageRequest{
+		ArenaMutationV1: mutation(m.Snapshot("A").StateVersion, "pirate-turn"),
+		Faction:         "A",
+		Text:            "Frame my fleet and radar contacts",
+		Persona:         "pirate",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(turn.Message, "Arrr, Captain") || !strings.Contains(turn.Message, "exact signed proposal") || !turn.AwaitingApproval {
+		t.Fatalf("pirate turn weakened approval boundary: %#v", turn)
+	}
+}
+
 func TestExactEngagementApprovalAndBoundedEffect(t *testing.T) {
 	m := New()
 	s := m.Snapshot("A")

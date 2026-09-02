@@ -14,11 +14,18 @@ test.beforeEach(async ({ page }) => {
   page.on("console", message => {
     if (message.type() === "error") console.error("BROWSER_CONSOLE_ERROR", message.text());
   });
-  await page.addInitScript(() => localStorage.removeItem("keelmesh.m6.window-layout.v1"));
+  await page.addInitScript(() => {
+    localStorage.removeItem("keelmesh.m6.window-layout.v1");
+    localStorage.removeItem("keelmesh.theme");
+  });
   await resetFleet(page);
 });
 
 test("map-first workspace exposes the persistent 48-vessel operating picture", async ({ page }) => {
+  const rasterRequests: string[] = [];
+  page.on("request", request => {
+    if (request.url().includes("/assets/maps/noaa/")) rasterRequests.push(request.url());
+  });
   await page.goto("/");
   await expect(page.getByText("KEELMESH", { exact: true })).toBeVisible();
   await expect(page.getByText("48 VESSELS", { exact: true })).toBeVisible();
@@ -27,6 +34,25 @@ test("map-first workspace exposes the persistent 48-vessel operating picture", a
   await expect(page.getByText("NOAA-DERIVED FIXTURE", { exact: true })).toBeVisible();
   await expect(page.getByText("SIMULATION ONLY", { exact: true })).toBeVisible();
   await expect(page.locator("img[src='/assets/vessels/kestrel.png']").first()).toBeVisible();
+  expect(rasterRequests).toEqual([]);
+});
+
+test("pirate watch changes nomenclature, agent voice, and returns cleanly to navy mode", async ({ page }) => {
+  await page.goto("/?arena=1");
+  await page.getByRole("button", { name: "Enter pirate mode" }).click();
+  await expect(page.getByText("PIRATE FLEET COMMAND", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /High Seas/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Return to navy mode" })).toBeVisible();
+
+  await page.getByRole("button", { name: /High Seas/ }).click();
+  const arena = page.getByRole("region", { name: /High Seas/ });
+  await arena.getByRole("button", { name: /ASK MORGAN, ARR!/ }).click();
+  await expect(arena.getByText(/Arrr, Captain/)).toBeVisible();
+
+  await expect(page.evaluate(() => localStorage.getItem("keelmesh.theme"))).resolves.toBe("pirate");
+  await page.getByRole("button", { name: "Return to navy mode" }).click();
+  await expect(page.getByText("MISSION OPERATIONS", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Enter pirate mode" })).toBeVisible();
 });
 
 test("fleet rail, search, group, and filtered selection resolve exact targets", async ({ page }) => {
@@ -61,7 +87,7 @@ test("dragged geometry follows the exact preview, authorization, and execution p
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await expect(planner).toBeVisible();
 
-  await planner.getByRole("button", { name: "＋ Operating area" }).click();
+  await planner.getByRole("button", { name: "Operating area" }).click();
   await expect(page.getByTitle("Drag operating area")).toHaveClass(/active/);
   const canvas = page.locator(".operations-map .maplibregl-canvas");
   const box = await canvas.boundingBox();

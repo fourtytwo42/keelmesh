@@ -320,6 +320,7 @@ type AgentMessageRequest struct {
 	domain.ArenaMutationV1
 	Faction string `json:"faction"`
 	Text    string `json:"text"`
+	Persona string `json:"persona,omitempty"`
 }
 
 func (m *Manager) CreateSession(req AgentMessageRequest) (domain.AgentSessionV1, error) {
@@ -333,7 +334,11 @@ func (m *Manager) CreateSession(req AgentMessageRequest) (domain.AgentSessionV1,
 		f = "A"
 	}
 	c := m.coords[f]
-	s := domain.AgentSessionV1{ID: "agent-" + short(req.IdempotencyKey), Faction: f, State: "ready", CoordinatorID: c.NodeID, CoordinatorEpoch: c.Epoch, Message: "Node agent ready with the same faction knowledge projection as the operator."}
+	message := "Node agent ready with the same faction knowledge projection as the operator."
+	if req.Persona == "pirate" {
+		message = "Aye, Captain. Morgan is aboard with the same chart and faction knowledge ye can see—no secret waters and no authority beyond your signed orders."
+	}
+	s := domain.AgentSessionV1{ID: "agent-" + short(req.IdempotencyKey), Faction: f, State: "ready", CoordinatorID: c.NodeID, CoordinatorEpoch: c.Epoch, Message: message}
 	m.sessions[s.ID] = s
 	m.version++
 	m.emit(f, "agent.session.created", s.Message, map[string]any{"session_id": s.ID})
@@ -364,7 +369,11 @@ func (m *Manager) AgentMessage(sessionID string, req AgentMessageRequest) (domai
 		add("open_window", map[string]any{"window": "contacts"})
 		add("annotate_map", map[string]any{"track_id": m.contacts[f][0].ID, "label": "uncertain radar contact"})
 	}
-	s := domain.AgentSessionV1{ID: sessionID, Faction: f, State: "awaiting_review", CoordinatorID: c.NodeID, CoordinatorEpoch: c.Epoch, Message: "I arranged your operating picture and marked the available evidence. I can draft the next bounded plan; confirm the exact proposal before any movement or simulated effect.", Actions: acts, AwaitingApproval: true}
+	message := "I arranged your operating picture and marked the available evidence. I can draft the next bounded plan; confirm the exact proposal before any movement or simulated effect."
+	if req.Persona == "pirate" {
+		message = "Arrr, Captain—I’ve laid out the fleet and marked the evidence on our chart. I can plot the next bounded course, but no ship moves and no simulated broadside fires until ye confirm the exact signed proposal."
+	}
+	s := domain.AgentSessionV1{ID: sessionID, Faction: f, State: "awaiting_review", CoordinatorID: c.NodeID, CoordinatorEpoch: c.Epoch, Message: message, Actions: acts, AwaitingApproval: true}
 	m.sessions[sessionID] = s
 	m.version++
 	m.emit(f, "agent.turn", s.Message, map[string]any{"actions": len(acts)})

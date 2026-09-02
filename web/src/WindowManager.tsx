@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Home, Minus, PanelLeft, SquareDashed, X } from "lucide-react";
 
-export type WindowDefinition = { id:string; title:string; icon?:string; content:ReactNode; initial:{x:number;y:number;width:number;height:number}; singleton?:boolean };
+export type WindowDefinition = { id:string; title:string; icon?:ReactNode; content:ReactNode; initial:{x:number;y:number;width:number;height:number}; singleton?:boolean };
 type WindowState = { x:number;y:number;width:number;height:number; minimized:boolean; closed:boolean; z:number; dock?:"left"|"right" };
 type Drag = { id:string; mode:"move"|"resize"; startX:number;startY:number; initial:WindowState };
 
@@ -20,11 +21,11 @@ export function WindowManager({windows,onClose}:{windows:WindowDefinition[];onCl
   return <>
     {windows.map(w=>{const s=states[w.id]??defaults[w.id];if(!s||s.closed||s.minimized)return null;const style=s.dock?{left:s.dock==="left"?0:undefined,right:s.dock==="right"?0:undefined,top:82,width:Math.min(390,window.innerWidth*.34),height:window.innerHeight-107,zIndex:s.z}:{left:s.x,top:s.y,width:s.width,height:s.height,zIndex:s.z};return <section key={w.id} className={`float-window ${s.dock?`docked ${s.dock}`:""}`} style={style} onPointerDown={()=>focus(w.id)} onKeyDown={e=>{if(!(e.altKey&&["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)))return;e.preventDefault();const step=e.shiftKey?40:10;mutate(w.id,{dock:undefined,x:clamp(s.x+(e.key==="ArrowLeft"?-step:e.key==="ArrowRight"?step:0),0,window.innerWidth-180),y:clamp(s.y+(e.key==="ArrowUp"?-step:e.key==="ArrowDown"?step:0),82,window.innerHeight-90)})}} tabIndex={0} aria-label={w.title}>
       <header className="float-title" onDoubleClick={()=>mutate(w.id,{dock:s.dock?undefined:"right"})} onPointerDown={e=>{if((e.target as HTMLElement).closest("button"))return;drag.current={id:w.id,mode:"move",startX:e.clientX,startY:e.clientY,initial:s};(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)}}>
-        <span>{w.icon??"◇"}</span><strong>{w.title}</strong><small>{s.dock?"DOCKED":"FLOATING"}</small>
-        <button title="Dock left" onClick={()=>mutate(w.id,{dock:s.dock==="left"?undefined:"left"})}>◧</button>
-        <button title="Minimize" onClick={()=>mutate(w.id,{minimized:true})}>—</button>
-        <button title="Close" onClick={()=>{mutate(w.id,{closed:true});onClose?.(w.id)}}>×</button>
+        <span>{w.icon??<SquareDashed/>}</span><strong>{w.title}</strong><small>{s.dock?"DOCKED":"FLOATING"}</small>
+        <button aria-label="Dock left" title="Dock left" onClick={()=>mutate(w.id,{dock:s.dock==="left"?undefined:"left"})}><PanelLeft/></button>
+        <button aria-label="Minimize" title="Minimize" onClick={()=>mutate(w.id,{minimized:true})}><Minus/></button>
+        <button aria-label="Close" title="Close" onClick={()=>{mutate(w.id,{closed:true});onClose?.(w.id)}}><X/></button>
       </header><div className="float-content">{w.content}</div><i className="resize-grip" onPointerDown={e=>{drag.current={id:w.id,mode:"resize",startX:e.clientX,startY:e.clientY,initial:s};e.currentTarget.setPointerCapture?.(e.pointerId)}} /></section>})}
-    <div className="window-shelf"><button onClick={reset} title="Reset workspace layout">⌂ Layout</button>{windows.map(w=>{const s=states[w.id]??defaults[w.id];return(s?.minimized||s?.closed)?<button key={w.id} onClick={()=>focus(w.id)}><span>{w.icon??"◇"}</span>{w.title}</button>:null})}</div>
+    <div className="window-shelf"><button onClick={reset} title="Reset workspace layout"><Home/> Layout</button>{windows.map(w=>{const s=states[w.id]??defaults[w.id];return(s?.minimized||s?.closed)?<button key={w.id} onClick={()=>focus(w.id)}><span>{w.icon??<SquareDashed/>}</span>{w.title}</button>:null})}</div>
   </>
 }
