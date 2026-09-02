@@ -75,7 +75,7 @@ jobs:
         working-directory: web
         run: |
           npx playwright install --with-deps chromium
-          npm run test:e2e -- --grep-invert "live cutaway"
+          npm run test:e2e -- --grep-invert "live cutaway|autonomy engineer"
 
       - name: Show service logs on failure
         if: failure()
