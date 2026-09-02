@@ -384,6 +384,56 @@ func TestCompileResolvesBeachDepthAndNauticalMileIntent(t *testing.T) {
 	}
 }
 
+func TestCompileResolvesRelativeSeawardRoundTripAndBuildsAdvisorStrategies(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	vesselID := snapshot.Groups[0].MemberIDs[0]
+	start := m.vessels[vesselID].Telemetry.Position
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation: Mutation{RequestID: "relative-mission", IdempotencyKey: "relative-mission", ExpectedVersion: snapshot.FleetVersion},
+		Name:     "Seaward round trip", TargetIDs: []string{vesselID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation: Mutation{RequestID: "relative-compile", IdempotencyKey: "relative-compile", ExpectedVersion: mission.Version},
+		Text:     "Travel 15nm from current location heading out to sea, then return to your current location",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(draft.Ambiguities) != 0 || draft.GeometrySource != "intent:relative-seaward:15.0nm" {
+		t.Fatalf("relative intent was not resolved: %#v", draft)
+	}
+	if len(draft.Waypoints) != 2 || draft.Waypoints[0][1] >= start[1] || draft.Waypoints[1] != start {
+		t.Fatalf("unexpected out-and-back route: start=%v waypoints=%v", start, draft.Waypoints)
+	}
+	current := m.missions[mission.ID]
+	if len(current.Geometry.IncludedAreas) != 1 || len(current.Geometry.Waypoints) != 2 {
+		t.Fatalf("mission did not retain inferred route: %#v", current.Geometry)
+	}
+	advisor := deterministicAdvisor(1, draft.GuidanceKind, "test")
+	draft, err = m.ApplyAdvisor(draft.ID, advisor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans, err := m.GeneratePlans(mission.ID, PlansRequest{
+		Mutation: Mutation{RequestID: "relative-plans", IdempotencyKey: "relative-plans", ExpectedVersion: current.Version}, DraftID: draft.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) != 3 {
+		t.Fatalf("expected three strategy cards, got %d", len(plans))
+	}
+	for _, plan := range plans {
+		if plan.Formation != "independent" || len(plan.Assignments) != 1 || len(plan.Assignments[0].Route) != 3 {
+			t.Fatalf("invalid solo strategy plan: %#v", plan)
+		}
+	}
+}
+
 func TestColoredWaypointsPersistRenumberAndCompileByColor(t *testing.T) {
 	m := New("", slog.Default())
 	snapshot := m.Snapshot()

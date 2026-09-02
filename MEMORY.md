@@ -5,8 +5,8 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: The real LLM mission-advisor boundary is deployed on VM 214 and all twelve vessel nodes; preserve its strict advisory-only boundary while continuing M7 hardening.
-- Last meaningful change: Single- and multi-vessel mission compilation now sends a bounded planning context to GPT-5.6 Luna, validates structured strategy output, displays provider/model/attempt evidence, and feeds accepted strategies into deterministic Go route/policy computation. Every vessel node has direct OpenAI Responses API fallback when its optional Python service is absent.
-- Next step: rehearse the main single-vessel shoreline workflow and Player B at the current Quick Tunnels. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local speech runtimes.
+- Last meaningful change: Relative navigation intent such as `Travel 15nm from current location heading out to sea, then return` now resolves deterministically into a reviewable seaward out-and-back corridor before GPT-5.6 Luna's strategies enter Go route/policy generation. The exact live sentence produced three distinct OpenAI-backed plan cards instead of `COMMAND_AMBIGUOUS`.
+- Next step: add first-class select/delete/clear controls for operating and exclusion polygons, and improve the planner's explanation when every returned strategy is policy-prohibited. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
 ## Current State
@@ -344,6 +344,14 @@ When sources conflict, use this order:
 
 ## Completed Work
 
+### 2026-09-02 - Relative seaward route resolution
+
+- Context: GPT-5.6 Luna returned three valid advisory strategies for `Travel 15nm from current location heading out to sea, then return`, but deterministic planning rejected the draft with `COMMAND_AMBIGUOUS` because no area or waypoint existed.
+- Decision: Resolve bounded relative-distance commands in deterministic Go using selected-vessel positions, explicit/cardinal or fixture-backed seaward bearing, exact unit conversion, optional return-to-start, and a review corridor. Preserve the requested distance for policy evaluation; never let model prose invent coordinates or silently shorten an unsafe request.
+- Files: `internal/fleetops/manager.go` and `internal/fleetops/manager_test.go`.
+- Commands/tests: containerized Go tests for fleet operations, agent, and API; production Docker build; live API test using the exact sentence and GPT-5.6 Luna.
+- Result: The live workflow returned geometry source `intent:relative-seaward:15.0nm`, zero ambiguities, three accepted OpenAI strategies, and three deterministic plan cards. All three were honestly prohibited because the 55.56 km round trip exceeds the retained 25 km route/energy envelope. The temporary verification mission was deleted. VM 214 core and Player B ingress are healthy; no snapshot or GitHub-hosted workflow.
+
 ### 2026-09-02 - Centered New Mission control
 
 - Context: The add icon inherited the normal mission tab's seven-pixel status grid column, so it appeared at the left of an otherwise empty tab.
@@ -486,6 +494,8 @@ When sources conflict, use this order:
 
 ## Open Follow-ups
 
+- Add polygon selection plus right-click delete and explicit `Clear operating areas` / `Clear exclusion areas` actions. The current Fleet/Groups Clear action only clears vessel selection, and waypoint clearing does not remove mission polygons.
+- When all generated strategies are prohibited, keep the cards visible but add a concise constraint explanation and a bounded revision action. The verified 15 nm outbound-plus-return request is 55.56 km, so the current 25 km route limit and energy model correctly prohibit all three strategies rather than silently shortening the operator's order.
 - Replace M7's central deterministic coordinator/failover model with actual per-faction replicated consensus and durable follower forwarding. Add unique faction/node mTLS identities and prove committed-state convergence plus split-brain prevention across real radio-plane partitions before describing the fabric as a real Raft deployment.
 - Package and benchmark the independent Python agent, Pocket TTS, and node-local STT roles on every vessel VM. The current nodes run the same complete Go/API/UI binary and have provider credentials, but they do not yet run twelve separate Python/speech services or physical GPUs.
 - Reuse MetaCog's architectural patterns—not its complete application—for the next KeelMesh agent harness: typed tool schemas, lease-bound capability sets, durable turn checkpoints, idempotent requests, approval pauses, immutable receipts, and provider/tool evidence. The agent may operate UI presentation and draft map/mission state, but movement authority and fictional game effects still require deterministic Go validation and the configured human/ROE gate.

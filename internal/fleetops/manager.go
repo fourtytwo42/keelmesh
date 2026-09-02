@@ -127,6 +127,8 @@ var legacySpawnCenters = []domain.GeoPointV2{{-71.375, 41.49}, {-71.315, 41.47},
 var reserveAfterLabel = regexp.MustCompile(`(?i)(?:reserve|battery)[^0-9]{0,24}([0-9]{1,3})\s*%`)
 var reserveBeforeLabel = regexp.MustCompile(`(?i)([0-9]{1,3})\s*%\s*(?:reserve|battery)`)
 var coastalDistance = regexp.MustCompile(`(?i)(?:within|inside|no more than|max(?:imum)?(?: distance)?(?: of)?)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:nm|nmi|nautical\s*miles?)`)
+var relativeTravelDistance = regexp.MustCompile(`(?i)\b(?:travel|go|proceed|sail|run|head|move)?\s*([0-9]+(?:\.[0-9]+)?)\s*(nm|nmi|nautical\s*miles?|km|kilometers?|mi|miles?)\b`)
+var explicitHeading = regexp.MustCompile(`(?i)\b(?:heading|bearing|course)\s*(?:of|to|at)?\s*([0-9]{1,3}(?:\.[0-9]+)?)\s*(?:deg(?:rees?)?|°)?\b`)
 var waypointColor = regexp.MustCompile(`(?i)\b(amber|red|green|cyan|blue|violet|purple|white)\s+(?:waypoints?|route|markers?)\b`)
 
 // coastalDepthRoutes are deterministic samples from the packaged NOAA ETOPO
@@ -755,6 +757,18 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 			missionChanged = true
 		}
 	}
+	if len(wps) == 0 && len(mission.Geometry.IncludedAreas) == 0 {
+		if polygon, route, source, description, ok := m.resolveRelativeGeometry(req.Text, targets); ok {
+			mission.Geometry.Revision++
+			mission.Geometry.IncludedAreas = [][][]float64{polygon}
+			mission.Geometry.Waypoints = route
+			mission.UpdatedAt = time.Now().UTC()
+			wps = route
+			geometrySource = source
+			notes = append(notes, description)
+			missionChanged = true
+		}
+	}
 	constraints := mission.Constraints
 	if distance, ok := requestedCoastalDistance(req.Text); ok {
 		constraints.MaximumShoreDistanceM = distance
@@ -934,6 +948,120 @@ func (m *Manager) resolveNamedGeometry(text string, targets []string) ([][]float
 	}
 	polygon := coastalBounds(route, distance)
 	return polygon, route, fmt.Sprintf("intent:map-depth-coastal-corridor-%02d", nearest+1), true
+}
+
+// resolveRelativeGeometry converts a bounded relative navigation instruction
+// into reviewable map geometry. The language model may suggest strategy, but
+// deterministic code owns coordinates and preserves the exact requested
+// distance for policy evaluation.
+func (m *Manager) resolveRelativeGeometry(text string, targets []string) ([][]float64, []domain.GeoPointV2, string, string, bool) {
+	match := relativeTravelDistance.FindStringSubmatch(text)
+	if len(match) != 3 {
+		return nil, nil, "", "", false
+	}
+	value, err := strconv.ParseFloat(match[1], 64)
+	if err != nil || value <= 0 {
+		return nil, nil, "", "", false
+	}
+	unit := strings.ToLower(match[2])
+	distanceM := value * 1852
+	unitLabel := "nm"
+	switch {
+	case strings.HasPrefix(unit, "km"), strings.HasPrefix(unit, "kilometer"):
+		distanceM, unitLabel = value*1000, "km"
+	case unit == "mi", strings.HasPrefix(unit, "mile"):
+		distanceM, unitLabel = value*1609.344, "mi"
+	}
+	// Keep natural-language resolution bounded. Larger requests require
+	// explicit geometry so an accidental transcription cannot create a huge
+	// route before the operator sees it.
+	if distanceM > 50*1852 {
+		return nil, nil, "", "", false
+	}
+
+	lower := strings.ToLower(text)
+	bearing, direction, ok := requestedBearing(lower)
+	if !ok {
+		return nil, nil, "", "", false
+	}
+	centroid := domain.GeoPointV2{}
+	for _, id := range targets {
+		position := m.vessels[id].Telemetry.Position
+		centroid[0] += position[0]
+		centroid[1] += position[1]
+	}
+	centroid[0] /= float64(len(targets))
+	centroid[1] /= float64(len(targets))
+	outbound := destinationPoint(centroid, bearing, distanceM)
+	route := []domain.GeoPointV2{outbound}
+	returning := strings.Contains(lower, "return") || strings.Contains(lower, "come back") || strings.Contains(lower, "round trip") || strings.Contains(lower, "round-trip")
+	if returning {
+		route = append(route, centroid)
+	}
+	all := append([]domain.GeoPointV2{centroid}, route...)
+	polygon := routeBounds(all, 926) // half-nautical-mile review corridor
+	source := fmt.Sprintf("intent:relative-%s:%.1f%s", direction, value, unitLabel)
+	description := fmt.Sprintf("Resolved a %.1f %s %s leg from the selected asset position%s; exact coordinates and the return leg are shown for review before authorization.", value, unitLabel, direction, map[bool]string{true: " with a return to the starting position", false: ""}[returning])
+	return polygon, route, source, description, true
+}
+
+func requestedBearing(lower string) (float64, string, bool) {
+	if match := explicitHeading.FindStringSubmatch(lower); len(match) == 2 {
+		value, err := strconv.ParseFloat(match[1], 64)
+		if err == nil && value >= 0 && value <= 360 {
+			return math.Mod(value, 360), fmt.Sprintf("heading-%03.0f", math.Mod(value, 360)), true
+		}
+	}
+	// In this packaged Narragansett fixture, open Atlantic water is south of
+	// every seeded operating group. This is map knowledge, not model inference.
+	for _, phrase := range []string{"out to sea", "out to the sea", "offshore", "open ocean", "open water", "seaward"} {
+		if strings.Contains(lower, phrase) {
+			return 180, "seaward", true
+		}
+	}
+	cardinals := []struct {
+		words   []string
+		bearing float64
+		name    string
+	}{
+		{[]string{"north", "northward"}, 0, "north"},
+		{[]string{"northeast", "north-east"}, 45, "northeast"},
+		{[]string{"east", "eastward"}, 90, "east"},
+		{[]string{"southeast", "south-east"}, 135, "southeast"},
+		{[]string{"south", "southward"}, 180, "south"},
+		{[]string{"southwest", "south-west"}, 225, "southwest"},
+		{[]string{"west", "westward"}, 270, "west"},
+		{[]string{"northwest", "north-west"}, 315, "northwest"},
+	}
+	// Check compound directions before their component words.
+	order := []int{1, 3, 5, 7, 0, 2, 4, 6}
+	for _, index := range order {
+		candidate := cardinals[index]
+		for _, word := range candidate.words {
+			if regexp.MustCompile(`\b` + regexp.QuoteMeta(word) + `\b`).MatchString(lower) {
+				return candidate.bearing, candidate.name, true
+			}
+		}
+	}
+	return 0, "", false
+}
+
+func destinationPoint(start domain.GeoPointV2, bearingDeg, distanceM float64) domain.GeoPointV2 {
+	radians := bearingDeg * math.Pi / 180
+	lat := start[1] + math.Cos(radians)*distanceM/111_000
+	lonScale := 111_000 * math.Cos(start[1]*math.Pi/180)
+	return domain.GeoPointV2{start[0] + math.Sin(radians)*distanceM/lonScale, lat}
+}
+
+func routeBounds(route []domain.GeoPointV2, paddingM float64) [][]float64 {
+	minX, maxX, minY, maxY := route[0][0], route[0][0], route[0][1], route[0][1]
+	for _, point := range route[1:] {
+		minX, maxX = math.Min(minX, point[0]), math.Max(maxX, point[0])
+		minY, maxY = math.Min(minY, point[1]), math.Max(maxY, point[1])
+	}
+	latPad := paddingM / 111_000
+	lonPad := paddingM / (111_000 * math.Cos(((minY+maxY)/2)*math.Pi/180))
+	return [][]float64{{minX - lonPad, minY - latPad}, {maxX + lonPad, minY - latPad}, {maxX + lonPad, maxY + latPad}, {minX - lonPad, maxY + latPad}, {minX - lonPad, minY - latPad}}
 }
 
 func requestedCoastalDistance(text string) (float64, bool) {
