@@ -350,7 +350,7 @@ When sources conflict, use this order:
 - Decision: Resolve bounded relative-distance commands in deterministic Go using selected-vessel positions, explicit/cardinal or fixture-backed seaward bearing, exact unit conversion, optional return-to-start, and a review corridor. Preserve the requested distance for policy evaluation; never let model prose invent coordinates or silently shorten an unsafe request.
 - Files: `internal/fleetops/manager.go` and `internal/fleetops/manager_test.go`.
 - Commands/tests: containerized Go tests for fleet operations, agent, and API; production Docker build; live API test using the exact sentence and GPT-5.6 Luna.
-- Result: The live workflow returned geometry source `intent:relative-seaward:15.0nm`, zero ambiguities, three accepted OpenAI strategies, and three deterministic plan cards. All three were honestly prohibited because the 55.56 km round trip exceeds the retained 25 km route/energy envelope. The temporary verification mission was deleted. VM 214 core and Player B ingress are healthy; no snapshot or GitHub-hosted workflow.
+- Result: The live workflow returned geometry source `intent:relative-seaward:15.0nm`, zero ambiguities, three accepted OpenAI strategies, and three deterministic plan cards. All three were honestly prohibited because the 55.56 km round trip exceeds the retained 25 km route/energy envelope. The temporary verification mission was deleted. Commit `7691de8` is pushed; VM 214 and all twelve vessel nodes are healthy and run binary SHA-256 `873149509eaedc2056f6e8293d3d0c331ccbe097ed0b032748f35f42a097f67e`. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - Centered New Mission control
 
