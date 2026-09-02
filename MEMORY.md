@@ -4,7 +4,7 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: M3 Infrastructure at Scale is implemented, deployed, measured, and awaiting final GitHub CI confirmation.
+- Current task: M3 Infrastructure at Scale is implemented, deployed, measured, and verified by clean GitHub CI.
 - Last meaningful change: the release evidence run proved exact event accounting, real worker termination/rebalance/recovery, quarantine redrive, pgvector retrieval, and Kafka earliest-offset shadow replay on VM 214.
 - Next step: rehearse the Operator → Resilience → Cutaway interview walkthrough; M4 AI/voice/tooling remains separate.
 - Blockers: None.
@@ -129,6 +129,7 @@ When sources conflict, use this order:
 
 ## Verification Ledger
 
+- 2026-09-01: Pushed M3 implementation `8416ccb`, Cutaway reconnect fix `975584a`, and CI topology correction `b3c8f1f`. GitHub Actions run `33581609728` passed in 3m53s: the degraded core job passed M1/M2 tests and three browser flows without Kafka/PostgreSQL, while the full scale job passed Compose/Kustomize validation, the real M3 fault/recovery/replay verifier, and the Cutaway browser workflow against all scale services.
 - 2026-09-01: M3 release evidence on VM 214 passed with seed `424242`: 1,000 vessels at 2 Hz, 123,416 attempted and exactly accounted events, 2,216 events/s measured baseline, 13.4 ms ingest p95, 228.6 ms p99, 4.32 ms foreground API p95, peak Kafka lag 202, Worker 2 PID `15 -> 29`, two-worker degraded operation, 20.6 s recovery, 978 duplicates suppressed, 242 out-of-order records, 485 quarantined deliveries, zero drops, successful repair/redrive, and 1,000/1,000 live/shadow projection parity with matching SHA-256 checksum. Evidence files: `evidence/m3.json` and `evidence/m3.md`.
 - 2026-09-01: Latest Go tests and vet passed; frontend strict typecheck, Vitest, and production build passed; Playwright passed four workflows including the live Cutaway; M1 and M2 verifiers remained green; base and AWS Kustomize overlays each rendered four deployments. Prometheus `/metrics`, eight PostgreSQL hash partitions, pgvector nearest-fixture retrieval, Compose health, and private-only Kafka/PostgreSQL networking were inspected directly.
 - 2026-09-01: No M3 Proxmox snapshot was created. The durable thin-pool safety rule remains in force.
