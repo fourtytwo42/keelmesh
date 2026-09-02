@@ -45,7 +45,7 @@ def main():
         if not args.json_path:raise RuntimeError("--resources-only requires --json")
         path=Path(args.json_path);report=json.loads(path.read_text());report.update(build_metadata());report["container_resources"]=container_resources();path.write_text(json.dumps(report,indent=2)+"\n")
         if args.markdown_path:
-            md=Path(args.markdown_path);text=md.read_text();metadata_heading="## Build provenance";text=text.split(metadata_heading)[0].rstrip()+"\n\n"+metadata_heading+f"\n\n- Commit: `{report['commit']}`\n- Image: `{report['image_digest']}`\n\n";heading="## Container resources (post-drill)";text+=heading+"\n\n"+"\n".join(f"- {item['name']}: CPU {item['cpu']}, memory {item['memory']} ({item['memory_percent']})" for item in report["container_resources"])+"\n";md.write_text(text)
+            md=Path(args.markdown_path);text=md.read_text();metadata_heading="## Build provenance";resources_heading="## Container resources (post-drill)";text=text.split(resources_heading)[0].split(metadata_heading)[0].rstrip()+"\n\n"+metadata_heading+f"\n\n- Commit: `{report['commit']}`\n- Image: `{report['image_digest']}`\n\n";text+=resources_heading+"\n\n"+"\n".join(f"- {item['name']}: CPU {item['cpu']}, memory {item['memory']} ({item['memory_percent']})" for item in report["container_resources"])+"\n";md.write_text(text)
         print(json.dumps(report["container_resources"],indent=2));return
     platform=wait_for(base,lambda p:p["available"] and len([w for w in p["workers"] if w["state"]=="running"])==3,30,"three live workers")
     if platform.get("active_run",{}).get("state")=="running":
