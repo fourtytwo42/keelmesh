@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: Plan M6 Fleet Operations Workspace after the completed M5 interview release.
-- Last meaningful change: Converted the user's fleet-management notes into `M6_FLEET_OPERATIONS_PLAN.md`, covering scalable vessel selection, persistent groups/names/missions, per-vessel constraint inheritance, real East Coast maps, formations, manual guidance, AI planning, Pocket TTS/Morgan, streaming STT, and compact non-blue UI.
+- Last meaningful change: Defined a universal M6 floating-window manager: every popup is movable, minimizable, closable, restorable, viewport-clamped, keyboard-manageable, and optionally resizable/dockable; unresolved alerts remain represented in the status center after their popup closes.
 - Next step: review the M6 scope and implement M6A first: local map, 24 named/classed vessels, scalable selection, groups, swarm inspector, environmental metrics, vessel sprites, and the compact visual shell.
 - Blockers: The optional M5 Proxmox snapshot still awaits host storage preflight and explicit user authorization; no snapshot was attempted.
 

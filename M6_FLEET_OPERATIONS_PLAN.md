@@ -238,7 +238,19 @@ Initial gates: p50 first partial below 250 ms, p95 endpoint-to-final below 700 m
   - Dockable right inspector/planner.
   - Thin bottom command/voice dock.
   - Minimized panels appear as labeled chips in a bottom shelf.
-- Every popup can be closed, minimized, restored, and moved to a dock. Essential alerts cannot be permanently hidden; they collapse into the status bar.
+- Use one shared floating-window manager for every popup, inspector, planner, approval sheet, alert detail, chat, voice, and engineering panel.
+- Every popup must be:
+  - Movable by dragging a clearly visible title bar.
+  - Minimized to a labeled chip in the bottom shelf.
+  - Closable without changing or deleting the underlying mission state.
+  - Restorable to its previous size and position.
+  - Resizable when its content benefits from additional space.
+  - Dockable or snappable to the left, right, or bottom work area.
+- Clamp moved or restored windows to the visible viewport so a title bar and close control can never become unreachable after a resize or resolution change.
+- Bring the active window to the front deterministically while preventing unbounded `z-index` growth. Reopening an existing singleton panel focuses it instead of creating a duplicate.
+- Preserve independent window geometry per panel and operator. Reset layout returns to a compact safe default.
+- Provide keyboard equivalents: focus-cycle through open windows, move/resize mode, minimize, close, restore, and reset layout. Dragging is never the only way to manage a window.
+- Closing an alert popup dismisses only that presentation. An unresolved essential alert remains visible as a compact status-center item until acknowledged or resolved; it cannot be hidden by closing its floating window.
 - Preserve keyboard navigation, visible focus, text-plus-color state, reduced motion, and 1280×720 usability.
 - Save panel layout, density, selected voice, map layers, and last mission tabs per operator.
 
@@ -264,6 +276,7 @@ Add versioned contracts mirrored in Go, Python, TypeScript, and fixtures:
 - `FleetPlanCandidateV2`
 - `VoiceCatalogV1`
 - `TranscriptEventV1`
+- `WindowLayoutV1`
 
 Initial APIs:
 
@@ -335,7 +348,9 @@ All persistent mutations use request ID, idempotency key, and the relevant fleet
 - The map remains interactive at 1,000 visible features; low zoom clusters instead of rendering 1,000 labels.
 - The application starts and performs map, selection, grouping, M1/M2/M5, TTS, and selected STT operations offline.
 - Voice interruption stops playback immediately; partial/final transcript timing is visible and measured.
-- Every panel can minimize/restore/close without losing mission state, and the full workflow remains usable at 1280×720.
+- Every panel can move, resize where supported, minimize, restore, dock, and close without losing mission state.
+- Reopening a singleton panel focuses the existing instance; windows remain reachable after viewport changes and never escape the screen bounds.
+- Window layout survives reload, can be reset, has keyboard equivalents, and the full workflow remains usable at 1280×720.
 
 ## Scope guard
 
