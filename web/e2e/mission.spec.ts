@@ -98,7 +98,8 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   await expect(groupMenu.getByRole("menuitem", { name: "Operational group" })).toBeEnabled();
   await groupMenu.getByRole("menuitem", { name: "Operational group" }).click();
   await expect(page.locator(".selection-ribbon > strong")).toHaveText("6");
-  await page.keyboard.press("Escape");
+  await page.getByTitle("Clear selection").click();
+  await expect(page.locator(".selection-ribbon > strong")).toHaveText("0");
   await canvas.dispatchEvent("click", { detail: 3, bubbles: true, clientX: 700, clientY: 250 });
   await expect(page.locator(".selection-ribbon > strong")).toHaveText("48");
   await page.keyboard.press("Escape");
@@ -111,6 +112,9 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   await expect(allMenu.getByRole("menuitem", { name: "Operational group" })).toBeVisible();
   await allMenu.getByRole("menuitem", { name: "All accessible vessels" }).click();
   await expect(page.locator(".selection-ribbon > strong")).toHaveText("48");
+  await canvas.click({ position: { x: 700, y: 250 }, button: "right" });
+  await page.getByRole("menu").getByRole("menuitem", { name: "Clear selection" }).click();
+  await expect(page.locator(".selection-ribbon > strong")).toHaveText("0");
 });
 
 test("dragged geometry follows the exact preview, authorization, and execution path", async ({ page }) => {

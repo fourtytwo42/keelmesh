@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: M6 map selection now has explicit scope escalation: double-click chooses a vessel's operational group and binds it to the bottom planning dock; triple-click selects every vessel in the geographic viewport; quadruple-click selects the full accessible fleet. A right-click menu exposes operational-group, visible-vessel, and accessible-vessel selection without relying on hidden gestures.
+- Last meaningful change: M6 map selection now has explicit scope escalation and clearing: double-click chooses a vessel's operational group and binds it to the bottom planning dock; triple-click selects every vessel in the geographic viewport; quadruple-click selects the full accessible fleet. The selection ribbon and right-click scope menu both provide one-action Clear Selection controls.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -323,6 +323,14 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - One-action selection clearing
+
+- Context: The top selection ribbon required removing selected vessel chips one at a time.
+- Decision: Add a visible Clear control beside the selected-vessel chips and the same Clear Selection action to the map context menu; preserve Escape as the keyboard equivalent and Pirate-mode nomenclature.
+- Files: `web/src/FleetWorkspace.tsx`, `web/src/OperationsMap.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: TypeScript typecheck, seven Vitest assertions, Vite production build, targeted Playwright coverage for both clear paths, and all twelve node health checks.
+- Result: Any selection scope can be cleared atomically from either the top ribbon or map context menu. VM 214 and all twelve vessel nodes run binary SHA-256 `324bc56bdea367bfb8c36a4dbac79ee5d4fbe19f5a286aa0141755f86440005d`. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - Planning-aware multi-scope map selection
 
