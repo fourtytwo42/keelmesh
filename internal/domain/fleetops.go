@@ -191,13 +191,25 @@ type MissionStrategyV2 struct {
 }
 
 type MissionAdvisorV2 struct {
-	State       string              `json:"state"`
-	Provider    string              `json:"provider"`
-	Model       string              `json:"model"`
-	Summary     string              `json:"summary"`
-	MissionName string              `json:"mission_name,omitempty"`
-	Strategies  []MissionStrategyV2 `json:"strategies"`
-	Attempts    []ProviderAttemptV1 `json:"attempts"`
+	State            string              `json:"state"`
+	Provider         string              `json:"provider"`
+	Model            string              `json:"model"`
+	Summary          string              `json:"summary"`
+	MissionName      string              `json:"mission_name,omitempty"`
+	GeometryOptionID string              `json:"geometry_option_id,omitempty"`
+	Strategies       []MissionStrategyV2 `json:"strategies"`
+	Attempts         []ProviderAttemptV1 `json:"attempts"`
+}
+
+type MissionGeometryOptionV2 struct {
+	ID                  string       `json:"id"`
+	Name                string       `json:"name"`
+	Description         string       `json:"description"`
+	Center              GeoPointV2   `json:"center"`
+	Boundary            []GeoPointV2 `json:"boundary"`
+	Waypoints           []GeoPointV2 `json:"waypoints"`
+	DistanceToTargetsKM float64      `json:"distance_to_targets_km"`
+	DepthValidated      bool         `json:"depth_validated"`
 }
 
 type MissionPlanningVesselV2 struct {
@@ -226,6 +238,8 @@ type MissionPlanningContextV2 struct {
 	ExclusionAreas   int                       `json:"exclusion_areas"`
 	WaypointCount    int                       `json:"waypoint_count"`
 	GeometrySource   string                    `json:"geometry_source,omitempty"`
+	GeometryOptions  []MissionGeometryOptionV2 `json:"geometry_options,omitempty"`
+	MapBounds        [][]float64               `json:"map_bounds"`
 	FormationCurrent string                    `json:"formation_current"`
 }
 

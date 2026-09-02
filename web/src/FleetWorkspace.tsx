@@ -2557,6 +2557,11 @@ function Planner({
             <em>{draft.advisor.model}</em>
           </header>
           <p>{draft.advisor.summary}</p>
+          {draft.advisor.geometry_option_id && (
+            <code className="advisor-geometry">
+              AI GEOMETRY · {draft.advisor.geometry_option_id}
+            </code>
+          )}
           <div>
             {draft.advisor.attempts.map((attempt, index) => (
               <span

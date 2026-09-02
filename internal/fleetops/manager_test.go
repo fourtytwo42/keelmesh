@@ -435,6 +435,55 @@ func TestCompileResolvesRelativeSeawardRoundTripAndBuildsAdvisorStrategies(t *te
 	}
 }
 
+func TestAdvisorSelectsDepthValidatedMissionGeometry(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	vesselID := snapshot.Groups[0].MemberIDs[0]
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation:  Mutation{RequestID: "geometry-mission", IdempotencyKey: "geometry-mission", ExpectedVersion: snapshot.FleetVersion},
+		Name:      "AI geometry test",
+		TargetIDs: []string{vesselID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation: Mutation{RequestID: "geometry-compile", IdempotencyKey: "geometry-compile", ExpectedVersion: mission.Version},
+		Text:     "patrol the shoreline near the Sakonnet north reach",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	context, err := m.PlanningContext(draft.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected domain.MissionGeometryOptionV2
+	for _, option := range context.GeometryOptions {
+		if option.ID == "coastal-corridor-03" {
+			selected = option
+		}
+	}
+	if selected.ID == "" || !selected.DepthValidated || len(selected.Waypoints) < 2 {
+		t.Fatalf("expected bounded Sakonnet geometry option, got %#v", context.GeometryOptions)
+	}
+	advisor := deterministicAdvisor(1, draft.GuidanceKind, "test")
+	advisor.Provider = "openai"
+	advisor.Model = "gpt-5.6-luna"
+	advisor.GeometryOptionID = selected.ID
+	draft, err = m.ApplyAdvisor(draft.ID, advisor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.GeometrySource != "advisor:openai:coastal-corridor-03" || len(draft.Ambiguities) != 0 {
+		t.Fatalf("advisor geometry was not accepted: %#v", draft)
+	}
+	updated := m.missions[mission.ID]
+	if len(updated.Geometry.Waypoints) != len(selected.Waypoints) || updated.Geometry.Waypoints[0] != selected.Waypoints[0] {
+		t.Fatalf("mission did not receive the exact validated option: %#v", updated.Geometry)
+	}
+}
+
 func TestMissionNamesAreUniqueAndPersistedDuplicatesAreRenumbered(t *testing.T) {
 	m := New("", slog.Default())
 	snapshot := m.Snapshot()

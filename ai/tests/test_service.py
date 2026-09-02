@@ -7,6 +7,7 @@ from keelmesh_ai.service import (
     digest,
     openai_response_text,
     parse_eval_json,
+    parse_geometry_option_id,
     parse_mission_json,
     parse_model_json,
 )
@@ -146,3 +147,17 @@ def test_strategy_name_maps_to_bounded_operation_name() -> None:
         strategy_name if strategy_name.lower().startswith("operation ") else f"Operation {strategy_name}"
     )
     assert mission_name[:64] == "Operation Close Shoreline Patrol"
+
+
+def test_geometry_selection_is_limited_to_supplied_options() -> None:
+    payload = '{"geometry_option_id":"coastal-corridor-03","strategies":[]}'
+    assert (
+        parse_geometry_option_id(payload, ["coastal-corridor-01", "coastal-corridor-03"])
+        == "coastal-corridor-03"
+    )
+    try:
+        parse_geometry_option_id(payload, ["coastal-corridor-01"])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("provider geometry must be selected from the supplied allow-list")

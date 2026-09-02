@@ -154,6 +154,16 @@ var coastalDepthRoutes = [][]domain.GeoPointV2{
 	{{-71.54941, 41.16875}, {-71.56285, 41.18542}, {-71.55508, 41.20208}, {-71.55360, 41.21875}, {-71.56458, 41.22894}},
 	{{-71.56458, 41.13877}, {-71.54792, 41.14806}, {-71.54494, 41.15208}, {-71.54792, 41.16451}, {-71.54941, 41.16875}, {-71.56285, 41.18542}, {-71.55508, 41.20208}},
 }
+var coastalRouteNames = []string{
+	"Newport West Passage",
+	"Jamestown–Newport Reach",
+	"Sakonnet North Reach",
+	"Point Judith Approach",
+	"Narragansett Coastal Watch",
+	"Sakonnet East Reach",
+	"Block Island North Watch",
+	"Block Island West Watch",
+}
 
 func New(databaseURL string, logger *slog.Logger) *Manager {
 	m := &Manager{logger: logger, databaseURL: databaseURL, secret: []byte("keelmesh-m6-runtime-authority"), fleetVersion: 1, vessels: map[string]domain.VesselProfileV2{}, groups: map[string]domain.OperationalGroupV2{}, collections: map[string]domain.SavedCollectionV2{}, missions: map[string]domain.MissionWorkspaceV2{}, drafts: map[string]domain.CommandDraftV2{}, plans: map[string]domain.FleetPlanV2{}, leases: map[string]domain.FleetLeaseV2{}, idempotency: map[string]string{}, startedPlans: map[string]string{}}
@@ -897,7 +907,11 @@ func (m *Manager) PlanningContext(draftID string) (domain.MissionPlanningContext
 		v := m.vessels[id]
 		targets = append(targets, domain.MissionPlanningVesselV2{ID: v.ID, Name: v.DisplayName, Class: v.Class.Name, Position: v.Telemetry.Position, Reserve: v.Telemetry.Reserve, MaxSpeedMPS: v.Class.MaxSpeedMPS, PNTIntegrity: v.Telemetry.PNTIntegrity, UncertaintyM: v.Telemetry.UncertaintyM, GroupCode: v.GroupCode, Communications: "authenticated mesh reachable"})
 	}
-	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, 0), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, FormationCurrent: mission.Formation}, nil
+	geometryOptions := []domain.MissionGeometryOptionV2{}
+	if advisorGeometryEligible(draft, mission) {
+		geometryOptions = m.geometryOptionsLocked(draft.TargetIDs, draft.SourceText)
+	}
+	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, 0), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, GeometryOptions: geometryOptions, MapBounds: [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, FormationCurrent: mission.Formation}, nil
 }
 
 // ApplyAdvisor validates and freezes advisory strategies into the immutable
@@ -913,13 +927,51 @@ func (m *Manager) ApplyAdvisor(draftID string, advisor domain.MissionAdvisorV2) 
 	if !validAdvisor(advisor, len(draft.TargetIDs)) {
 		advisor = deterministicAdvisor(len(draft.TargetIDs), draft.GuidanceKind, "model response failed validation")
 	}
+	missionChanged := false
+	missionForGeometry := m.missions[draft.MissionID]
+	if advisorGeometryEligible(draft, missionForGeometry) {
+		options := m.geometryOptionsLocked(draft.TargetIDs, draft.SourceText)
+		if len(options) > 0 {
+			chosen := options[0]
+			for _, option := range options {
+				if option.ID == advisor.GeometryOptionID {
+					chosen = option
+					break
+				}
+			}
+			advisor.GeometryOptionID = chosen.ID
+			mission := m.missions[draft.MissionID]
+			currentID := strings.TrimPrefix(draft.GeometrySource, "intent:map-depth-")
+			if currentID != chosen.ID {
+				mission.Geometry.Revision++
+				mission.Geometry.IncludedAreas = [][][]float64{pointsToCoordinates(chosen.Boundary)}
+				mission.Geometry.Waypoints = clonePoints(chosen.Waypoints)
+				mission.Geometry.WaypointDetails = nil
+				mission.AuthorizedPlanID = ""
+				mission.UpdatedAt = time.Now().UTC()
+				mission.Version++
+				m.missions[mission.ID] = mission
+				draft.GeometryRevision = mission.Geometry.Revision
+				draft.Waypoints = clonePoints(chosen.Waypoints)
+				draft.GeometrySource = "advisor:" + advisor.Provider + ":" + chosen.ID
+				draft.ResolutionNotes = append(draft.ResolutionNotes, fmt.Sprintf("%s selected %s from %d depth-validated map sectors; deterministic geometry and policy checks remain authoritative.", strings.ToUpper(advisor.Provider), chosen.Name, len(options)))
+				draft.Ambiguities = nil
+				missionChanged = true
+			}
+		}
+	}
 	draft.Advisor = advisor
 	if mission, exists := m.missions[draft.MissionID]; exists && mission.NameSource == "ai" && strings.TrimSpace(advisor.MissionName) != "" {
 		mission.Name = m.uniqueMissionNameExceptLocked(strings.TrimSpace(advisor.MissionName), mission.ID)
 		mission.NameSource = advisor.Provider
-		mission.Version++
+		if !missionChanged {
+			mission.Version++
+		}
 		mission.UpdatedAt = time.Now().UTC()
 		m.missions[mission.ID] = mission
+		missionChanged = true
+	}
+	if missionChanged {
 		m.persistAsync()
 	}
 	draft.ContentHash = hashWithout(struct {
@@ -934,6 +986,24 @@ func (m *Manager) ApplyAdvisor(draftID string, advisor domain.MissionAdvisorV2) 
 	}{draft.ID, draft.MissionID, draft.SourceText, draft.TargetIDs, draft.GeometryRevision, draft.FleetVersion, draft.Constraints, advisor.Strategies})
 	m.drafts[draftID] = draft
 	return draft, nil
+}
+
+func pointsToCoordinates(points []domain.GeoPointV2) [][]float64 {
+	coordinates := make([][]float64, len(points))
+	for i, point := range points {
+		coordinates[i] = []float64{point[0], point[1]}
+	}
+	return coordinates
+}
+
+func advisorGeometryEligible(draft domain.CommandDraftV2, mission domain.MissionWorkspaceV2) bool {
+	if requestedWaypointColor(draft.SourceText) != "" {
+		return false
+	}
+	if strings.HasPrefix(draft.GeometrySource, "intent:map-depth-coastal-corridor-") {
+		return true
+	}
+	return (draft.GuidanceKind == "patrol" || draft.GuidanceKind == "search") && len(mission.Geometry.IncludedAreas) == 0 && len(draft.Waypoints) == 0
 }
 
 func DeterministicAdvisor(targetCount int, guidance, reason string) domain.MissionAdvisorV2 {
@@ -1032,6 +1102,76 @@ func (m *Manager) resolveNamedGeometry(text string, targets []string) ([][]float
 	}
 	polygon := coastalBounds(route, distance)
 	return polygon, route, fmt.Sprintf("intent:map-depth-coastal-corridor-%02d", nearest+1), true
+}
+
+func (m *Manager) geometryOptionsLocked(targets []string, text string) []domain.MissionGeometryOptionV2 {
+	if len(targets) == 0 {
+		return nil
+	}
+	targetCenter := domain.GeoPointV2{}
+	for _, id := range targets {
+		position := m.vessels[id].Telemetry.Position
+		targetCenter[0] += position[0]
+		targetCenter[1] += position[1]
+	}
+	targetCenter[0] /= float64(len(targets))
+	targetCenter[1] /= float64(len(targets))
+	distance, ok := requestedCoastalDistance(text)
+	if !ok {
+		distance = 1852
+	}
+	options := make([]domain.MissionGeometryOptionV2, 0, len(coastalDepthRoutes))
+	seen := map[string]bool{}
+	for index, base := range coastalDepthRoutes {
+		fingerprint := hashAny(base)
+		if seen[fingerprint] {
+			continue
+		}
+		seen[fingerprint] = true
+		route := clonePoints(base)
+		for i := len(base) - 2; i >= 0; i-- {
+			route = append(route, base[i])
+		}
+		center := domain.GeoPointV2{}
+		for _, point := range base {
+			center[0] += point[0]
+			center[1] += point[1]
+		}
+		center[0] /= float64(len(base))
+		center[1] /= float64(len(base))
+		name := fmt.Sprintf("Coastal Sector %02d", index+1)
+		if index < len(coastalRouteNames) {
+			name = coastalRouteNames[index]
+		}
+		option := domain.MissionGeometryOptionV2{
+			ID:                  fmt.Sprintf("coastal-corridor-%02d", index+1),
+			Name:                name,
+			Description:         fmt.Sprintf("Depth-aware shoreline patrol corridor with %.2f nm maximum coastal offset.", distance/1852),
+			Center:              center,
+			Boundary:            coordinatesToPoints(coastalBounds(route, distance)),
+			Waypoints:           route,
+			DistanceToTargetsKM: routeDistance([]domain.GeoPointV2{targetCenter, center}),
+			DepthValidated:      true,
+		}
+		options = append(options, option)
+	}
+	sort.SliceStable(options, func(i, j int) bool {
+		if options[i].DistanceToTargetsKM == options[j].DistanceToTargetsKM {
+			return options[i].ID < options[j].ID
+		}
+		return options[i].DistanceToTargetsKM < options[j].DistanceToTargetsKM
+	})
+	return options
+}
+
+func coordinatesToPoints(coordinates [][]float64) []domain.GeoPointV2 {
+	points := make([]domain.GeoPointV2, 0, len(coordinates))
+	for _, coordinate := range coordinates {
+		if len(coordinate) >= 2 {
+			points = append(points, domain.GeoPointV2{coordinate[0], coordinate[1]})
+		}
+	}
+	return points
 }
 
 // resolveRelativeGeometry converts a bounded relative navigation instruction

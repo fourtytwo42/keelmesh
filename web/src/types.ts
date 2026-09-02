@@ -713,6 +713,7 @@ export type MissionAdvisorV2 = {
   model: string;
   summary: string;
   mission_name?: string;
+  geometry_option_id?: string;
   strategies: MissionStrategyV2[];
   attempts: ProviderAttempt[];
 };

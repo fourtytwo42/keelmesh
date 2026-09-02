@@ -213,13 +213,25 @@ func (m *Manager) openAIMissionOptions(ctx context.Context, planning domain.Miss
 				"items": map[string]any{"type": "string", "maxLength": 100}},
 		},
 	}
-	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"strategies"}, "properties": map[string]any{
-		"strategies": map[string]any{"type": "array", "minItems": 2, "maxItems": 4, "items": strategySchema},
+	geometryOptionIDs := []string{""}
+	if len(planning.GeometryOptions) > 0 {
+		geometryOptionIDs = make([]string, 0, len(planning.GeometryOptions))
+		for _, option := range planning.GeometryOptions {
+			geometryOptionIDs = append(geometryOptionIDs, option.ID)
+		}
+	}
+	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"geometry_option_id", "strategies"}, "properties": map[string]any{
+		"geometry_option_id": map[string]any{"type": "string", "enum": geometryOptionIDs},
+		"strategies":         map[string]any{"type": "array", "minItems": 2, "maxItems": 4, "items": strategySchema},
 	}}
 	planningJSON, _ := json.Marshal(planning)
+	geometryRule := "Return geometry_option_id as an empty string because operator geometry is already fixed."
+	if len(planning.GeometryOptions) > 0 {
+		geometryRule = "Choose exactly one geometry_option_id from the supplied depth-validated geometry_options. An explicit geographic place name in the operator intent outranks proximity; otherwise use target positions, distance, map bounds, and environment to choose where the boundary and ordered route should be placed. The current inferred sector is only a fallback. Never invent or alter coordinates."
+	}
 	payload := map[string]any{
 		"model":        m.cfg.OpenAIModel,
-		"instructions": fmt.Sprintf("You are a maritime simulation mission-strategy advisor. Return two to four genuinely distinct bounded options. %s Use the selected vessels, constraints, environment, geometry, and exact operator intent. There are %d explicit waypoints; never mention waypoints if this number is zero. Never invent coordinates, routes, authority, policy changes, weapons, geometry, or hidden information.", formationRule, planning.WaypointCount),
+		"instructions": fmt.Sprintf("You are a maritime simulation mission-strategy and geometry-selection advisor. Return two to four genuinely distinct bounded options. %s %s Use the selected vessels, constraints, environment, map context, and exact operator intent. There are %d explicit waypoints. Never invent coordinates, routes, authority, policy changes, weapons, or hidden information.", formationRule, geometryRule, planning.WaypointCount),
 		"input":        string(planningJSON), "reasoning": map[string]any{"effort": "none"},
 		"text":              map[string]any{"verbosity": "low", "format": map[string]any{"type": "json_schema", "name": "keelmesh_mission_strategies", "strict": true, "schema": schema}},
 		"max_output_tokens": 1800, "store": false,
@@ -264,7 +276,8 @@ func (m *Manager) openAIMissionOptions(ctx context.Context, planning domain.Miss
 		}
 	}
 	var proposed struct {
-		Strategies []domain.MissionStrategyV2 `json:"strategies"`
+		GeometryOptionID string                     `json:"geometry_option_id"`
+		Strategies       []domain.MissionStrategyV2 `json:"strategies"`
 	}
 	if output == "" || json.Unmarshal([]byte(output), &proposed) != nil || len(proposed.Strategies) < 2 || len(proposed.Strategies) > 4 {
 		return domain.MissionAdvisorV2{}, problem("MODEL_SCHEMA_INVALID", "OpenAI returned no valid strategy set")
@@ -273,7 +286,7 @@ func (m *Manager) openAIMissionOptions(ctx context.Context, planning domain.Miss
 		proposed.Strategies[i].GuidanceKind = planning.GuidanceKind
 	}
 	attempt := domain.ProviderAttemptV1{Provider: "openai", Model: m.cfg.OpenAIModel, State: "accepted", StartedAt: started, LatencyMS: latency, StatusCode: response.StatusCode}
-	return domain.MissionAdvisorV2{State: "accepted", Provider: "openai", Model: m.cfg.OpenAIModel, Summary: fmt.Sprintf("%d bounded strategies proposed for %d selected vessel(s); deterministic route and policy validation still required.", len(proposed.Strategies), planning.TargetCount), MissionName: advisorMissionName(proposed.Strategies[0].Name), Strategies: proposed.Strategies, Attempts: []domain.ProviderAttemptV1{attempt}}, nil
+	return domain.MissionAdvisorV2{State: "accepted", Provider: "openai", Model: m.cfg.OpenAIModel, Summary: fmt.Sprintf("%d bounded strategies proposed for %d selected vessel(s); deterministic route and policy validation still required.", len(proposed.Strategies), planning.TargetCount), MissionName: advisorMissionName(proposed.Strategies[0].Name), GeometryOptionID: proposed.GeometryOptionID, Strategies: proposed.Strategies, Attempts: []domain.ProviderAttemptV1{attempt}}, nil
 }
 
 func advisorMissionName(strategy string) string {

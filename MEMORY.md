@@ -4,8 +4,8 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: First-class generated and editable entity naming is deployed on VM 214 and all twelve vessel nodes; continue M7 workspace hardening without regressing exact-plan authority or persistence safety.
-- Last meaningful change: Operator-created missions receive persistent maritime operation names, AI-created missions adopt a short accepted-provider strategy name, and missions, vessel callsigns, and operational groups can be renamed through version-checked persistent APIs and inline UI controls.
+- Current task: Bounded AI mission-geometry selection is deployed on VM 214 and all twelve vessel nodes; continue M7 workspace hardening without regressing exact-plan authority or persistence safety.
+- Last meaningful change: The mission advisor now selects the operating boundary and ordered waypoints from seven depth-validated local map sectors using vessel position, explicit place names, environmental context, and constraints. Go copies only the exact allow-listed geometry and still owns validation and authorization.
 - Next step: add first-class select/delete/clear controls for operating and exclusion polygons, and improve the planner's explanation when every returned strategy is policy-prohibited. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -137,6 +137,8 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+- 2026-09-02: AI geometry selection passed the full Go suite/vet, strict TypeScript, seven Vitest assertions, Vite build, Ruff, and ten pytest assertions. Live GPT-5.6 Luna selected distinct exact sectors for Sakonnet North (`coastal-corridor-03`) and Block Island West (`coastal-corridor-08`), with different boundaries/13-point routes; a location-unspecified search also received a provider-selected nearby sector instead of `COMMAND_AMBIGUOUS`. VM 214 and all twelve nodes are healthy on binary SHA-256 `ed0d7b787dd340d519930b16b2086ec4c6db402e2cef87262800cadaede1c55b`. No snapshot or hosted workflow ran.
 
 - 2026-09-02: Entity naming passed all Go tests/vet, strict TypeScript, seven Vitest assertions, Vite production build, Python Ruff/nine pytest assertions, Compose validation, live API create/AI-name/rename/restore/delete cleanup, and browser inspection of the inline mission editor. GPT-5.6 Luna changed a temporary AI draft from `Operation Pending` to `Operation Steady Shoreline Patrol`; an operator draft received `Harbor Lantern`. VM 214 and all twelve nodes are healthy on binary SHA-256 `e885764330c80aeb3954087ab42ebf2d17e0d4b4febdf2edd32e353111c8cc12`. No snapshot or hosted workflow ran.
 
@@ -347,6 +349,14 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Bounded AI map-geometry selection
+
+- Context: Natural-language mission creation repeatedly showed the same deterministic coastal square because the model could recommend strategies but was explicitly forbidden from choosing geometry.
+- Decision: Expose seven distinct, depth-aware local corridor candidates with stable IDs, names, centers, exact boundaries, ordered waypoints, and target distance. Require the model to select one allow-listed ID; explicit place names outrank proximity, while an unspecified patrol/search uses vessel position and environment. Deterministic Go copies and validates the candidate and rejects arbitrary coordinates.
+- Files: `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `internal/agent/manager.go`, `ai/keelmesh_ai/service.py`, `web/src/types.ts`, `web/src/FleetWorkspace.tsx`, `web/src/app.css`, and tests.
+- Commands/tests: full Go suite/vet; TypeScript/Vitest/Vite; Ruff/pytest; two named-region live OpenAI proofs; generic search proof; temporary mission cleanup; central and twelve-node deployment.
+- Result: AI-created and natural-language patrol/search missions can place their own reviewed boundary and waypoints without inventing coordinates or bypassing policy. The planner identifies the provider-selected sector in its evidence card. VM 214 and all twelve nodes run binary SHA-256 `ed0d7b787dd340d519930b16b2086ec4c6db402e2cef87262800cadaede1c55b`. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - Persistent semantic entity naming
 
