@@ -49,6 +49,10 @@ type MoveGroupMemberRequest struct {
 	Mutation
 	VesselID string `json:"vessel_id"`
 }
+type PatchVesselRequest struct {
+	Mutation
+	Callsign string `json:"callsign"`
+}
 type CreateCollectionRequest struct {
 	Mutation
 	Name      string   `json:"name"`
@@ -61,9 +65,10 @@ type PatchCollectionRequest struct {
 }
 type CreateMissionRequest struct {
 	Mutation
-	Name      string   `json:"name"`
-	Objective string   `json:"objective"`
-	TargetIDs []string `json:"target_ids"`
+	Name       string   `json:"name"`
+	NamingMode string   `json:"naming_mode"`
+	Objective  string   `json:"objective"`
+	TargetIDs  []string `json:"target_ids"`
 }
 type PatchMissionRequest struct {
 	Mutation
@@ -124,6 +129,7 @@ var callsigns = []string{"Gannet", "Osprey", "Tern", "Petrel", "Shearwater", "Co
 var groupNames = []string{"Watch Shoal", "Bay Lantern", "Sakonnet", "Block Guard", "Brenton", "Narragansett", "Point Judith", "Ocean State"}
 var groupCodes = []string{"WS", "BL", "SK", "BG", "BR", "NG", "PJ", "OS"}
 var groupColors = []string{"#e9a93f", "#62c5a8", "#d86f5f", "#b895d8", "#7eb4df", "#d2c05d", "#df8fb0", "#8fca72"}
+var missionNames = []string{"Harbor Lantern", "Silver Wake", "Tidal Compass", "Coastal Sentinel", "Sound Guardian", "Northstar Passage", "Sable Current", "Watch Meridian", "Seaward Beacon", "Iron Gull", "Quiet Horizon", "Amber Shoal"}
 var patterns = []string{"solid", "diagonal", "dots", "crosshatch", "vertical", "rings", "dash", "chevron"}
 var spawnCenters = []domain.GeoPointV2{{-71.385, 41.43}, {-71.30, 41.43}, {-71.24, 41.45}, {-71.42, 41.39}, {-71.33, 41.37}, {-71.23, 41.35}, {-71.47, 41.25}, {-71.30, 41.20}}
 var legacySpawnCenters = []domain.GeoPointV2{{-71.375, 41.49}, {-71.315, 41.47}, {-71.24, 41.45}, {-71.43, 41.39}, {-71.33, 41.37}, {-71.23, 41.35}, {-71.47, 41.25}, {-71.30, 41.20}}
@@ -290,6 +296,32 @@ func (m *Manager) Vessel(id string) (domain.VesselProfileV2, error) {
 	}
 	return v, nil
 }
+func (m *Manager) PatchVessel(id string, req PatchVesselRequest) (domain.VesselProfileV2, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.vessels[id]
+	if !ok {
+		return v, &Error{"VESSEL_NOT_FOUND", "Vessel not found."}
+	}
+	if err := m.check(req.Mutation, m.fleetVersion); err != nil {
+		return v, err
+	}
+	name := strings.TrimSpace(req.Callsign)
+	if len(name) < 2 || len(name) > 32 {
+		return v, &Error{"INVALID_VESSEL_NAME", "Vessel callsign must be between 2 and 32 characters."}
+	}
+	for otherID, other := range m.vessels {
+		if otherID != id && strings.EqualFold(other.Callsign, name) {
+			return v, &Error{"VESSEL_NAME_CONFLICT", "That vessel callsign is already in use."}
+		}
+	}
+	v.Callsign = name
+	v.DisplayName = fmt.Sprintf("%s (%s)", name, v.Designation)
+	m.vessels[id] = v
+	m.fleetVersion++
+	m.persistAsync()
+	return v, nil
+}
 func (m *Manager) Reachability(id string) (domain.ReachabilityV2, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -343,8 +375,17 @@ func (m *Manager) CreateGroup(req CreateGroupRequest) (domain.OperationalGroupV2
 	if conflicts := m.conflicts(req.MemberIDs, ""); len(conflicts) > 0 {
 		return domain.OperationalGroupV2{}, &Error{"ACTIVE_MISSION_REPLAN_REQUIRED", "End or re-plan active movement authority before changing operational groups."}
 	}
+	name := strings.TrimSpace(req.Name)
+	if len(name) < 2 || len(name) > 48 {
+		return domain.OperationalGroupV2{}, &Error{"INVALID_GROUP_NAME", "Group name must be between 2 and 48 characters."}
+	}
+	for _, existing := range m.groups {
+		if strings.EqualFold(existing.Name, name) {
+			return domain.OperationalGroupV2{}, &Error{"GROUP_NAME_CONFLICT", "That operational group name is already in use."}
+		}
+	}
 	id := "group-custom-" + shortHash(req.IdempotencyKey)
-	g := domain.OperationalGroupV2{SchemaVersion: 2, ID: id, Code: fmt.Sprintf("C%02d", len(m.groups)-7), Name: req.Name, Color: req.Color, Pattern: req.Pattern, MemberIDs: unique(req.MemberIDs), Revision: 1}
+	g := domain.OperationalGroupV2{SchemaVersion: 2, ID: id, Code: fmt.Sprintf("C%02d", len(m.groups)-7), Name: name, Color: req.Color, Pattern: req.Pattern, MemberIDs: unique(req.MemberIDs), Revision: 1}
 	for _, vid := range g.MemberIDs {
 		v := m.vessels[vid]
 		if old, ok := m.groups[v.GroupID]; ok {
@@ -374,7 +415,16 @@ func (m *Manager) PatchGroup(id string, req PatchGroupRequest) (domain.Operation
 		return g, err
 	}
 	if req.Name != nil {
-		g.Name = *req.Name
+		name := strings.TrimSpace(*req.Name)
+		if len(name) < 2 || len(name) > 48 {
+			return g, &Error{"INVALID_GROUP_NAME", "Group name must be between 2 and 48 characters."}
+		}
+		for otherID, existing := range m.groups {
+			if otherID != id && strings.EqualFold(existing.Name, name) {
+				return g, &Error{"GROUP_NAME_CONFLICT", "That operational group name is already in use."}
+			}
+		}
+		g.Name = name
 	}
 	if req.Color != nil {
 		g.Color = *req.Color
@@ -544,7 +594,16 @@ func (m *Manager) CreateMission(req CreateMissionRequest) (domain.MissionWorkspa
 	}
 	now := time.Now().UTC()
 	targets := unique(req.TargetIDs)
-	mission := domain.MissionWorkspaceV2{SchemaVersion: 2, ID: "mission-" + shortHash(req.IdempotencyKey), Name: m.uniqueMissionNameLocked(req.Name), Objective: req.Objective, Status: "draft", TargetIDs: targets, TargetSnapshotHash: hashAny(targets), FleetVersion: m.fleetVersion, Version: 1, Geometry: domain.MissionGeometryV2{Revision: 1, IncludedAreas: [][][]float64{}, ExclusionAreas: [][][]float64{}, Waypoints: []domain.GeoPointV2{}, POIs: []domain.MissionPOIV2{}}, Constraints: defaultConstraints(), Formation: "column", CreatedAt: now, UpdatedAt: now}
+	nameSource := "operator"
+	name := strings.TrimSpace(req.Name)
+	if name == "" && req.NamingMode == "ai" {
+		nameSource = "ai"
+		name = "Operation Pending"
+	} else if name == "" {
+		nameSource = "generated"
+		name = m.nextMissionNameLocked()
+	}
+	mission := domain.MissionWorkspaceV2{SchemaVersion: 2, ID: "mission-" + shortHash(req.IdempotencyKey), Name: m.uniqueMissionNameLocked(name), NameSource: nameSource, Objective: req.Objective, Status: "draft", TargetIDs: targets, TargetSnapshotHash: hashAny(targets), FleetVersion: m.fleetVersion, Version: 1, Geometry: domain.MissionGeometryV2{Revision: 1, IncludedAreas: [][][]float64{}, ExclusionAreas: [][][]float64{}, Waypoints: []domain.GeoPointV2{}, POIs: []domain.MissionPOIV2{}}, Constraints: defaultConstraints(), Formation: "column", CreatedAt: now, UpdatedAt: now}
 	m.missions[mission.ID] = mission
 	m.persistAsync()
 	return mission, nil
@@ -586,7 +645,12 @@ func (m *Manager) PatchMission(id string, req PatchMissionRequest) (domain.Missi
 		return v, err
 	}
 	if req.Name != nil {
-		v.Name = *req.Name
+		name := strings.TrimSpace(*req.Name)
+		if len(name) < 2 || len(name) > 64 {
+			return v, &Error{"INVALID_MISSION_NAME", "Mission name must be between 2 and 64 characters."}
+		}
+		v.Name = m.uniqueMissionNameExceptLocked(name, id)
+		v.NameSource = "operator"
 	}
 	if req.Objective != nil {
 		v.Objective = *req.Objective
@@ -850,6 +914,14 @@ func (m *Manager) ApplyAdvisor(draftID string, advisor domain.MissionAdvisorV2) 
 		advisor = deterministicAdvisor(len(draft.TargetIDs), draft.GuidanceKind, "model response failed validation")
 	}
 	draft.Advisor = advisor
+	if mission, exists := m.missions[draft.MissionID]; exists && mission.NameSource == "ai" && strings.TrimSpace(advisor.MissionName) != "" {
+		mission.Name = m.uniqueMissionNameExceptLocked(strings.TrimSpace(advisor.MissionName), mission.ID)
+		mission.NameSource = advisor.Provider
+		mission.Version++
+		mission.UpdatedAt = time.Now().UTC()
+		m.missions[mission.ID] = mission
+		m.persistAsync()
+	}
 	draft.ContentHash = hashWithout(struct {
 		DraftID      string
 		MissionID    string
@@ -1375,13 +1447,13 @@ func deterministicAdvisor(targetCount int, guidance, reason string) domain.Missi
 		guidance = "patrol"
 	}
 	if targetCount == 1 {
-		return domain.MissionAdvisorV2{State: "fallback", Provider: "deterministic", Model: "keelmesh-target-aware-v2", Summary: "Target-aware fallback used: " + reason, Strategies: []domain.MissionStrategyV2{
+		return domain.MissionAdvisorV2{State: "fallback", Provider: "deterministic", Model: "keelmesh-target-aware-v2", Summary: "Target-aware fallback used: " + reason, MissionName: "Operation Coastal Watch", Strategies: []domain.MissionStrategyV2{
 			{ID: "close-track", Name: "Close Shoreline Patrol", Description: "Stay close to the validated shoreline corridor while preserving the configured depth and object margins.", Formation: "independent", GuidanceKind: guidance, SpeedFactor: .92, ReserveBias: .25, Maneuvers: []string{"join validated coastal corridor", "track shoreline at bounded offset", "safe hold on completion"}},
 			{ID: "reserve-first", Name: "Reserve-Conserving Patrol", Description: "Reduce propulsion demand and prioritize projected battery reserve over completion time.", Formation: "independent", GuidanceKind: guidance, SpeedFactor: .52, ReserveBias: .75, Maneuvers: []string{"enter corridor at economy speed", "patrol with reserve checks", "return to safe hold before reserve floor"}},
 			{ID: "current-aware", Name: "Current-Assisted Patrol", Description: "Use the simulated current direction to reduce station-keeping and propulsion demand where policy permits.", Formation: "independent", GuidanceKind: guidance, SpeedFactor: .63, ReserveBias: .5, Maneuvers: []string{"intercept favorable current leg", "patrol depth-safe corridor", "counter-drift and safe hold"}},
 		}}
 	}
-	return domain.MissionAdvisorV2{State: "fallback", Provider: "deterministic", Model: "keelmesh-target-aware-v2", Summary: "Target-aware fallback used: " + reason, Strategies: []domain.MissionStrategyV2{
+	return domain.MissionAdvisorV2{State: "fallback", Provider: "deterministic", Model: "keelmesh-target-aware-v2", Summary: "Target-aware fallback used: " + reason, MissionName: "Operation Fleet Watch", Strategies: []domain.MissionStrategyV2{
 		{ID: "parallel-screen", Name: "Parallel Shoreline Screen", Description: "Distribute the selected vessels across parallel coastal lanes for fast coverage.", Formation: "line_abreast", GuidanceKind: guidance, SpeedFactor: .92, ReserveBias: .25, Maneuvers: []string{"rendezvous at corridor entry", "establish parallel screen", "patrol assigned lanes", "regroup at safe hold"}},
 		{ID: "staggered-sweep", Name: "Staggered Coastal Sweep", Description: "Use an echelon to preserve sensor overlap while reducing simultaneous turns near the shoreline.", Formation: "echelon_right", GuidanceKind: guidance, SpeedFactor: .67, ReserveBias: .45, Maneuvers: []string{"form echelon at safe separation", "sweep coastal corridor", "rotate lead on reserve threshold", "regroup on completion"}},
 		{ID: "reserve-trail", Name: "Reserve-First Trail", Description: "Follow one depth-validated reference path with conservative speed and spacing.", Formation: "column", GuidanceKind: guidance, SpeedFactor: .5, ReserveBias: .8, Maneuvers: []string{"form trail at validated entry", "patrol at economy speed", "maintain communications spacing", "safe hold on completion"}},
@@ -1716,6 +1788,38 @@ func (m *Manager) uniqueMissionNameLocked(requested string) string {
 			return candidate
 		}
 	}
+}
+
+func (m *Manager) uniqueMissionNameExceptLocked(requested, exceptID string) string {
+	requested = strings.TrimSpace(requested)
+	used := map[string]bool{}
+	for id, mission := range m.missions {
+		if id != exceptID {
+			used[strings.ToLower(strings.TrimSpace(mission.Name))] = true
+		}
+	}
+	if !used[strings.ToLower(requested)] {
+		return requested
+	}
+	for suffix := 2; ; suffix++ {
+		candidate := fmt.Sprintf("%s %d", requested, suffix)
+		if !used[strings.ToLower(candidate)] {
+			return candidate
+		}
+	}
+}
+
+func (m *Manager) nextMissionNameLocked() string {
+	used := map[string]bool{}
+	for _, mission := range m.missions {
+		used[strings.ToLower(strings.TrimSpace(mission.Name))] = true
+	}
+	for _, name := range missionNames {
+		if !used[strings.ToLower(name)] {
+			return name
+		}
+	}
+	return fmt.Sprintf("Harbor Lantern %d", len(m.missions)+1)
 }
 
 func (m *Manager) deduplicateMissionNamesLocked() {

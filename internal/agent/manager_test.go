@@ -58,6 +58,9 @@ func TestMissionOptionsFallsBackToDirectOpenAIWithSingleVesselSchema(t *testing.
 	if result.Provider != "openai" || result.Model != "gpt-5.6-luna" || len(result.Strategies) != 2 {
 		t.Fatalf("unexpected direct provider result: %#v", result)
 	}
+	if result.MissionName != "Operation Balanced patrol" {
+		t.Fatalf("mission name was not derived from the accepted model strategy: %q", result.MissionName)
+	}
 	for _, strategy := range result.Strategies {
 		if strategy.Formation != "independent" || strategy.GuidanceKind != "patrol" {
 			t.Fatalf("single-vessel semantics were not retained: %#v", strategy)

@@ -1029,11 +1029,16 @@ async def mission_options(request: MissionOptionsRequest) -> dict[str, Any]:
         span.set_attribute("mission.target_count", request.target_count)
         span.set_attribute("provider.selected", provider)
         span.set_attribute("model.selected", model)
+        strategy_name = str(strategies[0].get("name", "Maritime Watch")).strip()
+        mission_name = (
+            strategy_name if strategy_name.lower().startswith("operation ") else f"Operation {strategy_name}"
+        )
         return {
             "state": "accepted" if provider in {"openai", "openrouter", "local"} else "fallback",
             "provider": provider,
             "model": model,
             "summary": f"{len(strategies)} bounded strategies proposed for {request.target_count} selected vessel(s); deterministic route and policy validation still required.",
+            "mission_name": mission_name[:64],
             "strategies": strategies,
             "attempts": attempts,
         }

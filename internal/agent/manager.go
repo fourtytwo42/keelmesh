@@ -273,7 +273,18 @@ func (m *Manager) openAIMissionOptions(ctx context.Context, planning domain.Miss
 		proposed.Strategies[i].GuidanceKind = planning.GuidanceKind
 	}
 	attempt := domain.ProviderAttemptV1{Provider: "openai", Model: m.cfg.OpenAIModel, State: "accepted", StartedAt: started, LatencyMS: latency, StatusCode: response.StatusCode}
-	return domain.MissionAdvisorV2{State: "accepted", Provider: "openai", Model: m.cfg.OpenAIModel, Summary: fmt.Sprintf("%d bounded strategies proposed for %d selected vessel(s); deterministic route and policy validation still required.", len(proposed.Strategies), planning.TargetCount), Strategies: proposed.Strategies, Attempts: []domain.ProviderAttemptV1{attempt}}, nil
+	return domain.MissionAdvisorV2{State: "accepted", Provider: "openai", Model: m.cfg.OpenAIModel, Summary: fmt.Sprintf("%d bounded strategies proposed for %d selected vessel(s); deterministic route and policy validation still required.", len(proposed.Strategies), planning.TargetCount), MissionName: advisorMissionName(proposed.Strategies[0].Name), Strategies: proposed.Strategies, Attempts: []domain.ProviderAttemptV1{attempt}}, nil
+}
+
+func advisorMissionName(strategy string) string {
+	name := strings.TrimSpace(strategy)
+	if strings.HasPrefix(strings.ToLower(name), "operation ") {
+		return name
+	}
+	if len(name) > 54 {
+		name = name[:54]
+	}
+	return "Operation " + name
 }
 func (m *Manager) Incidents() []domain.IncidentManifestV1 { return m.Snapshot().Incidents }
 func (m *Manager) Incident(id string) (domain.IncidentManifestV1, error) {

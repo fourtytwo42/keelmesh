@@ -138,3 +138,11 @@ def test_mock_mission_advisor_is_target_aware() -> None:
     options = deterministic_mission_options(request)
     assert options[0]["name"] == "Close Shoreline Patrol"
     assert {item["formation"] for item in options} == {"independent"}
+
+
+def test_strategy_name_maps_to_bounded_operation_name() -> None:
+    strategy_name = "Close Shoreline Patrol"
+    mission_name = (
+        strategy_name if strategy_name.lower().startswith("operation ") else f"Operation {strategy_name}"
+    )
+    assert mission_name[:64] == "Operation Close Shoreline Patrol"

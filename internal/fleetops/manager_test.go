@@ -466,6 +466,93 @@ func TestMissionNamesAreUniqueAndPersistedDuplicatesAreRenumbered(t *testing.T) 
 	}
 }
 
+func TestGeneratedAndAINamedMissionsAndEntityRenames(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	operatorMission, err := m.CreateMission(CreateMissionRequest{
+		Mutation:  Mutation{RequestID: "operator-name", IdempotencyKey: "operator-name", ExpectedVersion: snapshot.FleetVersion},
+		TargetIDs: []string{snapshot.Vessels[0].ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operatorMission.Name != "Harbor Lantern" || operatorMission.NameSource != "generated" {
+		t.Fatalf("unexpected generated mission name: %#v", operatorMission)
+	}
+
+	aiMission, err := m.CreateMission(CreateMissionRequest{
+		Mutation:   Mutation{RequestID: "ai-name", IdempotencyKey: "ai-name", ExpectedVersion: snapshot.FleetVersion},
+		NamingMode: "ai",
+		TargetIDs:  []string{snapshot.Vessels[1].ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aiMission.Name != "Operation Pending" || aiMission.NameSource != "ai" {
+		t.Fatalf("unexpected pending AI mission name: %#v", aiMission)
+	}
+	draft, err := m.Compile(aiMission.ID, CompileRequest{
+		Mutation:  Mutation{RequestID: "ai-compile", IdempotencyKey: "ai-compile", ExpectedVersion: aiMission.Version},
+		Text:      "patrol the shoreline",
+		TargetIDs: aiMission.TargetIDs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err = m.ApplyAdvisor(draft.ID, domain.MissionAdvisorV2{
+		State:       "accepted",
+		Provider:    "openai",
+		Model:       "gpt-5.6-luna",
+		MissionName: "Operation Tideglass",
+		Strategies:  deterministicAdvisor(1, draft.GuidanceKind, "test").Strategies,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = draft
+	renamedAI := m.missions[aiMission.ID]
+	if renamedAI.Name != "Operation Tideglass" || renamedAI.NameSource != "openai" {
+		t.Fatalf("advisor name was not applied: %#v", renamedAI)
+	}
+
+	manualName := "Operation Night Heron"
+	renamedMission, err := m.PatchMission(operatorMission.ID, PatchMissionRequest{
+		Mutation: Mutation{RequestID: "rename-mission", IdempotencyKey: "rename-mission", ExpectedVersion: operatorMission.Version},
+		Name:     &manualName,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamedMission.Name != manualName || renamedMission.NameSource != "operator" {
+		t.Fatalf("mission rename was not retained: %#v", renamedMission)
+	}
+
+	vessel := snapshot.Vessels[2]
+	renamedVessel, err := m.PatchVessel(vessel.ID, PatchVesselRequest{
+		Mutation: Mutation{RequestID: "rename-vessel", IdempotencyKey: "rename-vessel", ExpectedVersion: m.fleetVersion},
+		Callsign: "Nightjar",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamedVessel.Callsign != "Nightjar" || renamedVessel.DisplayName != "Nightjar ("+vessel.Designation+")" {
+		t.Fatalf("vessel rename was not retained: %#v", renamedVessel)
+	}
+
+	group := m.groups["group-01"]
+	groupName := "Harbor Ward"
+	renamedGroup, err := m.PatchGroup(group.ID, PatchGroupRequest{
+		Mutation: Mutation{RequestID: "rename-group", IdempotencyKey: "rename-group", ExpectedVersion: group.Revision},
+		Name:     &groupName,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamedGroup.Name != groupName {
+		t.Fatalf("group rename was not retained: %#v", renamedGroup)
+	}
+}
+
 func TestColoredWaypointsPersistRenumberAndCompileByColor(t *testing.T) {
 	m := New("", slog.Default())
 	snapshot := m.Snapshot()

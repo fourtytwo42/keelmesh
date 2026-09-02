@@ -140,6 +140,7 @@ type MissionWorkspaceV2 struct {
 	SchemaVersion      int               `json:"schema_version"`
 	ID                 string            `json:"id"`
 	Name               string            `json:"name"`
+	NameSource         string            `json:"name_source,omitempty"`
 	Objective          string            `json:"objective"`
 	Status             string            `json:"status"`
 	TargetIDs          []string          `json:"target_ids"`
@@ -190,12 +191,13 @@ type MissionStrategyV2 struct {
 }
 
 type MissionAdvisorV2 struct {
-	State      string              `json:"state"`
-	Provider   string              `json:"provider"`
-	Model      string              `json:"model"`
-	Summary    string              `json:"summary"`
-	Strategies []MissionStrategyV2 `json:"strategies"`
-	Attempts   []ProviderAttemptV1 `json:"attempts"`
+	State       string              `json:"state"`
+	Provider    string              `json:"provider"`
+	Model       string              `json:"model"`
+	Summary     string              `json:"summary"`
+	MissionName string              `json:"mission_name,omitempty"`
+	Strategies  []MissionStrategyV2 `json:"strategies"`
+	Attempts    []ProviderAttemptV1 `json:"attempts"`
 }
 
 type MissionPlanningVesselV2 struct {
