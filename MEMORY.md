@@ -4,10 +4,10 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: M5 implementation and release are complete; only the optional Proxmox recovery snapshot remains.
-- Last meaningful change: Release `v0.5.0-interview` was pushed at commit `07e1048`. Two checksum-valid evidence bundles and two consecutive six-minute/full rehearsals passed on VM 214.
-- Next step: obtain read-only Proxmox storage/snapshot state, verify every M5 capacity gate, present the results, and request explicit authorization immediately before any snapshot.
-- Blockers: The available VM SSH key is not authorized for Proxmox root, so host storage preflight could not be read non-interactively. No snapshot was attempted.
+- Current task: Plan M6 Fleet Operations Workspace after the completed M5 interview release.
+- Last meaningful change: Converted the user's fleet-management notes into `M6_FLEET_OPERATIONS_PLAN.md`, covering scalable vessel selection, persistent groups/names/missions, per-vessel constraint inheritance, real East Coast maps, formations, manual guidance, AI planning, Pocket TTS/Morgan, streaming STT, and compact non-blue UI.
+- Next step: review the M6 scope and implement M6A first: local map, 24 named/classed vessels, scalable selection, groups, swarm inspector, environmental metrics, vessel sprites, and the compact visual shell.
+- Blockers: The optional M5 Proxmox snapshot still awaits host storage preflight and explicit user authorization; no snapshot was attempted.
 
 ## Current State
 
@@ -74,6 +74,7 @@ When sources conflict, use this order:
   - `PRD.md`: product requirements, stack alignment, demo narrative, priorities, and acceptance criteria.
   - `IMPLEMENTATION_PLAN.md`: implementation architecture, Friday scope contract, milestones, schedule, verification matrix, and rehearsal order.
   - `ROLE_ALIGNMENT_AUDIT.md`: transcript/posting traceability, scale proof contract, autonomy-tooling proof contract, live/supporting tool choices, and remaining gaps.
+  - `M6_FLEET_OPERATIONS_PLAN.md`: post-M5 fleet-operations expansion for scalable selection, groups, concurrent missions, constraints, formations, real maps, and voice.
   - `README.md`: repository overview and bootstrap quick start.
   - `infrastructure/bootstrap-vm.sh`: idempotent Ubuntu host bootstrap for Docker, GitHub CLI, cloudflared, and base tooling.
   - `infrastructure/README.md`: non-secret VM specification and operations notes.
