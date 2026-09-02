@@ -144,6 +144,26 @@ test("workspace windows move, minimize, restore, dock, and retain legacy tools",
   await expect(page.getByRole("region", { name: "Quiet Fleet", exact: true })).toBeVisible();
 });
 
+test("shoreline intent resolves its operating area and preserves the reserve floor", async ({ page }) => {
+  await page.goto("/");
+  const rail = page.getByRole("region", { name: "Fleet / Groups" });
+  await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
+  await rail.getByRole("button", { name: "Create mission from 6 selected" }).click();
+  const planner = page.getByRole("region", { name: "Mission Planner" });
+  await planner.getByLabel("PLAIN-ENGLISH INTENT").fill("Patrol the shoreline and reserve 20% battery.");
+  await planner.getByRole("button", { name: "Generate formation options" }).click();
+
+  await expect(planner.getByText("1 operating", { exact: true })).toBeVisible();
+  await expect(planner.getByText("5 waypoints", { exact: true })).toBeVisible();
+  await expect(planner.getByText("INTENT-DERIVED GEOMETRY", { exact: true })).toBeVisible();
+  await expect(planner.locator(".intent-resolution code")).toHaveText(/intent:shoreline-sector-\d{2}/);
+  await expect(planner.getByText("Requested 20% reserve; standing policy keeps the effective minimum at 30%.", { exact: true })).toBeVisible();
+  await expect(planner.locator(".candidate-list > button")).toHaveCount(3);
+  await planner.getByRole("button", { name: "Preview exact routes" }).click();
+  await expect(planner.getByText("Nothing has been sent yet.")).toBeVisible();
+  await expect(planner.getByRole("button", { name: "Authorize exact plan" })).toBeEnabled();
+});
+
 test("release laptop viewports retain map, mission input, and primary controls", async ({ page }) => {
   for (const viewport of [
     { width: 1280, height: 720 },

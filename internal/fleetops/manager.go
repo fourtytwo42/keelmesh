@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -117,6 +119,8 @@ var groupColors = []string{"#e9a93f", "#62c5a8", "#d86f5f", "#b895d8", "#7eb4df"
 var patterns = []string{"solid", "diagonal", "dots", "crosshatch", "vertical", "rings", "dash", "chevron"}
 var spawnCenters = []domain.GeoPointV2{{-71.385, 41.43}, {-71.30, 41.43}, {-71.24, 41.45}, {-71.42, 41.39}, {-71.33, 41.37}, {-71.23, 41.35}, {-71.47, 41.25}, {-71.30, 41.20}}
 var legacySpawnCenters = []domain.GeoPointV2{{-71.375, 41.49}, {-71.315, 41.47}, {-71.24, 41.45}, {-71.43, 41.39}, {-71.33, 41.37}, {-71.23, 41.35}, {-71.47, 41.25}, {-71.30, 41.20}}
+var reserveAfterLabel = regexp.MustCompile(`(?i)(?:reserve|battery)[^0-9]{0,24}([0-9]{1,3})\s*%`)
+var reserveBeforeLabel = regexp.MustCompile(`(?i)([0-9]{1,3})\s*%\s*(?:reserve|battery)`)
 
 func New(databaseURL string, logger *slog.Logger) *Manager {
 	m := &Manager{logger: logger, databaseURL: databaseURL, secret: []byte("keelmesh-m6-runtime-authority"), fleetVersion: 1, vessels: map[string]domain.VesselProfileV2{}, groups: map[string]domain.OperationalGroupV2{}, collections: map[string]domain.SavedCollectionV2{}, missions: map[string]domain.MissionWorkspaceV2{}, drafts: map[string]domain.CommandDraftV2{}, plans: map[string]domain.FleetPlanV2{}, leases: map[string]domain.FleetLeaseV2{}, idempotency: map[string]string{}, startedPlans: map[string]string{}}
@@ -601,14 +605,90 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	if len(wps) == 0 {
 		wps = mission.Geometry.Waypoints
 	}
+	geometrySource := ""
+	notes := []string{}
+	missionChanged := false
+	if len(wps) == 0 && len(mission.Geometry.IncludedAreas) == 0 {
+		if polygon, route, source, ok := m.resolveNamedGeometry(req.Text, targets); ok {
+			mission.Geometry.Revision++
+			mission.Geometry.IncludedAreas = [][][]float64{polygon}
+			mission.Geometry.Waypoints = route
+			mission.UpdatedAt = time.Now().UTC()
+			wps = route
+			geometrySource = source
+			notes = append(notes, "Operating area and patrol loop resolved to the nearest water-safe shoreline sector; review the map before authorization.")
+			missionChanged = true
+		}
+	}
+	constraints := mission.Constraints
+	if requested, ok := requestedReserve(req.Text); ok {
+		if requested > constraints.MinimumReserve {
+			constraints.MinimumReserve = requested
+			mission.Constraints.MinimumReserve = requested
+			missionChanged = true
+			notes = append(notes, fmt.Sprintf("Minimum reserve set to %.0f%% from intent.", requested*100))
+		} else {
+			notes = append(notes, fmt.Sprintf("Requested %.0f%% reserve; standing policy keeps the effective minimum at %.0f%%.", requested*100, constraints.MinimumReserve*100))
+		}
+	}
+	if missionChanged {
+		mission.Version++
+		mission.AuthorizedPlanID = ""
+		m.missions[id] = mission
+		m.persistAsync()
+	}
 	amb := []string{}
 	if len(wps) == 0 && len(mission.Geometry.IncludedAreas) == 0 {
 		amb = append(amb, "Choose an area or waypoint before route generation.")
 	}
-	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: mission.Constraints, FormationPreference: formation, GuidanceKind: kind, Waypoints: wps, Ambiguities: amb}
+	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, Ambiguities: amb}
 	draft.ContentHash = hashWithout(draft)
 	m.drafts[draft.ID] = draft
 	return draft, nil
+}
+
+func (m *Manager) resolveNamedGeometry(text string, targets []string) ([][]float64, []domain.GeoPointV2, string, bool) {
+	lower := strings.ToLower(text)
+	if !strings.Contains(lower, "shoreline") && !strings.Contains(lower, "coast") && !strings.Contains(lower, "shore patrol") {
+		return nil, nil, "", false
+	}
+	centroid := domain.GeoPointV2{}
+	for _, id := range targets {
+		position := m.vessels[id].Telemetry.Position
+		centroid[0] += position[0]
+		centroid[1] += position[1]
+	}
+	centroid[0] /= float64(len(targets))
+	centroid[1] /= float64(len(targets))
+	nearest := 0
+	minimum := math.Inf(1)
+	for i, center := range spawnCenters {
+		distance := math.Hypot((centroid[0]-center[0])*.75, centroid[1]-center[1])
+		if distance < minimum {
+			minimum, nearest = distance, i
+		}
+	}
+	center := spawnCenters[nearest]
+	polygon := [][]float64{{center[0] - .022, center[1]}, {center[0] + .022, center[1]}, {center[0] + .022, center[1] + .028}, {center[0] - .022, center[1] + .028}, {center[0] - .022, center[1]}}
+	route := make([]domain.GeoPointV2, len(polygon))
+	for i, point := range polygon {
+		route[i] = domain.GeoPointV2{point[0], point[1]}
+	}
+	return polygon, route, fmt.Sprintf("intent:shoreline-sector-%02d", nearest+1), true
+}
+
+func requestedReserve(text string) (float64, bool) {
+	for _, pattern := range []*regexp.Regexp{reserveAfterLabel, reserveBeforeLabel} {
+		match := pattern.FindStringSubmatch(text)
+		if len(match) != 2 {
+			continue
+		}
+		value, err := strconv.Atoi(match[1])
+		if err == nil && value >= 0 && value <= 100 {
+			return float64(value) / 100, true
+		}
+	}
+	return 0, false
 }
 func (m *Manager) GeneratePlans(id string, req PlansRequest) ([]domain.FleetPlanV2, error) {
 	m.mu.Lock()
@@ -1015,7 +1095,7 @@ func inferFormation(s, def string) string {
 }
 func inferGuidance(s string) string {
 	v := strings.ToLower(s)
-	for _, k := range []string{"rendezvous", "regroup", "orbit", "return", "hold", "split", "merge", "heading", "search"} {
+	for _, k := range []string{"rendezvous", "regroup", "orbit", "return", "hold", "split", "merge", "heading", "search", "patrol"} {
 		if strings.Contains(v, k) {
 			return k
 		}

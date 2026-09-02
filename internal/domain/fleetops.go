@@ -160,6 +160,8 @@ type CommandDraftV2 struct {
 	FormationPreference string          `json:"formation_preference"`
 	GuidanceKind        string          `json:"guidance_kind"`
 	Waypoints           []GeoPointV2    `json:"waypoints"`
+	GeometrySource      string          `json:"geometry_source,omitempty"`
+	ResolutionNotes     []string        `json:"resolution_notes,omitempty"`
 	Ambiguities         []string        `json:"unresolved_ambiguities"`
 	ContentHash         string          `json:"content_hash"`
 }

@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: initial M6 fleet placement is now water-safe against the exact packaged Natural Earth coastline. The service migrates both known legacy spawn layouts into deterministic water cells without moving vessels that have actually departed their seed neighborhood, and a restart-persistent coastline test enforces a shoreline margin.
+- Last meaningful change: M6 plain-English mission compilation now resolves recognized shoreline/coast patrol language into the nearest deterministic water-safe operating sector and closed patrol route when the operator has not drawn geometry. Reserve percentages are parsed from intent but cannot weaken the standing fleet minimum; the planner shows the inferred geometry and safety-bound resolution before authorization.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -322,6 +322,14 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Intent-derived shoreline patrol geometry
+
+- Context: `Patrol the shoreline and reserve 20% battery` was blocked in the browser because the UI required manually drawn geometry before calling the compiler.
+- Decision: Let the deterministic Go intent compiler resolve shoreline/coast patrol terms to the nearest prevalidated local water sector, persist its operating polygon and five-point closed patrol loop, and parse reserve percentages conservatively. A 20% request is recorded but remains bounded by the standing 30% fleet minimum.
+- Files: `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, `web/src/types.ts`, `web/src/FleetWorkspace.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: local TypeScript typecheck, seven Vitest assertions, Vite production build; VM full Go suite; eight Playwright workflows plus targeted shoreline preview/authorization readiness; central and twelve-node health checks.
+- Result: A shoreline mission now generates three inspectable formation candidates without drawing an area, displays the inferred source and reserve-floor explanation, previews through the existing exact-hash authority path, and leaves genuinely ambiguous geography fail-closed. VM 214 and all twelve vessel nodes run binary SHA-256 `5c69a838361e5cac52cfea109c6590b635073bd3a09a2cbe0aa8b6d43b8540e8`. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - Water-safe fleet spawning
 

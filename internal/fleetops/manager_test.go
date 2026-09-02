@@ -228,6 +228,78 @@ func TestPreviewDoesNotMoveAndExactHashStarts(t *testing.T) {
 	}
 }
 
+func TestCompileResolvesShorelineIntentWithoutDrawnGeometry(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation:  Mutation{RequestID: "shore-mission", IdempotencyKey: "shore-mission", ExpectedVersion: snapshot.FleetVersion},
+		Name:      "Shoreline patrol",
+		TargetIDs: m.groups["group-01"].MemberIDs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation: Mutation{RequestID: "shore-compile", IdempotencyKey: "shore-compile", ExpectedVersion: mission.Version},
+		Text:     "Patrol the shoreline and reserve 20% battery.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(draft.Ambiguities) != 0 {
+		t.Fatalf("unexpected ambiguities: %v", draft.Ambiguities)
+	}
+	if draft.GeometrySource != "intent:shoreline-sector-01" {
+		t.Fatalf("geometry source = %q", draft.GeometrySource)
+	}
+	if len(draft.Waypoints) != 5 || draft.GuidanceKind != "patrol" {
+		t.Fatalf("resolved guidance = %s, waypoints = %d", draft.GuidanceKind, len(draft.Waypoints))
+	}
+	if draft.Constraints.MinimumReserve != .30 {
+		t.Fatalf("unsafe reserve request weakened standing minimum: %.2f", draft.Constraints.MinimumReserve)
+	}
+	if len(draft.ResolutionNotes) != 2 {
+		t.Fatalf("resolution notes = %v", draft.ResolutionNotes)
+	}
+	current := m.missions[mission.ID]
+	if current.Version != mission.Version+1 || current.Geometry.Revision != mission.Geometry.Revision+1 || len(current.Geometry.IncludedAreas) != 1 || len(current.Geometry.Waypoints) != 5 {
+		t.Fatalf("mission was not updated with resolved geometry: %#v", current)
+	}
+	plans, err := m.GeneratePlans(mission.ID, PlansRequest{
+		Mutation: Mutation{RequestID: "shore-plans", IdempotencyKey: "shore-plans", ExpectedVersion: current.Version},
+		DraftID:  draft.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) != 3 {
+		t.Fatalf("plans = %d", len(plans))
+	}
+}
+
+func TestCompileStillRequiresGeometryForUnresolvedPlaceIntent(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation:  Mutation{RequestID: "vague-mission", IdempotencyKey: "vague-mission", ExpectedVersion: snapshot.FleetVersion},
+		Name:      "Vague patrol",
+		TargetIDs: snapshot.Groups[0].MemberIDs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation: Mutation{RequestID: "vague-compile", IdempotencyKey: "vague-compile", ExpectedVersion: mission.Version},
+		Text:     "Patrol somewhere useful.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(draft.Ambiguities) != 1 {
+		t.Fatalf("expected unresolved geometry ambiguity, got %v", draft.Ambiguities)
+	}
+}
+
 func TestSavedCollectionCanOverlapGroupsAndBePatched(t *testing.T) {
 	m := New("", slog.Default())
 	snapshot := m.Snapshot()
