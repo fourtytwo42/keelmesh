@@ -352,7 +352,7 @@ When sources conflict, use this order:
 - Decision: Invalidate stale persistence generations, serialize asynchronous snapshots and deletes behind a dedicated mutex, fail the API without changing memory if the durable transaction cannot commit, replace native confirmation with a visible application dialog, and reset action-button grid rows explicitly.
 - Files: `internal/fleetops/manager.go`, `web/src/FleetWorkspace.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
 - Commands/tests: strict TypeScript, seven Vitest assertions, production frontend build, Playwright discovery, full Go tests/vet, live browser DOM/geometry inspection, and a create-immediate-delete test followed by core restart and direct API/PostgreSQL checks.
-- Result: Delete confirmation is always visible in the workspace, failure cannot be reported as success before durable commit, stale snapshots cannot resurrect deleted workspaces, and every pause/trash icon is centered with zero measured x/y offset. VM 214 and all twelve nodes run binary SHA-256 `882858d8fce265d1ca79699247e82f176cf10f4985261b52fb1afc515ab8de60`. No snapshot or hosted workflow.
+- Result: Delete confirmation is always visible in the workspace, failure cannot be reported as success before durable commit, stale snapshots cannot resurrect deleted workspaces, and every pause/trash icon is centered with zero measured x/y offset. Implementation commit `22943bc` is pushed; VM 214 and all twelve nodes run binary SHA-256 `882858d8fce265d1ca79699247e82f176cf10f4985261b52fb1afc515ab8de60`. No snapshot or hosted workflow.
 - Follow-up: None.
 
 ### 2026-09-02 - Mission lifecycle and durable deletion
