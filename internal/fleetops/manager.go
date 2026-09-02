@@ -309,8 +309,8 @@ func (m *Manager) Reachability(id string) (domain.ReachabilityV2, error) {
 		}
 	}
 	for _, og := range m.groups {
-		if og.ID != g.ID && len(r.ExternalPeers) < 3 {
-			peer := og.MemberIDs[5]
+		if og.ID != g.ID && len(og.MemberIDs) > 0 && len(r.ExternalPeers) < 3 {
+			peer := og.MemberIDs[len(og.MemberIDs)-1]
 			r.ExternalPeers = append(r.ExternalPeers, domain.ReachabilityPathV2{VesselID: peer, State: "reachable", Hops: []string{id, atlasID(g, m.vessels), peer}, Underlay: []string{"halow", "peer-starlink"}, LatencyMS: 54})
 		}
 	}
@@ -791,6 +791,57 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	return draft, nil
 }
 
+// PlanningContext returns a bounded, read-only projection for the advisory
+// model. Hidden authority material, signing keys, leases, and unrelated fleet
+// state never cross this boundary.
+func (m *Manager) PlanningContext(draftID string) (domain.MissionPlanningContextV2, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	draft, ok := m.drafts[draftID]
+	if !ok {
+		return domain.MissionPlanningContextV2{}, &Error{"DRAFT_NOT_FOUND", "Command draft not found."}
+	}
+	mission := m.missions[draft.MissionID]
+	targets := make([]domain.MissionPlanningVesselV2, 0, len(draft.TargetIDs))
+	for _, id := range draft.TargetIDs {
+		v := m.vessels[id]
+		targets = append(targets, domain.MissionPlanningVesselV2{ID: v.ID, Name: v.DisplayName, Class: v.Class.Name, Position: v.Telemetry.Position, Reserve: v.Telemetry.Reserve, MaxSpeedMPS: v.Class.MaxSpeedMPS, PNTIntegrity: v.Telemetry.PNTIntegrity, UncertaintyM: v.Telemetry.UncertaintyM, GroupCode: v.GroupCode, Communications: "authenticated mesh reachable"})
+	}
+	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, 0), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, FormationCurrent: mission.Formation}, nil
+}
+
+// ApplyAdvisor validates and freezes advisory strategies into the immutable
+// command draft. Invalid model output is replaced with a deterministic,
+// target-aware fallback; it is never allowed to reach route generation.
+func (m *Manager) ApplyAdvisor(draftID string, advisor domain.MissionAdvisorV2) (domain.CommandDraftV2, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	draft, ok := m.drafts[draftID]
+	if !ok {
+		return domain.CommandDraftV2{}, &Error{"DRAFT_NOT_FOUND", "Command draft not found."}
+	}
+	if !validAdvisor(advisor, len(draft.TargetIDs)) {
+		advisor = deterministicAdvisor(len(draft.TargetIDs), draft.GuidanceKind, "model response failed validation")
+	}
+	draft.Advisor = advisor
+	draft.ContentHash = hashWithout(struct {
+		DraftID      string
+		MissionID    string
+		SourceText   string
+		Targets      []string
+		Geometry     int64
+		FleetVersion int64
+		Constraints  domain.ConstraintSetV2
+		Strategies   []domain.MissionStrategyV2
+	}{draft.ID, draft.MissionID, draft.SourceText, draft.TargetIDs, draft.GeometryRevision, draft.FleetVersion, draft.Constraints, advisor.Strategies})
+	m.drafts[draftID] = draft
+	return draft, nil
+}
+
+func DeterministicAdvisor(targetCount int, guidance, reason string) domain.MissionAdvisorV2 {
+	return deterministicAdvisor(targetCount, guidance, reason)
+}
+
 func normalizeWaypointDetails(points []domain.GeoPointV2, details []domain.MissionWaypointV2) ([]domain.MissionWaypointV2, error) {
 	if len(details) > 0 && len(details) != len(points) {
 		return nil, &Error{"INVALID_GEOMETRY", "Waypoint metadata must match the waypoint list."}
@@ -938,19 +989,23 @@ func (m *Manager) GeneratePlans(id string, req PlansRequest) ([]domain.FleetPlan
 	if len(draft.Ambiguities) > 0 {
 		return nil, &Error{"COMMAND_AMBIGUOUS", strings.Join(draft.Ambiguities, " ")}
 	}
-	formations := uniqueStrings([]string{draft.FormationPreference, "wedge", "line_abreast", "dispersed_screen"})
-	if len(formations) > 3 {
-		formations = formations[:3]
+	strategies := draft.Advisor.Strategies
+	if len(strategies) == 0 {
+		strategies = deterministicAdvisor(len(draft.TargetIDs), draft.GuidanceKind, "advisor not available").Strategies
 	}
-	out := make([]domain.FleetPlanV2, 0, len(formations))
-	for i, f := range formations {
-		p := m.makePlan(mission, draft, f, i)
+	out := make([]domain.FleetPlanV2, 0, len(strategies))
+	for i, strategy := range strategies {
+		p := m.makePlan(mission, draft, strategy, i)
 		m.plans[p.ID] = p
 		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool { return planScore(out[i]) > planScore(out[j]) })
+	recommended := false
 	for i := range out {
-		out[i].Recommended = i == 0
+		out[i].Recommended = !recommended && out[i].PolicyStatus != "prohibited"
+		if out[i].Recommended {
+			recommended = true
+		}
 		p := out[i]
 		m.plans[p.ID] = p
 	}
@@ -1075,10 +1130,11 @@ func (m *Manager) Start(mid, pid string, req PlanActionRequest) (domain.MissionW
 	return mission, nil
 }
 
-func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.CommandDraftV2, formation string, index int) domain.FleetPlanV2 {
+func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.CommandDraftV2, strategy domain.MissionStrategyV2, index int) domain.FleetPlanV2 {
 	targets := cloneStrings(draft.TargetIDs)
 	sort.Strings(targets)
-	speed := math.Min(draft.Constraints.MaximumSpeedMPS, 1.45+float64(index)*.15)
+	formation := strategy.Formation
+	speed := math.Max(.35, math.Min(draft.Constraints.MaximumSpeedMPS, draft.Constraints.MaximumSpeedMPS*strategy.SpeedFactor))
 	assignments := make([]domain.FleetAssignmentV2, 0, len(targets))
 	total := 0.
 	maxDistance := 0.
@@ -1103,9 +1159,29 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 		maxDistance = math.Max(maxDistance, dist)
 		assignments = append(assignments, domain.FleetAssignmentV2{VesselID: id, Route: route, SpeedMPS: math.Min(speed, v.Class.MaxSpeedMPS), DistanceKM: dist})
 	}
+	// The model chooses a planning posture, not final kinematics. For balanced
+	// or coverage-oriented strategies, deterministically raise speed only as
+	// much as needed to satisfy the existing duration limit. Conservative
+	// strategies remain visible even when policy rejects their longer runtime.
+	if strategy.ReserveBias <= .65 && draft.Constraints.MaximumDurationMinutes > 0 {
+		required := maxDistance * 1000 / (draft.Constraints.MaximumDurationMinutes * 60) * 1.01
+		if required > speed {
+			speed = math.Min(draft.Constraints.MaximumSpeedMPS, required)
+			minReserve = 1
+			for i := range assignments {
+				v := m.vessels[assignments[i].VesselID]
+				assignments[i].SpeedMPS = math.Min(speed, v.Class.MaxSpeedMPS)
+				reserve := v.Telemetry.Reserve - assignments[i].DistanceKM*(.018+assignments[i].SpeedMPS*.004)
+				minReserve = math.Min(minReserve, reserve)
+			}
+		}
+	}
 	duration := maxDistance * 1000 / speed / 60
 	coverage := math.Min(99, 72+float64(len(targets))*2.4-float64(index)*1.6)
 	minSep := draft.Constraints.FormationSpacingM
+	if len(targets) == 1 {
+		minSep = 0
+	}
 	status := "approval_required"
 	reasons := []string{"ROUTES_WITHIN_FIXTURE_OPERATING_AREA", "EXACT_HASH_APPROVAL_REQUIRED"}
 	if minReserve < draft.Constraints.MinimumReserve {
@@ -1120,9 +1196,56 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 		status = "prohibited"
 		reasons = append(reasons, "MAXIMUM_DURATION_VIOLATION")
 	}
-	p := domain.FleetPlanV2{SchemaVersion: 2, ID: fmt.Sprintf("plan-%s-%d", shortHash(draft.ContentHash), index+1), MissionID: mission.ID, DraftID: draft.ID, Name: formationName(formation), Formation: formation, Maneuvers: maneuvers(draft.GuidanceKind, formation), Assignments: assignments, CoveragePercent: coverage, MinimumReserve: minReserve, DurationMinutes: duration, EnergyKWH: total * (1.8 + speed*.4), LinkExposureSeconds: duration * 60 * .08 * float64(index+1), MinimumSeparationM: minSep, PolicyStatus: status, ReasonCodes: reasons, SourceMissionVersion: mission.Version}
+	p := domain.FleetPlanV2{SchemaVersion: 2, ID: fmt.Sprintf("plan-%s-%d", shortHash(draft.ContentHash), index+1), MissionID: mission.ID, DraftID: draft.ID, Name: strategy.Name, Description: strategy.Description, Formation: formation, AdvisorSource: draft.Advisor.Provider, AdvisorModel: draft.Advisor.Model, Maneuvers: cloneStrings(strategy.Maneuvers), Assignments: assignments, CoveragePercent: coverage, MinimumReserve: minReserve, DurationMinutes: duration, EnergyKWH: total * (1.8 + speed*.4), LinkExposureSeconds: duration * 60 * .08 * float64(index+1), MinimumSeparationM: minSep, PolicyStatus: status, ReasonCodes: reasons, SourceMissionVersion: mission.Version}
 	p.ContentHash = hashWithout(p)
 	return p
+}
+
+func validAdvisor(advisor domain.MissionAdvisorV2, targetCount int) bool {
+	if len(advisor.Strategies) < 2 || len(advisor.Strategies) > 4 || advisor.Provider == "" || advisor.State == "" {
+		return false
+	}
+	allowed := map[string]bool{"independent": true, "column": true, "line_abreast": true, "wedge": true, "echelon_left": true, "echelon_right": true, "parallel_columns": true, "dispersed_screen": true, "ring": true, "search_grid": true}
+	seen := map[string]bool{}
+	for _, strategy := range advisor.Strategies {
+		if strategy.ID == "" || strategy.Name == "" || strategy.Description == "" || seen[strategy.ID] || !allowed[strategy.Formation] || strategy.SpeedFactor < .25 || strategy.SpeedFactor > 1 || strategy.ReserveBias < 0 || strategy.ReserveBias > 1 || len(strategy.Maneuvers) < 2 || len(strategy.Maneuvers) > 6 {
+			return false
+		}
+		if targetCount == 1 && strategy.Formation != "independent" {
+			return false
+		}
+		if targetCount == 1 {
+			semantic := strings.ToLower(strategy.Name + " " + strategy.Description + " " + strings.Join(strategy.Maneuvers, " "))
+			for _, fleetOnly := range []string{"formation", "regroup", "fleet", "other vessel", "separation exceeds"} {
+				if strings.Contains(semantic, fleetOnly) {
+					return false
+				}
+			}
+		}
+		if targetCount > 1 && strategy.Formation == "independent" {
+			return false
+		}
+		seen[strategy.ID] = true
+	}
+	return true
+}
+
+func deterministicAdvisor(targetCount int, guidance, reason string) domain.MissionAdvisorV2 {
+	if guidance == "" {
+		guidance = "patrol"
+	}
+	if targetCount == 1 {
+		return domain.MissionAdvisorV2{State: "fallback", Provider: "deterministic", Model: "keelmesh-target-aware-v2", Summary: "Target-aware fallback used: " + reason, Strategies: []domain.MissionStrategyV2{
+			{ID: "close-track", Name: "Close Shoreline Patrol", Description: "Stay close to the validated shoreline corridor while preserving the configured depth and object margins.", Formation: "independent", GuidanceKind: guidance, SpeedFactor: .92, ReserveBias: .25, Maneuvers: []string{"join validated coastal corridor", "track shoreline at bounded offset", "safe hold on completion"}},
+			{ID: "reserve-first", Name: "Reserve-Conserving Patrol", Description: "Reduce propulsion demand and prioritize projected battery reserve over completion time.", Formation: "independent", GuidanceKind: guidance, SpeedFactor: .52, ReserveBias: .75, Maneuvers: []string{"enter corridor at economy speed", "patrol with reserve checks", "return to safe hold before reserve floor"}},
+			{ID: "current-aware", Name: "Current-Assisted Patrol", Description: "Use the simulated current direction to reduce station-keeping and propulsion demand where policy permits.", Formation: "independent", GuidanceKind: guidance, SpeedFactor: .63, ReserveBias: .5, Maneuvers: []string{"intercept favorable current leg", "patrol depth-safe corridor", "counter-drift and safe hold"}},
+		}}
+	}
+	return domain.MissionAdvisorV2{State: "fallback", Provider: "deterministic", Model: "keelmesh-target-aware-v2", Summary: "Target-aware fallback used: " + reason, Strategies: []domain.MissionStrategyV2{
+		{ID: "parallel-screen", Name: "Parallel Shoreline Screen", Description: "Distribute the selected vessels across parallel coastal lanes for fast coverage.", Formation: "line_abreast", GuidanceKind: guidance, SpeedFactor: .92, ReserveBias: .25, Maneuvers: []string{"rendezvous at corridor entry", "establish parallel screen", "patrol assigned lanes", "regroup at safe hold"}},
+		{ID: "staggered-sweep", Name: "Staggered Coastal Sweep", Description: "Use an echelon to preserve sensor overlap while reducing simultaneous turns near the shoreline.", Formation: "echelon_right", GuidanceKind: guidance, SpeedFactor: .67, ReserveBias: .45, Maneuvers: []string{"form echelon at safe separation", "sweep coastal corridor", "rotate lead on reserve threshold", "regroup on completion"}},
+		{ID: "reserve-trail", Name: "Reserve-First Trail", Description: "Follow one depth-validated reference path with conservative speed and spacing.", Formation: "column", GuidanceKind: guidance, SpeedFactor: .5, ReserveBias: .8, Maneuvers: []string{"form trail at validated entry", "patrol at economy speed", "maintain communications spacing", "safe hold on completion"}},
+	}}
 }
 
 // sweepLane converts an area polygon into one deterministic lane per vessel.

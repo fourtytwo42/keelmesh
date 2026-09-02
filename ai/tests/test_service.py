@@ -2,10 +2,30 @@ from keelmesh_ai.service import (
     ASSERTIONS,
     OPENROUTER_MODELS,
     Circuit,
+    MissionOptionsRequest,
+    deterministic_mission_options,
     digest,
+    openai_response_text,
     parse_eval_json,
+    parse_mission_json,
     parse_model_json,
 )
+
+
+def test_openai_responses_output_text_is_extracted() -> None:
+    assert (
+        openai_response_text(
+            {
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": '{"strategies":[]}'}],
+                    }
+                ]
+            }
+        )
+        == '{"strategies":[]}'
+    )
 
 
 def test_model_pool_has_adaptive_final_router() -> None:
@@ -52,3 +72,69 @@ def test_provider_evaluation_accounts_for_exact_assertion_set() -> None:
         pass
     else:
         raise AssertionError("partial provider accounting must fail closed")
+
+
+def test_single_vessel_mission_options_reject_fleet_formations() -> None:
+    valid = parse_mission_json(
+        '{"strategies":[{"id":"one","name":"Close patrol","description":"Depth-safe coastal track","formation":"independent","speed_factor":0.7,"reserve_bias":0.3,"maneuvers":["join corridor","patrol"]},{"id":"two","name":"Reserve patrol","description":"Lower propulsion demand","formation":"independent","speed_factor":0.5,"reserve_bias":0.8,"maneuvers":["economy entry","safe hold"]}]}',
+        1,
+        "patrol",
+    )
+    assert all(item["formation"] == "independent" for item in valid)
+    try:
+        parse_mission_json(
+            '{"strategies":[{"id":"one","name":"Wedge","description":"wrong target semantics","formation":"wedge","speed_factor":0.7,"reserve_bias":0.3,"maneuvers":["form","patrol"]},{"id":"two","name":"Line","description":"wrong target semantics","formation":"line_abreast","speed_factor":0.5,"reserve_bias":0.8,"maneuvers":["form","hold"]}]}',
+            1,
+            "patrol",
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("single-vessel advisor must reject fleet formations")
+    try:
+        parse_mission_json(
+            '{"strategies":[{"id":"one","name":"Solo patrol","description":"Depth-safe coastal track","formation":"independent","speed_factor":0.7,"reserve_bias":0.3,"maneuvers":["patrol coast","regroup on completion"]},{"id":"two","name":"Reserve patrol","description":"Lower propulsion demand","formation":"independent","speed_factor":0.5,"reserve_bias":0.8,"maneuvers":["patrol coast","safe hold"]}]}',
+            1,
+            "patrol",
+            0,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("single-vessel advisor must reject fleet-only maneuver prose")
+
+
+def test_mock_mission_advisor_is_target_aware() -> None:
+    request = MissionOptionsRequest.model_validate(
+        {
+            "schema_version": 2,
+            "mission_id": "mission-1",
+            "intent": "patrol the shoreline",
+            "guidance_kind": "patrol",
+            "target_count": 1,
+            "targets": [
+                {
+                    "id": "v1",
+                    "name": "Gannet",
+                    "class": "Kestrel",
+                    "position": [-71.3, 41.4],
+                    "reserve": 0.8,
+                    "max_speed_mps": 1.8,
+                    "pnt_integrity": "trusted",
+                    "uncertainty_m": 4,
+                    "group_code": "WS",
+                    "communications": "mesh",
+                }
+            ],
+            "constraints": {},
+            "environment": {},
+            "operating_areas": 1,
+            "exclusion_areas": 0,
+            "waypoint_count": 7,
+            "geometry_source": "intent:coast",
+            "formation_current": "column",
+        }
+    )
+    options = deterministic_mission_options(request)
+    assert options[0]["name"] == "Close Shoreline Patrol"
+    assert {item["formation"] for item in options} == {"independent"}

@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: The New Mission plus icon now overrides the mission tab's inherited status-column grid and is mathematically centered in its complete tab cell. Workspace windows retain explicit primary/context semantics and mission tabs retain pause/resume/delete actions.
-- Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
+- Current task: The real LLM mission-advisor boundary is deployed on VM 214 and all twelve vessel nodes; preserve its strict advisory-only boundary while continuing M7 hardening.
+- Last meaningful change: Single- and multi-vessel mission compilation now sends a bounded planning context to GPT-5.6 Luna, validates structured strategy output, displays provider/model/attempt evidence, and feeds accepted strategies into deterministic Go route/policy computation. Every vessel node has direct OpenAI Responses API fallback when its optional Python service is absent.
+- Next step: rehearse the main single-vessel shoreline workflow and Player B at the current Quick Tunnels. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
 ## Current State
@@ -17,7 +17,7 @@ Durable project context lives here. Update this file whenever information should
 - `PRD.md` is the product source of truth. The M1 React/TypeScript/MapLibre interface and deterministic Go mission authority are embedded in one offline Compose appliance running on VM 214.
 - M2 is live in the same appliance. It adds a mission-relative clock, six signed 10-second tape segments per vessel, authenticated/deduplicated peer bundles, deterministic Starlink/HaLow faults, PNT evidence arbitration, bounded safe hold, and stale-safe bridge rejoin.
 - M3 is live in the same appliance as a degraded-optional scale plane: Apache Kafka KRaft, PostgreSQL/pgvector with eight telemetry hash partitions, deterministic load generation, three supervised real consumer children, bounded bbolt producer outbox, quarantine/redrive, actual Kafka lag, Prometheus metrics, earliest-offset shadow replay, pgvector fixture retrieval, and an Operator/Cutaway UI. Only port 8080 is exposed.
-- M4 is live as a degraded-optional AI plane. A private Go Streamable HTTP MCP server exposes ten allow-listed evidence/replay/draft tools to a non-root Python agent; the Engineer UI shows actual tool receipts, citations, provider attempts, isolated replay, immutable candidate hash, human approval, provider regression results, and trace timing. OpenRouter uses a rotating ranked pool of free models, then optional local and deterministic mock fallbacks. Mission authority and M1–M3 remain independent of AI health.
+- M4 is live as a degraded-optional AI plane. A private Go Streamable HTTP MCP server exposes ten allow-listed evidence/replay/draft tools to a non-root Python agent; the Engineer UI shows actual tool receipts, citations, provider attempts, isolated replay, immutable candidate hash, human approval, provider regression results, and trace timing. GPT-5.6 Luna is the primary mission advisor, with OpenRouter, optional local, and deterministic target-aware fallbacks. Mission authority and M1–M3 remain independent of AI health.
 - M5 is live. Quiet Fleet coordinates Vessels 2–5 under a signed fixed-membership contract: the unsafe first proposal reaches quorum but cannot commit after Vessel 2 rejects it; the safe revision arms all affected nodes and activates atomically at a future tape boundary. VM-local release commands cover startup, status, reset, verification, offline proof, restart recovery, evidence, rehearsal, and stop.
 - M6 is live on VM 214. It serves a graphite MapLibre workspace with a packaged NOAA NCDS chart extract, 48 persistent named vessels in eight exclusive operational groups, overlapping saved collections, scalable symbol layers, fleet/group/search/box/map selection, vessel/environment/reachability inspection, movable/dockable windows, PostgreSQL-backed mission workspaces, deterministic formation candidates, and exact-plan authorization. Pocket TTS exposes all twelve voices with Morgan default; pinned faster-distil-whisper-small.en int8 provides VM-local HTTP/WebSocket transcription with typed fallback. Browser WebGPU/WASM and trusted-peer speech routing are accurately labeled future tiers, not completed redundancy.
 - M7 is live as a deterministic Arena vertical slice plus a physical node fabric. VM 214 exposes neutral/referee state and coordinator-aware Player B ingress; twelve Ubuntu vessel VMs run the same Go/UI node binary with faction-pinned APIs across separate management (`192.168.50.0/24`) and simulated-radio (`10.77.0.0/24`) interfaces. The UI demonstrates knowledge filtering, protected planes, 20× time, coordinator failover, semantic workspace actions, and human-approved fictional engagement effects. Real distributed Raft replication, node mTLS enforcement, and twelve independent Python/TTS/STT runtimes remain follow-ups and must not be claimed complete.
@@ -72,7 +72,7 @@ When sources conflict, use this order:
 
 - Project purpose: Demonstrate resilient AI infrastructure, bounded autonomy, human authorization, observability, and local/cloud model failover for a simulated maritime fleet.
 - Main workflow: operator intent -> typed mission intent -> deterministic planner -> policy/mission-lease validation -> map simulation preview -> authorization -> simulated execution -> audit/replay.
-- External systems: Planned local STT, local TTS, local LLM provider, and optional cloud LLM provider behind a provider gateway; exact integrations are not yet implemented.
+- External systems: VM-local STT/TTS are implemented. GPT-5.6 Luna is the primary cloud mission advisor through the Responses API; OpenRouter, optional local inference, and deterministic target-aware planning remain bounded fallbacks.
 - Important paths:
   - `AGENTS.md`: repository-local agent workflow and memory rules.
   - `MEMORY.md`: durable context store.
@@ -199,7 +199,21 @@ When sources conflict, use this order:
 - 2026-07-12: Read `AGENTS.md` and `MEMORY.md`; identified stale project-specific memory and preserved the repository-local instruction logic.
 - 2026-07-12: Checked the workspace root; confirmed `AGENTS.md` and `MEMORY.md` are present and no `.git` directory is present at this level.
 
+### 2026-09-02 - Real mission advisor and symmetric node provider path
+
+- Context: A single selected vessel received canned fleet formations, and live tracing proved the M6 planner had not contacted an LLM.
+- Decision: Route bounded `MissionPlanningContextV2` through GPT-5.6 Luna using strict Responses API JSON Schema, then let deterministic Go code compute routes, metrics, policy, recommendation, hash, and approval. Reject fleet-only single-vessel semantics and retain target-aware deterministic fallback. Never grant the model authority.
+- Files: `ai/keelmesh_ai/service.py`, `internal/agent/manager.go`, `internal/api/fleetops.go`, `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `web/src/FleetWorkspace.tsx`, `compose.yaml`, and `infrastructure/systemd/keelmesh-node-openai.conf`.
+- Result: Central live proof accepted GPT-5.6 Luna in 4.4 seconds and produced three independent shoreline strategies. Deterministic planning marked one exact option recommended/approval-required and two slower alternatives prohibited. VM 220 independently proved direct node-to-OpenAI fallback in 5.3 seconds. All twelve nodes are healthy, advertise `cloud-openai / gpt-5.6-luna`, and can read their separately installed `0400` credential. Full Go test/vet, Python Ruff/mypy/eight pytest tests, strict TypeScript/seven Vitest tests/build, Compose validation, tracked secret scan, and the targeted Playwright workflow passed. LAN and main Quick Tunnel health returned 200. No GitHub-hosted workflow or Proxmox snapshot ran.
+- Follow-up: Rotate the API credential that was pasted into chat after the interview/demo. Do not store it in Git, images, logs, evidence, or memory.
+
 ## Decisions
+
+### 2026-09-02 - GPT-5.6 Luna primary cloud advisor
+
+- Context: Free OpenRouter models were contacted but intermittently truncated structured output, ignored single-vessel schema constraints, or returned 429 capacity errors.
+- Decision: Use OpenAI `gpt-5.6-luna` as the primary paid provider because the official model catalog identifies it as the cost-sensitive GPT-5.6 API model. Preserve OpenRouter/local/mock fallback and fail closed on malformed or semantically invalid output.
+- Result: Provider provenance and latency are visible in the planner; model output remains advisory and is never trusted for geometry, kinematics, policy, signatures, leases, or execution.
 
 ### 2026-09-01 - OpenRouter Adaptive Free-Model Pool for M4
 

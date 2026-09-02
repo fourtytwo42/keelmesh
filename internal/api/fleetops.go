@@ -138,6 +138,17 @@ func (s *Server) compileV2(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := s.fleetops.Compile(r.PathValue("id"), req)
+	if err == nil {
+		advisor := fleetops.DeterministicAdvisor(len(v.TargetIDs), v.GuidanceKind, "AI service unavailable")
+		if context, contextErr := s.fleetops.PlanningContext(v.ID); contextErr == nil && s.agent != nil {
+			if proposed, advisorErr := s.agent.MissionOptions(r.Context(), context); advisorErr == nil {
+				advisor = proposed
+			} else {
+				s.logger.Warn("mission advisor degraded to deterministic fallback", "error", advisorErr)
+			}
+		}
+		v, err = s.fleetops.ApplyAdvisor(v.ID, advisor)
+	}
 	respondV2(w, v, err, http.StatusCreated)
 }
 func (s *Server) plansV2(w http.ResponseWriter, r *http.Request) {
@@ -319,7 +330,7 @@ func (s *Server) transcribeAudio(ctx context.Context, audio []byte, contentType,
 	return body, response.StatusCode, nil
 }
 func (s *Server) inferenceRoutesV2(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"routes": []map[string]any{{"id": "cloud-openrouter", "state": "available_when_connected", "priority": 1}, {"id": "logical-node-vm214", "state": "available", "priority": 2}, {"id": "deterministic-mock", "state": "available", "priority": 3}}, "authority": "advisory_only", "physical_gpu_claim": false})
+	writeJSON(w, http.StatusOK, map[string]any{"routes": []map[string]any{{"id": "cloud-openai", "model": "gpt-5.6-luna", "state": "available_when_connected", "priority": 1}, {"id": "node-provider-service", "state": "preferred_when_available", "priority": 2}, {"id": "deterministic-target-aware", "state": "available", "priority": 3}}, "authority": "advisory_only", "physical_gpu_claim": false})
 }
 
 func respondV2(w http.ResponseWriter, v any, err error, status int) {

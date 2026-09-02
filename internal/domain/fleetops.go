@@ -156,23 +156,75 @@ type MissionWorkspaceV2 struct {
 }
 
 type CommandDraftV2 struct {
-	SchemaVersion       int             `json:"schema_version"`
-	ID                  string          `json:"id"`
-	MissionID           string          `json:"mission_id"`
-	SourceText          string          `json:"source_text"`
-	Objective           string          `json:"objective"`
-	TargetIDs           []string        `json:"target_ids"`
-	TargetSnapshotHash  string          `json:"target_snapshot_hash"`
-	GeometryRevision    int64           `json:"geometry_revision"`
-	FleetVersion        int64           `json:"fleet_version"`
-	Constraints         ConstraintSetV2 `json:"constraints"`
-	FormationPreference string          `json:"formation_preference"`
-	GuidanceKind        string          `json:"guidance_kind"`
-	Waypoints           []GeoPointV2    `json:"waypoints"`
-	GeometrySource      string          `json:"geometry_source,omitempty"`
-	ResolutionNotes     []string        `json:"resolution_notes,omitempty"`
-	Ambiguities         []string        `json:"unresolved_ambiguities"`
-	ContentHash         string          `json:"content_hash"`
+	SchemaVersion       int              `json:"schema_version"`
+	ID                  string           `json:"id"`
+	MissionID           string           `json:"mission_id"`
+	SourceText          string           `json:"source_text"`
+	Objective           string           `json:"objective"`
+	TargetIDs           []string         `json:"target_ids"`
+	TargetSnapshotHash  string           `json:"target_snapshot_hash"`
+	GeometryRevision    int64            `json:"geometry_revision"`
+	FleetVersion        int64            `json:"fleet_version"`
+	Constraints         ConstraintSetV2  `json:"constraints"`
+	FormationPreference string           `json:"formation_preference"`
+	GuidanceKind        string           `json:"guidance_kind"`
+	Waypoints           []GeoPointV2     `json:"waypoints"`
+	GeometrySource      string           `json:"geometry_source,omitempty"`
+	ResolutionNotes     []string         `json:"resolution_notes,omitempty"`
+	Ambiguities         []string         `json:"unresolved_ambiguities"`
+	Advisor             MissionAdvisorV2 `json:"advisor"`
+	ContentHash         string           `json:"content_hash"`
+}
+
+// MissionStrategyV2 is advisory model output. It may choose a bounded planning
+// posture, but it never contains routes, signatures, leases, or authority.
+type MissionStrategyV2 struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Formation    string   `json:"formation"`
+	GuidanceKind string   `json:"guidance_kind"`
+	SpeedFactor  float64  `json:"speed_factor"`
+	ReserveBias  float64  `json:"reserve_bias"`
+	Maneuvers    []string `json:"maneuvers"`
+}
+
+type MissionAdvisorV2 struct {
+	State      string              `json:"state"`
+	Provider   string              `json:"provider"`
+	Model      string              `json:"model"`
+	Summary    string              `json:"summary"`
+	Strategies []MissionStrategyV2 `json:"strategies"`
+	Attempts   []ProviderAttemptV1 `json:"attempts"`
+}
+
+type MissionPlanningVesselV2 struct {
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	Class          string     `json:"class"`
+	Position       GeoPointV2 `json:"position"`
+	Reserve        float64    `json:"reserve"`
+	MaxSpeedMPS    float64    `json:"max_speed_mps"`
+	PNTIntegrity   string     `json:"pnt_integrity"`
+	UncertaintyM   float64    `json:"uncertainty_m"`
+	GroupCode      string     `json:"group_code"`
+	Communications string     `json:"communications"`
+}
+
+type MissionPlanningContextV2 struct {
+	SchemaVersion    int                       `json:"schema_version"`
+	MissionID        string                    `json:"mission_id"`
+	Intent           string                    `json:"intent"`
+	GuidanceKind     string                    `json:"guidance_kind"`
+	TargetCount      int                       `json:"target_count"`
+	Targets          []MissionPlanningVesselV2 `json:"targets"`
+	Constraints      ConstraintSetV2           `json:"constraints"`
+	Environment      EnvironmentV2             `json:"environment"`
+	OperatingAreas   int                       `json:"operating_areas"`
+	ExclusionAreas   int                       `json:"exclusion_areas"`
+	WaypointCount    int                       `json:"waypoint_count"`
+	GeometrySource   string                    `json:"geometry_source,omitempty"`
+	FormationCurrent string                    `json:"formation_current"`
 }
 
 type FleetAssignmentV2 struct {
@@ -188,7 +240,10 @@ type FleetPlanV2 struct {
 	MissionID            string              `json:"mission_id"`
 	DraftID              string              `json:"draft_id"`
 	Name                 string              `json:"name"`
+	Description          string              `json:"description"`
 	Formation            string              `json:"formation"`
+	AdvisorSource        string              `json:"advisor_source"`
+	AdvisorModel         string              `json:"advisor_model,omitempty"`
 	Maneuvers            []string            `json:"maneuvers"`
 	Assignments          []FleetAssignmentV2 `json:"assignments"`
 	CoveragePercent      float64             `json:"coverage_percent"`

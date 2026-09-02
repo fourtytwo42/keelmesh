@@ -90,16 +90,21 @@ services:
         test -s /seeder/token || head -c 32 /dev/urandom | base64 > /seeder/token
         test -s /core-ai/token || head -c 32 /dev/urandom | base64 > /core-ai/token
         cp /run/secrets/openrouter_api_key /openrouter/token
+        cp /run/secrets/openai_api_key /openai/token
         chmod 0444 /investigator/token /seeder/token /core-ai/token
         chown 10001:10001 /openrouter/token
+        chown 10001:10001 /openai/token
         chmod 0400 /openrouter/token
+        chmod 0400 /openai/token
     volumes:
       - mcp-investigator-token:/investigator
       - mcp-seeder-token:/seeder
       - core-ai-token:/core-ai
       - openrouter-runtime:/openrouter
+      - openai-runtime:/openai
     secrets:
       - openrouter_api_key
+      - openai_api_key
     restart: "no"
 
   core:
@@ -197,6 +202,8 @@ services:
     image: keelmesh/ai:m5
     restart: unless-stopped
     environment:
+      OPENAI_API_KEY_FILE: /run/keelmesh-auth/openai/token
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
       OPENROUTER_API_KEY_FILE: /run/keelmesh-auth/openrouter/token
       KEELMESH_CORE_AI_TOKEN_FILE: /run/keelmesh-auth/core-ai/token
       KEELMESH_MCP_INVESTIGATOR_TOKEN_FILE: /run/keelmesh-auth/investigator/token
@@ -208,6 +215,7 @@ services:
       - core-ai-token:/run/keelmesh-auth/core-ai:ro
       - mcp-investigator-token:/run/keelmesh-auth/investigator:ro
       - openrouter-runtime:/run/keelmesh-auth/openrouter:ro
+      - openai-runtime:/run/keelmesh-auth/openai:ro
     depends_on:
       core:
         condition: service_healthy
@@ -248,7 +256,10 @@ volumes:
   mcp-seeder-token:
   core-ai-token:
   openrouter-runtime:
+  openai-runtime:
 
 secrets:
   openrouter_api_key:
     file: ${OPENROUTER_API_KEY_FILE:-/etc/keelmesh/secrets/openrouter_api_key}
+  openai_api_key:
+    file: ${OPENAI_API_KEY_FILE:-/etc/keelmesh/secrets/openai_api_key}

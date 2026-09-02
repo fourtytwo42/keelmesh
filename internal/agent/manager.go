@@ -30,6 +30,9 @@ type Config struct {
 	CoreTokenFile         string
 	InvestigatorTokenFile string
 	SeederTokenFile       string
+	OpenAIKeyFile         string
+	OpenAIModel           string
+	OpenAIURL             string
 	Commit                string
 }
 
@@ -39,6 +42,9 @@ func ConfigFromEnv() Config {
 		CoreTokenFile:         env("KEELMESH_CORE_AI_TOKEN_FILE", "/run/secrets/core_to_ai_token"),
 		InvestigatorTokenFile: env("KEELMESH_MCP_INVESTIGATOR_TOKEN_FILE", "/run/secrets/mcp_investigator_token"),
 		SeederTokenFile:       env("KEELMESH_MCP_SEEDER_TOKEN_FILE", "/run/secrets/mcp_seeder_token"),
+		OpenAIKeyFile:         env("OPENAI_API_KEY_FILE", "/run/secrets/openai_api_key"),
+		OpenAIModel:           env("OPENAI_MODEL", "gpt-5.6-luna"),
+		OpenAIURL:             env("OPENAI_RESPONSES_URL", "https://api.openai.com/v1/responses"),
 		Commit:                env("KEELMESH_COMMIT", "working-tree"),
 	}
 }
@@ -128,6 +134,146 @@ func (m *Manager) Snapshot() domain.AgentSnapshotV1 {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return clone(m.snapshot)
+}
+
+// MissionOptions asks the bounded provider router for advisory planning
+// strategies. It cannot return routes, mutate mission state, or authorize an
+// effect; those responsibilities remain in fleetops and policy.
+func (m *Manager) MissionOptions(ctx context.Context, planning domain.MissionPlanningContextV2) (domain.MissionAdvisorV2, error) {
+	advisor, err := m.missionOptionsService(ctx, planning)
+	if err != nil {
+		advisor, err = m.openAIMissionOptions(ctx, planning)
+	}
+	if err != nil {
+		return domain.MissionAdvisorV2{}, err
+	}
+	m.mu.Lock()
+	m.snapshot.Provider.Attempts = append([]domain.ProviderAttemptV1(nil), advisor.Attempts...)
+	if advisor.Provider != "" {
+		m.snapshot.Provider.Selected = advisor.Provider + ":" + advisor.Model
+	}
+	m.snapshot.StateVersion++
+	m.snapshot.Summary = "Mission advisor proposed bounded strategies; deterministic planning and exact approval remain authoritative."
+	m.broadcastLocked()
+	m.mu.Unlock()
+	return advisor, nil
+}
+
+func (m *Manager) missionOptionsService(ctx context.Context, planning domain.MissionPlanningContextV2) (domain.MissionAdvisorV2, error) {
+	body, err := json.Marshal(planning)
+	if err != nil {
+		return domain.MissionAdvisorV2{}, problem("TOOL_ARGUMENT_INVALID", err.Error())
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.AIURL+"/v1/mission-options", bytes.NewReader(body))
+	if err != nil {
+		return domain.MissionAdvisorV2{}, problem("AI_UNAVAILABLE", err.Error())
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if token := readSecret(m.cfg.CoreTokenFile); token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := m.http.Do(httpReq)
+	if err != nil {
+		return domain.MissionAdvisorV2{}, problem("AI_UNAVAILABLE", err.Error())
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
+	if resp.StatusCode != http.StatusOK {
+		return domain.MissionAdvisorV2{}, problem("AI_UNAVAILABLE", fmt.Sprintf("mission advisor returned %d", resp.StatusCode))
+	}
+	var advisor domain.MissionAdvisorV2
+	if err := json.Unmarshal(raw, &advisor); err != nil {
+		return domain.MissionAdvisorV2{}, problem("MODEL_SCHEMA_INVALID", err.Error())
+	}
+	return advisor, nil
+}
+
+func (m *Manager) openAIMissionOptions(ctx context.Context, planning domain.MissionPlanningContextV2) (domain.MissionAdvisorV2, error) {
+	key := readSecret(m.cfg.OpenAIKeyFile)
+	if key == "" {
+		return domain.MissionAdvisorV2{}, problem("AI_UNAVAILABLE", "node OpenAI credential is not configured")
+	}
+	formations := []string{"column", "line_abreast", "wedge", "echelon_left", "echelon_right", "parallel_columns", "dispersed_screen", "ring", "search_grid"}
+	formationRule := "Use a supported multi-vessel formation and never use independent."
+	if planning.TargetCount == 1 {
+		formations = []string{"independent"}
+		formationRule = "Exactly one vessel is selected. Every option must use independent. Never mention formations, regrouping, inter-vessel separation, other vessels, or any multi-vessel behavior."
+	}
+	strategySchema := map[string]any{
+		"type": "object", "additionalProperties": false,
+		"required": []string{"id", "name", "description", "formation", "speed_factor", "reserve_bias", "maneuvers"},
+		"properties": map[string]any{
+			"id":           map[string]any{"type": "string", "minLength": 1, "maxLength": 48},
+			"name":         map[string]any{"type": "string", "minLength": 1, "maxLength": 80},
+			"description":  map[string]any{"type": "string", "minLength": 1, "maxLength": 320},
+			"formation":    map[string]any{"type": "string", "enum": formations},
+			"speed_factor": map[string]any{"type": "number", "minimum": .25, "maximum": 1},
+			"reserve_bias": map[string]any{"type": "number", "minimum": 0, "maximum": 1},
+			"maneuvers": map[string]any{"type": "array", "minItems": 2, "maxItems": 6,
+				"items": map[string]any{"type": "string", "maxLength": 100}},
+		},
+	}
+	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"strategies"}, "properties": map[string]any{
+		"strategies": map[string]any{"type": "array", "minItems": 2, "maxItems": 4, "items": strategySchema},
+	}}
+	planningJSON, _ := json.Marshal(planning)
+	payload := map[string]any{
+		"model":        m.cfg.OpenAIModel,
+		"instructions": fmt.Sprintf("You are a maritime simulation mission-strategy advisor. Return two to four genuinely distinct bounded options. %s Use the selected vessels, constraints, environment, geometry, and exact operator intent. There are %d explicit waypoints; never mention waypoints if this number is zero. Never invent coordinates, routes, authority, policy changes, weapons, geometry, or hidden information.", formationRule, planning.WaypointCount),
+		"input":        string(planningJSON), "reasoning": map[string]any{"effort": "none"},
+		"text":              map[string]any{"verbosity": "low", "format": map[string]any{"type": "json_schema", "name": "keelmesh_mission_strategies", "strict": true, "schema": schema}},
+		"max_output_tokens": 1800, "store": false,
+	}
+	body, _ := json.Marshal(payload)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.OpenAIURL, bytes.NewReader(body))
+	if err != nil {
+		return domain.MissionAdvisorV2{}, problem("AI_UNAVAILABLE", err.Error())
+	}
+	request.Header.Set("Authorization", "Bearer "+key)
+	request.Header.Set("Content-Type", "application/json")
+	started := time.Now().UTC()
+	response, err := m.http.Do(request)
+	latency := time.Since(started).Milliseconds()
+	if err != nil {
+		return domain.MissionAdvisorV2{}, problem("AI_UNAVAILABLE", err.Error())
+	}
+	defer response.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(response.Body, 256<<10))
+	if response.StatusCode != http.StatusOK {
+		return domain.MissionAdvisorV2{}, problem("AI_UNAVAILABLE", fmt.Sprintf("OpenAI mission advisor returned %d", response.StatusCode))
+	}
+	var wire struct {
+		Output []struct {
+			Type    string `json:"type"`
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return domain.MissionAdvisorV2{}, problem("MODEL_SCHEMA_INVALID", err.Error())
+	}
+	output := ""
+	for _, item := range wire.Output {
+		for _, content := range item.Content {
+			if content.Type == "output_text" && strings.TrimSpace(content.Text) != "" {
+				output = content.Text
+				break
+			}
+		}
+	}
+	var proposed struct {
+		Strategies []domain.MissionStrategyV2 `json:"strategies"`
+	}
+	if output == "" || json.Unmarshal([]byte(output), &proposed) != nil || len(proposed.Strategies) < 2 || len(proposed.Strategies) > 4 {
+		return domain.MissionAdvisorV2{}, problem("MODEL_SCHEMA_INVALID", "OpenAI returned no valid strategy set")
+	}
+	for i := range proposed.Strategies {
+		proposed.Strategies[i].GuidanceKind = planning.GuidanceKind
+	}
+	attempt := domain.ProviderAttemptV1{Provider: "openai", Model: m.cfg.OpenAIModel, State: "accepted", StartedAt: started, LatencyMS: latency, StatusCode: response.StatusCode}
+	return domain.MissionAdvisorV2{State: "accepted", Provider: "openai", Model: m.cfg.OpenAIModel, Summary: fmt.Sprintf("%d bounded strategies proposed for %d selected vessel(s); deterministic route and policy validation still required.", len(proposed.Strategies), planning.TargetCount), Strategies: proposed.Strategies, Attempts: []domain.ProviderAttemptV1{attempt}}, nil
 }
 func (m *Manager) Incidents() []domain.IncidentManifestV1 { return m.Snapshot().Incidents }
 func (m *Manager) Incident(id string) (domain.IncidentManifestV1, error) {

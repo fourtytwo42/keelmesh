@@ -44,6 +44,14 @@ func TestSeededGroupsUseReadableRealWorldSpacing(t *testing.T) {
 	}
 }
 
+func TestReachabilityIgnoresEmptyExternalGroups(t *testing.T) {
+	m := New("", slog.Default())
+	m.groups["empty"] = domain.OperationalGroupV2{ID: "empty", Code: "E", Name: "Empty", MemberIDs: []string{}}
+	if _, err := m.Reachability(m.groups["group-01"].MemberIDs[0]); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSeededVesselsAreInWaterWithShorelineMargin(t *testing.T) {
 	type geometry struct {
 		Type        string          `json:"type"`
@@ -295,6 +303,41 @@ func TestCompileResolvesShorelineIntentWithoutDrawnGeometry(t *testing.T) {
 	}
 	if len(plans) != 3 {
 		t.Fatalf("plans = %d", len(plans))
+	}
+}
+
+func TestSingleVesselAdvisorRejectsFleetFormationsAndBuildsIndependentPlans(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	vesselID := snapshot.Groups[0].MemberIDs[0]
+	mission, err := m.CreateMission(CreateMissionRequest{Mutation: Mutation{RequestID: "single-mission", IdempotencyKey: "single-mission", ExpectedVersion: snapshot.FleetVersion}, Name: "Solo shoreline patrol", TargetIDs: []string{vesselID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{Mutation: Mutation{RequestID: "single-compile", IdempotencyKey: "single-compile", ExpectedVersion: mission.Version}, Text: "patrol the shoreline and preserve reserve"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := domain.MissionAdvisorV2{State: "accepted", Provider: "openrouter", Model: "bad", Strategies: []domain.MissionStrategyV2{
+		{ID: "solo-a", Name: "Solo patrol", Description: "invalid fleet prose", Formation: "independent", SpeedFactor: .7, ReserveBias: .3, Maneuvers: []string{"patrol", "regroup on completion"}},
+		{ID: "solo-b", Name: "Reserve patrol", Description: "invalid other vessel instruction", Formation: "independent", SpeedFactor: .6, ReserveBias: .4, Maneuvers: []string{"hold", "maintain separation from other vessel"}},
+	}}
+	draft, err = m.ApplyAdvisor(draft.ID, bad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.Advisor.Provider != "deterministic" {
+		t.Fatalf("invalid advisor was not replaced: %#v", draft.Advisor)
+	}
+	mission = m.missions[mission.ID]
+	plans, err := m.GeneratePlans(mission.ID, PlansRequest{Mutation: Mutation{RequestID: "single-plans", IdempotencyKey: "single-plans", ExpectedVersion: mission.Version}, DraftID: draft.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, plan := range plans {
+		if plan.Formation != "independent" || plan.MinimumSeparationM != 0 || plan.Name == "Adaptive Wedge" || plan.Name == "Line Abreast" {
+			t.Fatalf("single-vessel plan retained fleet semantics: %#v", plan)
+		}
 	}
 }
 
