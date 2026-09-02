@@ -10,21 +10,17 @@ async function resetFleet(page: import("@playwright/test").Page) {
 }
 
 async function restoreFixtureGroups(page: import("@playwright/test").Page) {
-  const fleet = await (await page.request.get("/api/v2/fleet")).json();
-  const gannet = fleet.vessels.find((vessel: { callsign: string }) => vessel.callsign === "Gannet");
-  const watchShoal = fleet.groups.find((group: { code: string }) => group.code === "WS");
-  if (!gannet || !watchShoal || gannet.group_id === watchShoal.id) return;
-
-  const key = `e2e-restore-gannet-${Date.now()}-${Math.random()}`;
-  const response = await page.request.post(`/api/v2/groups/${watchShoal.id}/members:move`, {
-    data: {
-      request_id: key,
-      idempotency_key: key,
-      expected_version: watchShoal.revision,
-      vessel_id: gannet.id,
-    },
-  });
-  expect(response.ok()).toBeTruthy();
+  for (const [callsign, code] of [["Gannet", "WS"], ["Tern", "WS"], ["Jaeger", "BG"]]) {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    const vessel = fleet.vessels.find((candidate: { callsign: string }) => candidate.callsign === callsign);
+    const group = fleet.groups.find((candidate: { code: string }) => candidate.code === code);
+    if (!vessel || !group || vessel.group_id === group.id) continue;
+    const key = `e2e-restore-${callsign.toLowerCase()}-${Date.now()}-${Math.random()}`;
+    const response = await page.request.post(`/api/v2/groups/${group.id}/members:move`, {
+      data: { request_id: key, idempotency_key: key, expected_version: group.revision, vessel_id: vessel.id },
+    });
+    expect(response.ok()).toBeTruthy();
+  }
 }
 
 test.beforeEach(async ({ page }) => {
@@ -200,28 +196,85 @@ test("water context menu manages numbered colored waypoints and preview-only gui
 test("selected-assets drawer inspects every scope and reassigns a vessel by drag and drop", async ({ page }) => {
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
-  await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
+  await rail.getByPlaceholder("Callsign, class, group, status…").fill("Jaeger");
+  await rail.locator(".fleet-vessel-row", { hasText: "Jaeger" }).getByRole("checkbox").check();
   await page.getByTitle("Expand selected assets").click();
   const drawer = page.locator(".selection-drawer");
   await expect(drawer).toBeVisible();
-  await expect(drawer.locator(".selected-vessel-row")).toHaveCount(6);
+  await expect(drawer.locator(".selected-vessel-row")).toHaveCount(1);
 
-  await drawer.locator(".selected-vessel-row", { hasText: "Gannet" }).dragTo(drawer.getByTitle("Drop a vessel into BL Bay Lantern"));
+  await drawer.locator(".selected-vessel-row", { hasText: "Jaeger" }).dragTo(drawer.getByTitle("Drop a vessel into BL Bay Lantern"));
   await expect.poll(async () => {
     const fleet = await (await page.request.get("/api/v2/fleet")).json();
-    return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Gannet")?.group_code;
+    return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger")?.group_code;
   }).toBe("BL");
   await expect(drawer).toContainText("BL · Bay Lantern");
-  await drawer.getByTitle("Inspect group WS").click();
-  const groupInspector = page.getByRole("region", { name: "Group · WS", exact: true });
+
+  // The same selected-list row exposes every destination without a separate drop strip.
+  await drawer.locator(".selected-vessel-row", { hasText: "Jaeger" }).click({ button: "right" });
+  const drawerMenu = page.getByRole("menu", { name: "Assign Jaeger to group" });
+  await expect(drawerMenu).toBeVisible();
+  await drawerMenu.getByRole("menuitem", { name: /BG Block Guard/ }).click();
+  await expect.poll(async () => {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger")?.group_code;
+  }).toBe("BG");
+
+  // Fleet/Groups rows are draggable onto ordinary group sections too.
+  const jaeger = rail.locator(".fleet-vessel-row", { hasText: "Jaeger" });
+  await jaeger.dragTo(rail.getByTitle("Drop a vessel into BL Bay Lantern"));
+  await expect.poll(async () => {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger")?.group_code;
+  }).toBe("BL");
+  await rail.locator(".fleet-vessel-row", { hasText: "Jaeger" }).click({ button: "right" });
+  const railMenu = page.getByRole("menu", { name: "Assign Jaeger to group" });
+  await expect(railMenu).toBeVisible();
+  await railMenu.getByRole("menuitem", { name: /BG Block Guard/ }).click();
+  await expect.poll(async () => {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger")?.group_code;
+  }).toBe("BG");
+
+  await drawer.locator(".selected-vessel-row", { hasText: "Jaeger" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Create new group with this vessel" }).click();
+  await expect(page.getByPlaceholder("New group name")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu", { name: "Assign Jaeger to group" })).not.toBeVisible();
+
+  await drawer.getByTitle("Inspect group BG").click();
+  const groupInspector = page.getByRole("region", { name: "Group · BG", exact: true });
   await expect(groupInspector).toBeVisible();
   await groupInspector.getByTitle("Close").click();
-  await drawer.getByTitle("Inspect Gannet").click();
-  const vesselInspector = page.getByRole("region", { name: /Gannet \(KM-214\)/ });
+  await drawer.getByTitle("Inspect Jaeger").click();
+  const vesselInspector = page.getByRole("region", { name: /Jaeger \(KM-232\)/ });
   await expect(vesselInspector).toBeVisible();
   await vesselInspector.getByTitle("Close").click();
   await page.getByRole("button", { name: "Inspect all" }).click();
-  await expect(page.getByRole("region", { name: "Selection · 6", exact: true })).toContainText("AVG RESERVE");
+  const selectionInspector = page.getByRole("region", { name: "Selection · 1", exact: true });
+  await expect(selectionInspector).toContainText("AVG RESERVE");
+  await selectionInspector.getByTitle("Close").click();
+
+  // Creation uses the same exclusive-membership API, then this test restores its fixture.
+  await drawer.locator(".selected-vessel-row", { hasText: "Jaeger" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Create new group with this vessel" }).click();
+  await page.getByPlaceholder("New group name").fill("E2E Jaeger Detachment");
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect.poll(async () => {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    const vessel = fleet.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger");
+    return fleet.groups.find((group: { id: string }) => group.id === vessel?.group_id)?.name;
+  }).toBe("E2E Jaeger Detachment");
+
+  let current = await (await page.request.get("/api/v2/fleet")).json();
+  const jaegerRecord = current.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger");
+  const blockGuard = current.groups.find((group: { code: string }) => group.code === "BG");
+  const restoreKey = `e2e-jaeger-return-${Date.now()}`;
+  expect((await page.request.post(`/api/v2/groups/${blockGuard.id}/members:move`, { data: { request_id: restoreKey, idempotency_key: restoreKey, expected_version: blockGuard.revision, vessel_id: jaegerRecord.id } })).ok()).toBeTruthy();
+  current = await (await page.request.get("/api/v2/fleet")).json();
+  const detachment = current.groups.find((group: { name: string }) => group.name === "E2E Jaeger Detachment");
+  const deleteKey = `e2e-group-delete-${Date.now()}`;
+  expect((await page.request.delete(`/api/v2/groups/${detachment.id}`, { data: { request_id: deleteKey, idempotency_key: deleteKey, expected_version: detachment.revision } })).ok()).toBeTruthy();
 });
 
 test("dragged geometry follows the exact preview, authorization, and execution path", async ({ page }) => {

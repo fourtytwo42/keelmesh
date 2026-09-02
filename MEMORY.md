@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: The map now has distinct vessel and navigable-water context menus. Water right-click supports preview-safe go-to guidance, persistent numbered/color-coded waypoints, color-scoped planning, clearing one color or all waypoints, map centering, and fleet selection; right-clicking a waypoint deletes it directly. The deterministic compiler resolves requests such as “navigate through red waypoints” in sequence.
+- Last meaningful change: Operational-group reassignment is now inline in both vessel lists. Selected assets can be dragged directly onto any group row in the expanded drawer, Fleet/Groups vessels can be dragged onto group sections, and right-clicking a vessel in either list opens a group picker plus an inline create-group form. The old separate color-coded drop strip was removed.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -138,6 +138,7 @@ When sources conflict, use this order:
 
 ## Verification Ledger
 
+- 2026-09-02: Inline group drag/drop and vessel context assignment passed strict TypeScript, seven Vitest assertions, production frontend build, and all eleven Playwright workflows on VM 214. Coverage includes the exact `Jaeger → BL Bay Lantern` move in both lists, context-menu reassignment, create-group form/API, fixture cleanup, selection retention, and inspection. VM 214 and all twelve vessel nodes run binary SHA-256 `320885ef2e8c82029213ddddfa6489fac3150d84d0a3189aadb15026c5eab5fc`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Numbered/color-coded waypoint and water-context behavior passed the full Go suite, strict TypeScript, seven Vitest assertions, production frontend build, and all eleven Playwright workflows on VM 214. VM 214 and all twelve vessel nodes run core binary SHA-256 `81a7ed4750243d84730a70d27d6078b5ae9b313ce390c7a5f375eb3a195147d7`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Provisioned and booted twelve M7 vessel VMs as 2 vCPU/2 GiB/12 GiB linked clones: A01-A05 on `fourtyfour` (220-224), A06 plus B01-B03 on `mini42` (225,229,231,232), and B04-B06 on `mini43` (233,234,236). Every VM has management `192.168.50.<VMID>` on `eth0`, radio `10.77.0.<VMID>` on `eth1`, active QEMU guest agent, faction-pinned node service, and separately installed root-only OpenRouter secret. All twelve management health checks and cross-host radio connectivity passed. No snapshots were created.
 - 2026-09-02: M7 verification passed on VM 214: twelve-node referee topology, disjoint six-node player projections, protected-plane denial, deterministic B coordinator failover `node-b-01`/VM 229 to `node-b-02`/VM 231 at epoch 2, exact-hash engagement authority, and semantic workspace actions. The Player B ingress followed that failover while preserving one URL; both LAN and public Quick Tunnel Playwright Arena workflows passed without page errors.
@@ -372,6 +373,14 @@ When sources conflict, use this order:
 - Files: `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, `web/src/types.ts`, `web/src/FleetWorkspace.tsx`, `web/src/OperationsMap.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
 - Commands/tests: local strict TypeScript, seven Vitest assertions, production Vite build; VM 214 full Go suite and all eleven Playwright workflows; central deployment plus twelve-node binary/health verification.
 - Result: Water right-click exposes go-to, numbered waypoint, six colors, plan-by-color, clear-color/all, map centering, and visible/all-fleet selection. Waypoints display their sequence and retain color through API persistence. VM 214 and all twelve vessel nodes run binary SHA-256 `81a7ed4750243d84730a70d27d6078b5ae9b313ce390c7a5f375eb3a195147d7`. No snapshot or GitHub-hosted workflow.
+
+### 2026-09-02 - Inline group reassignment in vessel lists
+
+- Context: The selected-assets drawer required dragging into a detached color strip, and Fleet/Groups rows offered no direct drag or context-menu reassignment.
+- Decision: Render every operational group as an inline drawer destination, make Fleet/Groups sections drop targets, and expose one shared portal-based vessel context menu in both lists. The menu lists all groups, marks the current group, and can create a named group containing the selected vessel. Preserve the existing version-checked exclusive-membership API and active-authority fail-closed behavior.
+- Files: `web/src/FleetWorkspace.tsx`, `web/src/OperationsMap.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: strict TypeScript, seven Vitest assertions, production Vite build; targeted and full eleven-workflow Playwright runs on VM 214; central plus twelve-node binary and health verification.
+- Result: Jaeger can be dragged directly from Block Guard into Bay Lantern in either list, reassigned from a right-click group picker, or used to create a new named group. Drag completion no longer toggles/clears selection; Escape closes the assignment menu without triggering the global clear-selection shortcut. VM 214 and all twelve vessel nodes run binary SHA-256 `320885ef2e8c82029213ddddfa6489fac3150d84d0a3189aadb15026c5eab5fc`. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - Water-safe fleet spawning
 
