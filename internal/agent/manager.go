@@ -93,8 +93,10 @@ func (m *Manager) refreshHealth(ctx context.Context) {
 	defer m.mu.Unlock()
 	available := err == nil && resp.StatusCode == http.StatusOK
 	var health struct {
-		CloudConfigured bool `json:"cloud_configured"`
-		LocalConfigured bool `json:"local_configured"`
+		CloudConfigured bool   `json:"cloud_configured"`
+		CloudEnabled    bool   `json:"cloud_enabled"`
+		LocalConfigured bool   `json:"local_configured"`
+		ProviderMode    string `json:"provider_mode"`
 	}
 	if resp != nil {
 		if available {
@@ -102,11 +104,15 @@ func (m *Manager) refreshHealth(ctx context.Context) {
 		}
 		_ = resp.Body.Close()
 	}
-	if m.snapshot.Available == available {
+	unchanged := m.snapshot.Available == available && m.snapshot.Provider.Mode == health.ProviderMode && m.snapshot.Provider.CloudEnabled == health.CloudEnabled && m.snapshot.Provider.LocalEnabled == health.LocalConfigured
+	if unchanged {
 		return
 	}
 	m.snapshot.Available = available
-	m.snapshot.Provider.CloudEnabled = health.CloudConfigured
+	if health.ProviderMode != "" {
+		m.snapshot.Provider.Mode = health.ProviderMode
+	}
+	m.snapshot.Provider.CloudEnabled = health.CloudEnabled
 	m.snapshot.Provider.LocalEnabled = health.LocalConfigured
 	if available {
 		m.snapshot.Phase = "ready"

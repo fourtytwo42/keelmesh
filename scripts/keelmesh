@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMPOSE=(docker compose -f "$ROOT/compose.yaml" --project-directory "$ROOT")
+BASE_URL="${KEELMESH_URL:-http://127.0.0.1:8080}"
+OFFLINE_COMPOSE=(docker compose -f "$ROOT/compose.yaml" -f "$ROOT/compose.offline.yaml" --project-directory "$ROOT")
+GATE_DIR="$ROOT/.keelmesh-data/release-gates"
+
+wait_ready() {
+  for _ in $(seq 1 90); do curl -fsS "$BASE_URL/readyz" >/dev/null && return 0; sleep 2; done
+  echo "KeelMesh did not become ready" >&2; return 1
+}
+verify_scenarios() {
+  for milestone in 1 2 3 4 5; do python3 "$ROOT/scripts/verify_m${milestone}.py" "$BASE_URL"; done
+}
+case "${1:-status}" in
+  start)
+    "${COMPOSE[@]}" config -q
+    "${OFFLINE_COMPOSE[@]}" down --remove-orphans
+    KEELMESH_PROVIDER_MODE=offline "${COMPOSE[@]}" up -d --pull never
+    wait_ready
+    echo "KeelMesh ready: $BASE_URL"
+    ;;
+  status)
+    printf 'git: '; git -C "$ROOT" describe --tags --always --dirty
+    "${COMPOSE[@]}" ps
+    curl -fsS "$BASE_URL/healthz"; echo
+    python3 - "$BASE_URL" <<'PY'
+import json, sys, urllib.request
+
+base = sys.argv[1]
+bootstrap = json.load(urllib.request.urlopen(base + "/api/v1/bootstrap"))
+platform = json.load(urllib.request.urlopen(base + "/api/v1/platform"))
+ai = json.load(urllib.request.urlopen(base + "/api/v1/ai"))
+snapshot = bootstrap["snapshot"]
+quiet = snapshot.get("quiet_fleet") or {}
+print("phases:")
+print(f"  M1 mission: {snapshot['mission']['phase']}")
+print(f"  M2 resilience: {(snapshot.get('resilience') or {}).get('phase', 'unavailable')}")
+print(f"  M3 platform: {platform.get('phase', 'unavailable')}")
+print(f"  M4 AI: {ai.get('phase', 'unavailable')} ({(ai.get('provider') or {}).get('mode', 'unknown')})")
+print(f"  M5 Quiet Fleet: {quiet.get('phase', 'unavailable')}")
+PY
+    docker system df
+    ;;
+  reset-demo)
+    python3 - "$BASE_URL" <<'PY'
+import json,sys,time,urllib.request
+b=sys.argv[1]; boot=json.load(urllib.request.urlopen(b+'/api/v1/bootstrap')); key='release-reset-'+str(time.time_ns())
+data=json.dumps({'request_id':key,'idempotency_key':key,'expected_state_version':boot['snapshot']['state_version']}).encode()
+print(json.load(urllib.request.urlopen(urllib.request.Request(b+'/api/v1/scenarios/demo:reset',data=data,headers={'Content-Type':'application/json'})))['mission']['phase'])
+PY
+    ;;
+  verify)
+    docker run --rm -v "$ROOT:/src" -w /src golang:1.27-alpine sh -c 'gofmt -w internal cmd && go test ./... && go vet ./...'
+    docker run --rm -v "$ROOT:/src" -w /src/web node:24-alpine sh -c 'npm ci && npm run typecheck && npm test && npm run build'
+    docker run --rm -v "$ROOT:/src" -w /src/ai python:3.13.7-slim sh -c 'pip install --quiet uv==0.8.22 && uv sync --frozen --all-groups && uv run ruff format --check keelmesh_ai tests && uv run ruff check keelmesh_ai tests && uv run mypy keelmesh_ai && uv run pytest && uv run bandit -q -r keelmesh_ai'
+    if git -C "$ROOT" grep -nE 'sk-or-v1-|OPENROUTER_API_KEY=' -- ':!scripts/keelmesh'; then echo "secret-shaped value found in tracked files" >&2; exit 1; fi
+    docker build -t keelmesh/ai:m5 -f "$ROOT/Dockerfile.ai" "$ROOT"
+    "${COMPOSE[@]}" config -q
+    "${COMPOSE[@]}" build
+    "${OFFLINE_COMPOSE[@]}" down --remove-orphans
+    KEELMESH_PROVIDER_MODE=offline "${COMPOSE[@]}" up -d --pull never
+    wait_ready
+    verify_scenarios
+    docker run --rm --network host -e KEELMESH_E2E_URL="$BASE_URL" -v "$ROOT:/src" -w /src/web mcr.microsoft.com/playwright:v1.62.1-noble sh -c 'npm ci --silent && npx playwright test --reporter=list'
+    mkdir -p "$GATE_DIR"
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$GATE_DIR/verify-passed"
+    ;;
+  offline-verify)
+    OFFLINE=("${OFFLINE_COMPOSE[@]}")
+    "${OFFLINE[@]}" down --remove-orphans
+    KEELMESH_PROVIDER_MODE=offline "${OFFLINE[@]}" up -d --pull never
+    wait_ready
+    for _ in $(seq 1 30); do test "$(docker inspect -f '{{.State.Health.Status}}' keelmesh-ai-1 2>/dev/null)" = healthy && break; sleep 2; done
+    mode=$("${OFFLINE[@]}" exec -T ai python -c "import json,urllib.request; print(json.load(urllib.request.urlopen('http://127.0.0.1:8090/healthz'))['provider_mode'])")
+    test "$mode" = offline
+    verify_scenarios
+    mkdir -p "$GATE_DIR"
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$GATE_DIR/offline-verified"
+    echo "offline verification passed: no image pulls, private internal network, mock provider"
+    ;;
+  restart-verify)
+    "$0" reset-demo
+    python3 "$ROOT/scripts/verify_m1.py" "$BASE_URL" >/dev/null
+    "${COMPOSE[@]}" restart ai
+    curl -fsS "$BASE_URL/healthz" >/dev/null
+    run_id=$(python3 - "$BASE_URL" <<'PY'
+import json,sys,time,urllib.request
+b=sys.argv[1]; p=json.load(urllib.request.urlopen(b+'/api/v1/platform')); k='restart-load-'+str(time.time_ns())
+d=json.dumps({'request_id':k,'idempotency_key':k,'expected_platform_state_version':p['state_version'],'profile':'interview','seed':5150}).encode()
+print(json.load(urllib.request.urlopen(urllib.request.Request(b+'/api/v1/load/runs',data=d,headers={'Content-Type':'application/json'})))['id'])
+PY
+)
+    sleep 5
+    "${COMPOSE[@]}" restart worker-2
+    curl -fsS "$BASE_URL/healthz" >/dev/null
+    sleep 18
+    python3 - "$BASE_URL" "$run_id" <<'PY'
+import json,sys,time,urllib.request
+b,r=sys.argv[1:]; p=json.load(urllib.request.urlopen(b+'/api/v1/platform')); assert len([w for w in p['workers'] if w['state']=='running'])==3
+k='restart-stop-'+str(time.time_ns()); d=json.dumps({'request_id':k,'idempotency_key':k,'expected_platform_state_version':p['state_version']}).encode()
+urllib.request.urlopen(urllib.request.Request(b+f'/api/v1/load/runs/{r}:stop',data=d,headers={'Content-Type':'application/json'}))
+PY
+    "${COMPOSE[@]}" restart kafka postgres
+    for service in kafka postgres; do for _ in $(seq 1 60); do test "$(docker inspect -f '{{.State.Health.Status}}' "keelmesh-${service}-1" 2>/dev/null)" = healthy && break; sleep 2; done; done
+    "${COMPOSE[@]}" restart core
+    wait_ready
+    test "$(curl -fsS "$BASE_URL/api/v1/bootstrap" | python3 -c 'import json,sys; print(json.load(sys.stdin)["snapshot"]["mission"]["phase"])')" = idle
+    "$0" reset-demo
+    mkdir -p "$GATE_DIR"
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$GATE_DIR/restart-verified"
+    echo "restart isolation and honest in-memory core reset verified"
+    ;;
+  export-evidence)
+    stamp=$(date -u +%Y%m%dT%H%M%SZ); out="$ROOT/evidence/release/$stamp"; mkdir -p "$out"
+    git -C "$ROOT" status --short > "$out/git-status.txt"
+    git -C "$ROOT" rev-parse HEAD > "$out/commit.txt"
+    "${COMPOSE[@]}" images --format json > "$out/images.json"
+    sha256sum "$ROOT/compose.yaml" "$ROOT/compose.offline.yaml" > "$out/compose-hashes.txt"
+    docker stats --no-stream --format '{{json .}}' > "$out/container-resources.jsonl"
+    verify_scenarios | tee "$out/verification.jsonl"
+    python3 - "$GATE_DIR" "$out/release-gates.json" <<'PY'
+import json, pathlib, sys
+
+gate_dir, output = map(pathlib.Path, sys.argv[1:])
+names = ("verify-passed", "offline-verified", "restart-verified")
+result = {name.replace("-", "_"): (gate_dir / name).read_text().strip() if (gate_dir / name).is_file() else None for name in names}
+result["all_required_gates_recorded"] = all(result.values())
+output.write_text(json.dumps(result, indent=2) + "\n")
+PY
+    printf '# KeelMesh release evidence\n\nCommit: `%s`\n\nAll M1–M5 verifiers passed. See `SHA256SUMS`.\n' "$(cat "$out/commit.txt")" > "$out/README.md"
+    find "$out" -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > "$out/SHA256SUMS"
+    test "$(du -sm "$out" | cut -f1)" -le 256
+    echo "$out"
+    ;;
+  rehearse)
+    mode="${2:---six-minute}"; "$0" reset-demo
+    echo "Rehearsal $mode: M1 plan/approve → M2 resilience → M5 Quiet Fleet → Cutaway → Engineer"
+    verify_scenarios
+    ;;
+  stop) "${OFFLINE_COMPOSE[@]}" stop ;;
+  *) echo "usage: scripts/keelmesh {start|status|reset-demo|verify|offline-verify|restart-verify|export-evidence|rehearse|stop}" >&2; exit 2 ;;
+esac

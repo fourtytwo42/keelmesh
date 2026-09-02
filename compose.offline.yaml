@@ -1,0 +1,38 @@
+name: keelmesh
+
+services:
+  postgres:
+    networks: [backend]
+  kafka:
+    networks: [backend]
+  migrate:
+    networks: [backend]
+  topic-init:
+    networks: [backend]
+  loadgen-init:
+    networks: [backend]
+  ai-auth-init:
+    networks: [backend]
+  core:
+    networks: [backend, lan]
+  loadgen:
+    networks: [backend]
+  worker-1:
+    networks: [backend]
+  worker-2:
+    networks: [backend]
+  worker-3:
+    networks: [backend]
+  ai-index:
+    networks: [backend]
+  ai:
+    environment:
+      KEELMESH_PROVIDER_MODE: offline
+      KEELMESH_LOCAL_BASE_URL: ""
+      KEELMESH_LOCAL_MODEL: ""
+    networks: [backend]
+
+networks:
+  backend:
+    internal: true
+  lan: {}

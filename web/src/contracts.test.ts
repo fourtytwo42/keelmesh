@@ -3,7 +3,8 @@ import fixtureJSON from "../../contracts/fixtures/mission-intent-v1.json";
 import resilienceJSON from "../../contracts/fixtures/resilience-snapshot-v1.json";
 import platformJSON from "../../contracts/fixtures/platform-snapshot-v1.json";
 import agentJSON from "../../contracts/fixtures/agent-snapshot-v1.json";
-import type { AgentSnapshot, MissionIntent, PlatformSnapshot, ResilienceSnapshot } from "./types";
+import quietFleetJSON from "../../contracts/fixtures/quiet-fleet-snapshot-v1.json";
+import type { AgentSnapshot, MissionIntent, PlatformSnapshot, QuietFleetSnapshot, ResilienceSnapshot } from "./types";
 
 describe("shared contract fixtures", () => {
   it("reads MissionIntentV1 using the TypeScript contract", () => {
@@ -33,5 +34,13 @@ describe("shared contract fixtures", () => {
     expect(fixture.incidents[0].scenario_seed).toBe(42042);
     expect(fixture.provider.models.at(-1)).toBe("openrouter/free");
     expect(fixture.security_denials).toBe(1);
+  });
+
+  it("reads QuietFleetSnapshotV1 using the TypeScript contract", () => {
+    const fixture = quietFleetJSON as QuietFleetSnapshot;
+    expect(fixture.contract.quorum).toBe(3);
+    expect(fixture.metrics.quorum_count).toBe(3);
+    expect(fixture.metrics.affected_armed).toBe(3);
+    expect(fixture.decisions[0].reason_code).toBe("SPEED_ENVELOPE_EXCEEDED");
   });
 });

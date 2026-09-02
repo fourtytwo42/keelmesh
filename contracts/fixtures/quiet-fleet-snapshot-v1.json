@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "state_version": 9,
+  "scenario_id": "quiet-fleet-v1",
+  "phase": "proposal_rejected",
+  "mission_tick": 20,
+  "contract": {"schema_version":1,"id":"group-contract-v1","mission_id":"mission-demo","plan_hash":"sha256:plan","authority_epoch":1,"members":["vessel-02","vessel-03","vessel-04","vessel-05"],"coordinator_order":["vessel-02","vessel-03","vessel-05","vessel-04"],"quorum":3,"window_interval_seconds":20,"maximum_bytes_per_window":4096,"maximum_rounds":3,"minimum_activation_lead_seconds":20,"tape_boundary_seconds":10,"allowed_adaptations":["pace","lane_reassignment"],"bulk_traffic_suppressed":true,"content_hash":"sha256:contract","signature":"fixture"},
+  "coordinator_id":"vessel-02",
+  "vessel4_speed_mps":0.8,
+  "active_assignments":[],
+  "proposal":{"schema_version":1,"id":"adaptation-v1","revision":1,"authority_epoch":1,"coordinator_id":"vessel-02","reason":"Vessel 4 propulsion degraded","source":"simulated edge inference · deterministic fixture","created_tick":20,"expires_tick":60,"affected_nodes":["vessel-02","vessel-03","vessel-04","vessel-05"],"assignments":[],"content_hash":"sha256:proposal","signature":"fixture"},
+  "decisions":[{"schema_version":1,"node_id":"vessel-02","proposal_hash":"sha256:proposal","decision":"reject","reason_code":"SPEED_ENVELOPE_EXCEEDED","decided_tick":20,"signature":"fixture"}],
+  "windows":[{"round":1,"opens_tick":20,"closes_tick":22,"bytes_used":1200,"byte_budget":4096,"message_count":5,"state":"closed"}],
+  "metrics":{"rounds":1,"bytes_sent":1200,"byte_budget":12288,"messages_sent":5,"bulk_messages_suppressed":6,"quorum_count":3,"quorum_required":3,"affected_armed":3,"affected_required":4},
+  "summary":"Quorum exists, but an affected vessel rejected the unsafe proposal.",
+  "next_action":"submit_revision",
+  "auto_run_available":true,
+  "inference_label":"simulated edge inference · deterministic fixture"
+}

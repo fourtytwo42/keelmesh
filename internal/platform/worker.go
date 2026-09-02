@@ -255,7 +255,7 @@ func ingestBatch(ctx context.Context, pool *pgxpool.Pool, records []*kgo.Record,
 		}
 	}
 	var outOfOrder int64
-	if err = tx.QueryRow(ctx, `SELECT count(*) FROM ingest_stage s WHERE EXISTS(SELECT 1 FROM vessel_latest v WHERE v.vessel_id=s.vessel_id AND v.sequence>=s.sequence) OR EXISTS(SELECT 1 FROM ingest_stage newer WHERE newer.vessel_id=s.vessel_id AND newer.sequence>s.sequence)`).Scan(&outOfOrder); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT count(*) FROM ingest_stage s WHERE EXISTS(SELECT 1 FROM vessel_latest v WHERE v.vessel_id=s.vessel_id AND v.run_id=s.run_id AND v.sequence>=s.sequence) OR EXISTS(SELECT 1 FROM ingest_stage newer WHERE newer.run_id=s.run_id AND newer.vessel_id=s.vessel_id AND newer.sequence>s.sequence)`).Scan(&outOfOrder); err != nil {
 		return 0, 0, 0, 0, err
 	}
 	tag, err := tx.Exec(ctx, `INSERT INTO telemetry_events(run_id,vessel_id,event_id,event_type,sequence,produced_at,payload,checksum) SELECT run_id,vessel_id,event_id,event_type,sequence,produced_at,payload,checksum FROM ingest_stage ON CONFLICT DO NOTHING`)
@@ -264,7 +264,7 @@ func ingestBatch(ctx context.Context, pool *pgxpool.Pool, records []*kgo.Record,
 	}
 	accepted := tag.RowsAffected()
 	duplicates := int64(len(valid)) - accepted
-	_, err = tx.Exec(ctx, `INSERT INTO vessel_latest(vessel_id,run_id,sequence,produced_at,payload,event_id) SELECT DISTINCT ON(vessel_id) vessel_id,run_id,sequence,produced_at,payload,event_id FROM ingest_stage ORDER BY vessel_id,sequence DESC ON CONFLICT(vessel_id) DO UPDATE SET run_id=excluded.run_id,sequence=excluded.sequence,produced_at=excluded.produced_at,payload=excluded.payload,event_id=excluded.event_id,updated_at=now() WHERE vessel_latest.sequence<excluded.sequence`)
+	_, err = tx.Exec(ctx, `INSERT INTO vessel_latest(vessel_id,run_id,sequence,produced_at,payload,event_id) SELECT DISTINCT ON(vessel_id) vessel_id,run_id,sequence,produced_at,payload,event_id FROM ingest_stage ORDER BY vessel_id,produced_at DESC,sequence DESC ON CONFLICT(vessel_id) DO UPDATE SET run_id=excluded.run_id,sequence=excluded.sequence,produced_at=excluded.produced_at,payload=excluded.payload,event_id=excluded.event_id,updated_at=now() WHERE excluded.produced_at>vessel_latest.produced_at OR (excluded.run_id=vessel_latest.run_id AND excluded.sequence>vessel_latest.sequence)`)
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 	"github.com/fourtytwo42/keelmesh/internal/geometry"
 	"github.com/fourtytwo42/keelmesh/internal/planner"
+	quiet "github.com/fourtytwo42/keelmesh/internal/quietfleet"
 	edge "github.com/fourtytwo42/keelmesh/internal/resilience"
 	"github.com/fourtytwo42/keelmesh/internal/scenario"
 )
@@ -76,6 +77,7 @@ type Engine struct {
 	mission      domain.MissionStateV1
 	runtime      *missionRuntime
 	resilience   *edge.Runtime
+	quietFleet   *quiet.Runtime
 	audit        []domain.AuditEventV1
 	secret       []byte
 	sequence     int64
@@ -111,7 +113,7 @@ func (e *Engine) Run(ctx context.Context) {
 func (e *Engine) Bootstrap() domain.BootstrapV1 {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return domain.BootstrapV1{SchemaVersion: domain.SchemaVersion, Snapshot: e.snapshotLocked(), Boundary: e.scenario.Boundary, SuggestedArea: e.scenario.SuggestedArea, ExclusionZone: e.scenario.Exclusion, HoldingArea: e.scenario.Holding, Capabilities: []string{"draw_area", "typed_intent", "deterministic_plans", "plan_preview", "exact_hash_authorization", "simulated_execution"}, Audit: cloneAudit(e.audit)}
+	return domain.BootstrapV1{SchemaVersion: domain.SchemaVersion, Snapshot: e.snapshotLocked(), Boundary: e.scenario.Boundary, SuggestedArea: e.scenario.SuggestedArea, ExclusionZone: e.scenario.Exclusion, HoldingArea: e.scenario.Holding, Capabilities: []string{"draw_area", "typed_intent", "deterministic_plans", "plan_preview", "exact_hash_authorization", "simulated_execution", "quiet_fleet"}, Audit: cloneAudit(e.audit)}
 }
 func (e *Engine) Snapshot() domain.FleetSnapshotV1 {
 	e.mu.RLock()
@@ -124,7 +126,12 @@ func (e *Engine) snapshotLocked() domain.FleetSnapshotV1 {
 		snapshot := e.resilience.Snapshot()
 		resilienceSnapshot = &snapshot
 	}
-	return domain.FleetSnapshotV1{SchemaVersion: domain.SchemaVersion, StateVersion: e.stateVersion, ScenarioID: e.scenario.ID, ScenarioName: e.scenario.Name, SimulationRate: e.scenario.SimulationRate, Vessels: cloneVessels(e.vessels), Mission: e.mission, Resilience: resilienceSnapshot}
+	var quietSnapshot *domain.QuietFleetSnapshotV1
+	if e.quietFleet != nil {
+		snapshot := e.quietFleet.Snapshot()
+		quietSnapshot = &snapshot
+	}
+	return domain.FleetSnapshotV1{SchemaVersion: domain.SchemaVersion, StateVersion: e.stateVersion, ScenarioID: e.scenario.ID, ScenarioName: e.scenario.Name, SimulationRate: e.scenario.SimulationRate, Vessels: cloneVessels(e.vessels), Mission: e.mission, Resilience: resilienceSnapshot, QuietFleet: quietSnapshot}
 }
 
 func (e *Engine) Compile(req CompileRequest) (domain.MissionIntentV1, error) {
@@ -159,6 +166,7 @@ func (e *Engine) Compile(req CompileRequest) (domain.MissionIntentV1, error) {
 	e.lease = nil
 	e.runtime = nil
 	e.resilience = nil
+	e.quietFleet = nil
 	e.mission = domain.MissionStateV1{Phase: "intent_ready"}
 	e.appendAuditLocked(trace, "intent.compiled", "Mission intent compiled", map[string]any{"intent_id": intent.ID, "state_version": e.stateVersion})
 	return intent, nil
@@ -280,13 +288,151 @@ func (e *Engine) Start(missionID string, req StartRequest) (domain.MissionStateV
 	now := time.Now().UTC()
 	e.runtime = &missionRuntime{plan: plan, distance: distances, total: totals, lastTick: now}
 	e.resilience = edge.New(*e.lease, plan, e.vessels, e.stateVersion+1)
+	e.quietFleet = quiet.New(*e.lease, plan, e.stateVersion+1)
 	e.mission.Phase = "executing"
 	e.mission.StartedAt = now.Format(time.RFC3339Nano)
 	e.idempotency[req.IdempotencyKey] = fingerprint
 	e.stateVersion++
 	e.resilience.SetStateVersion(e.stateVersion)
+	e.quietFleet.SetStateVersion(e.stateVersion)
 	e.appendAuditLocked(e.intent.TraceID, "mission.started", "Authorized mission execution started", map[string]any{"mission_id": missionID, "simulation_rate": e.scenario.SimulationRate})
 	return e.mission, nil
+}
+
+func (e *Engine) QuietFleet() (domain.QuietFleetSnapshotV1, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.quietFleet == nil {
+		return domain.QuietFleetSnapshotV1{}, errCode("MISSION_REQUIRED", "Start an authorized mission before entering Quiet Fleet.")
+	}
+	return e.quietFleet.Snapshot(), nil
+}
+
+func (e *Engine) ApplyQuietFleet(req domain.QuietFleetCommandV1) (domain.QuietFleetSnapshotV1, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if req.IdempotencyKey == "" {
+		return domain.QuietFleetSnapshotV1{}, errCode("IDEMPOTENCY_CONFLICT", "An idempotency key is required.")
+	}
+	fingerprint := "quiet-fleet|" + req.Kind + "|" + req.ProposalHash
+	if prior, ok := e.idempotency[req.IdempotencyKey]; ok {
+		if prior != fingerprint {
+			return domain.QuietFleetSnapshotV1{}, errCode("IDEMPOTENCY_CONFLICT", "The idempotency key was already used for another command.")
+		}
+		if e.quietFleet == nil {
+			return domain.QuietFleetSnapshotV1{}, errCode("MISSION_REQUIRED", "Quiet Fleet is not active.")
+		}
+		return e.quietFleet.Snapshot(), nil
+	}
+	if req.ExpectedStateVersion != e.stateVersion {
+		return domain.QuietFleetSnapshotV1{}, errCode("QUIET_FLEET_STALE_STATE", "Fleet state changed; refresh before coordinating.")
+	}
+	if e.quietFleet == nil {
+		return domain.QuietFleetSnapshotV1{}, errCode("MISSION_REQUIRED", "Start an authorized mission before entering Quiet Fleet.")
+	}
+	kind, err := e.quietFleet.Apply(req.Kind, req.ProposalHash)
+	if err != nil {
+		return domain.QuietFleetSnapshotV1{}, errCode(err.Error(), "Quiet Fleet command failed closed for the current authority state.")
+	}
+	e.idempotency[req.IdempotencyKey] = fingerprint
+	e.stateVersion++
+	e.quietFleet.SetStateVersion(e.stateVersion)
+	if e.resilience != nil {
+		e.resilience.SetStateVersion(e.stateVersion)
+	}
+	snapshot := e.quietFleet.Snapshot()
+	e.appendAuditLocked(e.traceIDLocked(), kind, snapshot.Summary, map[string]any{"request_id": req.RequestID, "mission_tick": snapshot.MissionTick, "bytes_sent": snapshot.Metrics.BytesSent})
+	e.broadcastQuietFleetLocked(kind, snapshot)
+	return snapshot, nil
+}
+
+func (e *Engine) ResetQuietFleet(req domain.QuietFleetMutationV1) (domain.QuietFleetSnapshotV1, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if req.IdempotencyKey == "" {
+		return domain.QuietFleetSnapshotV1{}, errCode("IDEMPOTENCY_CONFLICT", "An idempotency key is required.")
+	}
+	fingerprint := "quiet-fleet-reset"
+	if prior, ok := e.idempotency[req.IdempotencyKey]; ok {
+		if prior != fingerprint {
+			return domain.QuietFleetSnapshotV1{}, errCode("IDEMPOTENCY_CONFLICT", "The idempotency key was already used for another mutation.")
+		}
+		if e.quietFleet == nil {
+			return domain.QuietFleetSnapshotV1{}, errCode("MISSION_REQUIRED", "Quiet Fleet is not active.")
+		}
+		return e.quietFleet.Snapshot(), nil
+	}
+	if req.ExpectedStateVersion != e.stateVersion {
+		return domain.QuietFleetSnapshotV1{}, errCode("QUIET_FLEET_STALE_STATE", "Fleet state changed; refresh before resetting.")
+	}
+	if e.lease == nil {
+		return domain.QuietFleetSnapshotV1{}, errCode("MISSION_REQUIRED", "Start an authorized mission before resetting Quiet Fleet.")
+	}
+	plan := e.plans[e.lease.PlanID]
+	e.stateVersion++
+	e.quietFleet = quiet.New(*e.lease, plan, e.stateVersion)
+	e.idempotency[req.IdempotencyKey] = fingerprint
+	snapshot := e.quietFleet.Snapshot()
+	e.broadcastQuietFleetLocked("quiet_fleet.scenario.reset", snapshot)
+	return snapshot, nil
+}
+
+func (e *Engine) AdvanceQuietFleet(req domain.QuietFleetCommandV1) (domain.QuietFleetSnapshotV1, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if req.IdempotencyKey == "" {
+		return domain.QuietFleetSnapshotV1{}, errCode("IDEMPOTENCY_CONFLICT", "An idempotency key is required.")
+	}
+	seconds, ok := req.Parameters["seconds"].(float64)
+	if !ok {
+		seconds = 10
+	}
+	fingerprint := fmt.Sprintf("quiet-fleet-advance|%g", seconds)
+	if prior, exists := e.idempotency[req.IdempotencyKey]; exists {
+		if prior != fingerprint {
+			return domain.QuietFleetSnapshotV1{}, errCode("IDEMPOTENCY_CONFLICT", "The idempotency key was already used for another mutation.")
+		}
+		if e.quietFleet == nil {
+			return domain.QuietFleetSnapshotV1{}, errCode("MISSION_REQUIRED", "Quiet Fleet is not active.")
+		}
+		return e.quietFleet.Snapshot(), nil
+	}
+	if req.ExpectedStateVersion != e.stateVersion {
+		return domain.QuietFleetSnapshotV1{}, errCode("QUIET_FLEET_STALE_STATE", "Fleet state changed; refresh before advancing.")
+	}
+	if e.quietFleet == nil {
+		return domain.QuietFleetSnapshotV1{}, errCode("MISSION_REQUIRED", "Quiet Fleet is not active.")
+	}
+	if err := e.quietFleet.Advance(int64(seconds)); err != nil {
+		return domain.QuietFleetSnapshotV1{}, errCode(err.Error(), "Quiet Fleet clock advance failed.")
+	}
+	e.idempotency[req.IdempotencyKey] = fingerprint
+	e.stateVersion++
+	e.quietFleet.SetStateVersion(e.stateVersion)
+	snapshot := e.quietFleet.Snapshot()
+	e.broadcastQuietFleetLocked("quiet_fleet.clock.advanced", snapshot)
+	return snapshot, nil
+}
+
+func (e *Engine) ResetDemo(req domain.QuietFleetMutationV1) (domain.FleetSnapshotV1, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if req.IdempotencyKey == "" {
+		return domain.FleetSnapshotV1{}, errCode("IDEMPOTENCY_CONFLICT", "An idempotency key is required.")
+	}
+	if req.ExpectedStateVersion != e.stateVersion {
+		return domain.FleetSnapshotV1{}, errCode("QUIET_FLEET_STALE_STATE", "Fleet state changed; refresh before resetting the demo.")
+	}
+	e.stateVersion++
+	e.vessels = cloneVessels(e.scenario.Vessels)
+	e.intent, e.lease, e.runtime, e.resilience, e.quietFleet = nil, nil, nil, nil, nil
+	e.plans = map[string]domain.PlanCandidateV1{}
+	e.previews = map[string]domain.PlanPreviewV1{}
+	e.mission = domain.MissionStateV1{Phase: "idle"}
+	e.idempotency = map[string]string{}
+	e.idempotency[req.IdempotencyKey] = "demo-reset"
+	e.appendAuditLocked("demo-reset", "demo.reset", "M1, M2, and M5 in-memory state reset to the deterministic scenario.", nil)
+	return e.snapshotLocked(), nil
 }
 
 func (e *Engine) Resilience() (domain.ResilienceSnapshotV1, error) {
@@ -499,6 +645,17 @@ func (e *Engine) tick(now time.Time) {
 func (e *Engine) broadcastResilienceLocked(kind string, snapshot domain.ResilienceSnapshotV1) {
 	e.sequence++
 	msg := domain.StreamMessageV1{SchemaVersion: domain.SchemaVersion, Sequence: e.sequence, Kind: kind, Resilience: &snapshot}
+	for ch := range e.subs {
+		select {
+		case ch <- msg:
+		default:
+		}
+	}
+}
+
+func (e *Engine) broadcastQuietFleetLocked(kind string, snapshot domain.QuietFleetSnapshotV1) {
+	e.sequence++
+	msg := domain.StreamMessageV1{SchemaVersion: domain.SchemaVersion, Sequence: e.sequence, Kind: kind, QuietFleet: &snapshot}
 	for ch := range e.subs {
 		select {
 		case ch <- msg:

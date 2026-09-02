@@ -37,7 +37,8 @@ def build_metadata():
     def capture(command):
         completed=subprocess.run(command,capture_output=True,text=True,check=False)
         return completed.stdout.strip() if completed.returncode==0 else "unknown"
-    return {"commit":capture(["git","rev-parse","HEAD"]),"image_digest":capture(["docker","image","inspect","keelmesh/core:m3","--format","{{.Id}}"])}
+    image = "keelmesh/core:m5" if capture(["docker", "image", "inspect", "keelmesh/core:m5", "--format", "{{.Id}}"] ) != "unknown" else "keelmesh/core:m3"
+    return {"commit":capture(["git","rev-parse","HEAD"]),"image_digest":capture(["docker","image","inspect",image,"--format","{{.Id}}"])}
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument("base",nargs="?",default="http://127.0.0.1:8080");parser.add_argument("--json",dest="json_path");parser.add_argument("--markdown",dest="markdown_path");parser.add_argument("--resources-only",action="store_true");args=parser.parse_args();base=args.base.rstrip("/")

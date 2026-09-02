@@ -14,6 +14,8 @@ build/
 *.tsbuildinfo
 web/*.config.js
 web/*.config.d.ts
+web/test-results/
+web/playwright-report/
 __pycache__/
 *.pyc
 ai/.venv/

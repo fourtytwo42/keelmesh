@@ -32,6 +32,19 @@ export type FleetSnapshot = {
   vessels: Vessel[];
   mission: MissionState;
   resilience?: ResilienceSnapshot;
+  quiet_fleet?: QuietFleetSnapshot;
+};
+
+export type CoordinationDecision = { node_id:string; proposal_hash:string; decision:"armed"|"reject"|"abstain"; reason_code?:string; decided_tick:number; signature:string };
+export type GroupProposal = { id:string; revision:number; authority_epoch:number; reason:string; source:string; created_tick:number; expires_tick:number; affected_nodes:string[]; assignments:Assignment[]; content_hash:string; signature:string };
+export type GroupCommit = { id:string; proposal_hash:string; authority_epoch:number; commit_tick:number; activation_tick:number; armed_nodes:string[]; content_hash:string; signature:string };
+export type QuietFleetSnapshot = {
+  schema_version:number; state_version:number; scenario_id:string; phase:string; mission_tick:number;
+  contract:{ id:string; mission_id:string; plan_hash:string; authority_epoch:number; members:string[]; coordinator_order:string[]; quorum:number; window_interval_seconds:number; maximum_bytes_per_window:number; maximum_rounds:number; minimum_activation_lead_seconds:number; tape_boundary_seconds:number; bulk_traffic_suppressed:boolean; content_hash:string; signature:string };
+  coordinator_id:string; vessel4_speed_mps:number; active_assignments:Assignment[]; proposal?:GroupProposal; decisions:CoordinationDecision[]; commit?:GroupCommit;
+  windows:Array<{round:number;opens_tick:number;closes_tick:number;bytes_used:number;byte_budget:number;message_count:number;state:string}>;
+  metrics:{rounds:number;bytes_sent:number;byte_budget:number;messages_sent:number;bulk_messages_suppressed:number;quorum_count:number;quorum_required:number;affected_armed:number;affected_required:number};
+  summary:string; next_action?:string; auto_run_available:boolean; inference_label:string;
 };
 
 export type TapeSegment = { sequence: number; activation_tick: number; expiry_tick: number; lifecycle: string; content_hash: string };
@@ -95,7 +108,7 @@ export type PlanCandidate = {
 
 export type Preview = { plan_id: string; plan_hash: string; duration_seconds: number; samples: Array<{ second: number; positions: Record<string, Point> }> };
 export type Lease = { id: string; mission_id: string; plan_id: string; plan_hash: string; operator_id: string; asset_ids: string[]; minimum_reserve: number; issued_at: string; expires_at: string; signature: string };
-export type StreamMessage = { schema_version: number; sequence: number; kind: string; snapshot?: FleetSnapshot; audit?: AuditEvent; resilience?: ResilienceSnapshot; platform?: PlatformSnapshot; ai?: AgentSnapshot };
+export type StreamMessage = { schema_version: number; sequence: number; kind: string; snapshot?: FleetSnapshot; audit?: AuditEvent; resilience?: ResilienceSnapshot; quiet_fleet?: QuietFleetSnapshot; platform?: PlatformSnapshot; ai?: AgentSnapshot };
 export type APIError = { code: string; message: string };
 
 export type PlatformMetrics = { attempted:number; produced:number; unique_inserted:number; duplicates_suppressed:number; out_of_order:number; quarantined:number; replayed:number; throttled:number; dropped:number; events_per_second:number; bytes_per_second:number; latency_p50_ms:number; latency_p95_ms:number; latency_p99_ms:number; db_write_p95_ms:number; current_lag:number; peak_lag:number; rebalance_count:number; recovery_seconds:number };

@@ -53,6 +53,7 @@ type FleetSnapshotV1 struct {
 	Vessels        []VesselV1            `json:"vessels"`
 	Mission        MissionStateV1        `json:"mission"`
 	Resilience     *ResilienceSnapshotV1 `json:"resilience,omitempty"`
+	QuietFleet     *QuietFleetSnapshotV1 `json:"quiet_fleet,omitempty"`
 }
 
 type IntentConstraintsV1 struct {
@@ -163,6 +164,7 @@ type StreamMessageV1 struct {
 	Resilience    *ResilienceSnapshotV1 `json:"resilience,omitempty"`
 	Platform      *PlatformSnapshotV1   `json:"platform,omitempty"`
 	AI            *AgentSnapshotV1      `json:"ai,omitempty"`
+	QuietFleet    *QuietFleetSnapshotV1 `json:"quiet_fleet,omitempty"`
 }
 
 type BootstrapV1 struct {

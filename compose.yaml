@@ -45,7 +45,7 @@ services:
     build: &app-build
       context: .
       dockerfile: Dockerfile
-    image: keelmesh/core:m4
+    image: keelmesh/core:m5
     command: ["--role", "migrate"]
     environment: &app-env
       KEELMESH_DATABASE_URL: postgres://keelmesh:keelmesh@postgres:5432/keelmesh?sslmode=disable
@@ -61,7 +61,7 @@ services:
     restart: "no"
 
   topic-init:
-    image: keelmesh/core:m4
+    image: keelmesh/core:m5
     command: ["--role", "topic-init"]
     environment: *app-env
     depends_on:
@@ -103,7 +103,7 @@ services:
 
   core:
     build: *app-build
-    image: keelmesh/core:m4
+    image: keelmesh/core:m5
     restart: unless-stopped
     environment: *app-env
     depends_on:
@@ -127,7 +127,7 @@ services:
       start_period: 5s
 
   loadgen:
-    image: keelmesh/core:m4
+    image: keelmesh/core:m5
     command: ["--role", "loadgen"]
     environment: *app-env
     volumes:
@@ -140,7 +140,7 @@ services:
     restart: unless-stopped
 
   worker-1: &worker
-    image: keelmesh/core:m4
+    image: keelmesh/core:m5
     command: ["--role", "worker-supervisor"]
     environment:
       <<: *app-env
@@ -166,7 +166,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ai
-    image: keelmesh/ai:m4
+    image: keelmesh/ai:m5
     command: ["python", "-m", "keelmesh_ai.index"]
     depends_on:
       ai-auth-init:
@@ -180,7 +180,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ai
-    image: keelmesh/ai:m4
+    image: keelmesh/ai:m5
     restart: unless-stopped
     environment:
       OPENROUTER_API_KEY_FILE: /run/keelmesh-auth/openrouter/token
@@ -189,6 +189,7 @@ services:
       KEELMESH_MCP_URL: http://core:8081/mcp
       KEELMESH_LOCAL_BASE_URL: ${KEELMESH_LOCAL_BASE_URL:-}
       KEELMESH_LOCAL_MODEL: ${KEELMESH_LOCAL_MODEL:-}
+      KEELMESH_PROVIDER_MODE: ${KEELMESH_PROVIDER_MODE:-connected}
     volumes:
       - core-ai-token:/run/keelmesh-auth/core-ai:ro
       - mcp-investigator-token:/run/keelmesh-auth/investigator:ro

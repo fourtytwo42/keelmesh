@@ -83,6 +83,23 @@ python3 scripts/verify_m4.py http://localhost:8080 \
   --json evidence/m4.json --markdown evidence/m4.md
 ```
 
+## M5 interview release
+
+M5 adds the Quiet Fleet authority demonstration: a four-vessel cell rejects an unsafe redistribution even though it has quorum, arms a safe revision on every affected node, then atomically activates the exact signed commit at a future mission-tape boundary.
+
+VM 214 is the only release-verification environment. GitHub Actions are intentionally disabled. From `/srv/keelmesh`:
+
+```bash
+scripts/keelmesh start
+scripts/keelmesh verify
+scripts/keelmesh offline-verify
+scripts/keelmesh restart-verify
+scripts/keelmesh export-evidence
+scripts/keelmesh rehearse --six-minute
+```
+
+`start` and offline verification use cached images with `--pull never`. The connected OpenRouter exercise is supplementary; deterministic mock/offline AI is the release gate. No Proxmox snapshot is created by these commands.
+
 Only port 8080 remains published. The Python API, MCP server, generated
 capability tokens, provider credential, Kafka, and PostgreSQL stay private.
 CI uses an empty provider secret and proves the same workflow through mock.

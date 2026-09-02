@@ -61,3 +61,17 @@ func TestAgentSnapshotV1Fixture(t *testing.T) {
 		t.Fatalf("fixture does not satisfy AgentSnapshotV1: %+v", snapshot)
 	}
 }
+
+func TestQuietFleetSnapshotV1Fixture(t *testing.T) {
+	data, err := os.ReadFile("../../contracts/fixtures/quiet-fleet-snapshot-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot QuietFleetSnapshotV1
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Contract.Quorum != 3 || snapshot.Metrics.QuorumCount != 3 || snapshot.Metrics.AffectedArmed != 3 || snapshot.Decisions[0].ReasonCode != "SPEED_ENVELOPE_EXCEEDED" {
+		t.Fatalf("fixture does not satisfy QuietFleetSnapshotV1: %+v", snapshot)
+	}
+}

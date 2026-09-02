@@ -1,4 +1,11 @@
-from keelmesh_ai.service import ASSERTIONS, OPENROUTER_MODELS, Circuit, digest, parse_eval_json, parse_model_json
+from keelmesh_ai.service import (
+    ASSERTIONS,
+    OPENROUTER_MODELS,
+    Circuit,
+    digest,
+    parse_eval_json,
+    parse_model_json,
+)
 
 
 def test_model_pool_has_adaptive_final_router() -> None:

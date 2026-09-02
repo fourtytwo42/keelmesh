@@ -72,6 +72,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/faults", s.fault)
 	mux.HandleFunc("POST /api/v1/scenarios/resilient-edge:reset", s.resetResilience)
 	mux.HandleFunc("POST /api/v1/scenarios/resilient-edge:advance", s.advanceResilience)
+	mux.HandleFunc("GET /api/v1/quiet-fleet", s.quietFleet)
+	mux.HandleFunc("POST /api/v1/quiet-fleet/commands", s.quietFleetCommand)
+	mux.HandleFunc("POST /api/v1/scenarios/quiet-fleet:reset", s.resetQuietFleet)
+	mux.HandleFunc("POST /api/v1/scenarios/quiet-fleet:advance", s.advanceQuietFleet)
+	mux.HandleFunc("POST /api/v1/scenarios/demo:reset", s.resetDemo)
 	mux.HandleFunc("GET /api/v1/stream", s.stream)
 	mux.HandleFunc("GET /api/v1/platform", s.platformSnapshot)
 	mux.HandleFunc("GET /api/v1/metrics/snapshot", s.platformSnapshot)
@@ -103,7 +108,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m4", "started_at": s.startedAt.Format(time.RFC3339)})
+	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m5", "started_at": s.startedAt.Format(time.RFC3339)})
 }
 func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
@@ -199,6 +204,47 @@ func (s *Server) advanceResilience(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := s.engine.AdvanceResilience(req)
+	respond(w, v, err, http.StatusOK)
+}
+
+func (s *Server) quietFleet(w http.ResponseWriter, _ *http.Request) {
+	v, err := s.engine.QuietFleet()
+	respond(w, v, err, http.StatusOK)
+}
+
+func (s *Server) quietFleetCommand(w http.ResponseWriter, r *http.Request) {
+	var req domain.QuietFleetCommandV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.engine.ApplyQuietFleet(req)
+	respond(w, v, err, http.StatusOK)
+}
+
+func (s *Server) resetQuietFleet(w http.ResponseWriter, r *http.Request) {
+	var req domain.QuietFleetMutationV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.engine.ResetQuietFleet(req)
+	respond(w, v, err, http.StatusOK)
+}
+
+func (s *Server) advanceQuietFleet(w http.ResponseWriter, r *http.Request) {
+	var req domain.QuietFleetCommandV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.engine.AdvanceQuietFleet(req)
+	respond(w, v, err, http.StatusOK)
+}
+
+func (s *Server) resetDemo(w http.ResponseWriter, r *http.Request) {
+	var req domain.QuietFleetMutationV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.engine.ResetDemo(req)
 	respond(w, v, err, http.StatusOK)
 }
 
@@ -513,7 +559,7 @@ func respond(w http.ResponseWriter, v any, err error, success int) {
 	var ce *core.Error
 	if errors.As(err, &ce) {
 		status := http.StatusUnprocessableEntity
-		if ce.Code == "STALE_STATE" {
+		if ce.Code == "STALE_STATE" || ce.Code == "QUIET_FLEET_STALE_STATE" {
 			status = http.StatusConflict
 		}
 		writeJSON(w, status, domain.APIError{Code: ce.Code, Message: ce.Message})

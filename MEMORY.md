@@ -4,10 +4,10 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: Finalize and deliver the implemented M4 AI Infrastructure and Autonomy Tooling slice on VM 214.
-- Last meaningful change: The full Engineer workflow passed in the browser with a private real MCP boundary, Python agent, adaptive OpenRouter/local/mock routing, deterministic replay, exact-hash human approval, and observed provider regression outcomes.
-- Next step: preserve VM 214 as the release-verification environment and rehearse the live three-view demo.
-- Blockers: None.
+- Current task: Finalize the M5 interview release on VM 214.
+- Last meaningful change: Quiet Fleet, offline packaging, restart verification, M1–M5 verification, and all seven browser workflows passed on VM 214. A repeated-run M3 projection defect was fixed and replay now matches 1,000/1,000 vessels.
+- Next step: commit/push the clean release, export final evidence, create `v0.5.0-interview`, then inspect Proxmox storage and request explicit authorization before any snapshot.
+- Blockers: Snapshot creation intentionally awaits storage-gate inspection and final user authorization.
 
 ## Current State
 
@@ -18,6 +18,7 @@ Durable project context lives here. Update this file whenever information should
 - M2 is live in the same appliance. It adds a mission-relative clock, six signed 10-second tape segments per vessel, authenticated/deduplicated peer bundles, deterministic Starlink/HaLow faults, PNT evidence arbitration, bounded safe hold, and stale-safe bridge rejoin.
 - M3 is live in the same appliance as a degraded-optional scale plane: Apache Kafka KRaft, PostgreSQL/pgvector with eight telemetry hash partitions, deterministic load generation, three supervised real consumer children, bounded bbolt producer outbox, quarantine/redrive, actual Kafka lag, Prometheus metrics, earliest-offset shadow replay, pgvector fixture retrieval, and an Operator/Cutaway UI. Only port 8080 is exposed.
 - M4 is live as a degraded-optional AI plane. A private Go Streamable HTTP MCP server exposes ten allow-listed evidence/replay/draft tools to a non-root Python agent; the Engineer UI shows actual tool receipts, citations, provider attempts, isolated replay, immutable candidate hash, human approval, provider regression results, and trace timing. OpenRouter uses a rotating ranked pool of free models, then optional local and deterministic mock fallbacks. Mission authority and M1–M3 remain independent of AI health.
+- M5 is live. Quiet Fleet coordinates Vessels 2–5 under a signed fixed-membership contract: the unsafe first proposal reaches quorum but cannot commit after Vessel 2 rejects it; the safe revision arms all affected nodes and activates atomically at a future tape boundary. VM-local release commands cover startup, status, reset, verification, offline proof, restart recovery, evidence, rehearsal, and stop.
 - `IMPLEMENTATION_PLAN.md` is the Friday delivery plan. It sequences the work as visible vertical slices with acceptance gates, a three-day schedule, contingency cuts, API/contracts, verification evidence, and a six-minute rehearsal.
 - `ROLE_ALIGNMENT_AUDIT.md` is the coverage contract against the recruiter transcript and job posting. It requires both an Operator workflow and a scoped Autonomy Engineer incident-to-eval workflow.
 
@@ -131,6 +132,10 @@ When sources conflict, use this order:
 
 ## Verification Ledger
 
+- 2026-09-01: M5 VM verification passed. Go tests/vet, strict TypeScript, seven Vitest tests, production build, Ruff, strict mypy, five pytest tests, Bandit, Compose build/validation, M1–M5 API verifiers, and seven Playwright workflows passed. Browser coverage includes Quiet Fleet and 1280×720, 1366×768, and 1440×900.
+- 2026-09-01: M5 measured Quiet Fleet proof: proposal 1 had 3/4 armed and 3/3 quorum but commit failed `AFFECTED_NODE_NOT_ARMED`; proposal 2 armed 4/4 and activated at T+60. Three coordination rounds used 4,616 bytes total under the per-window 4,096-byte budget.
+- 2026-09-01: Offline verification passed from cached images with `--pull never`. AI/Kafka/PostgreSQL/workers ran only on an internal backend network, core retained a separate LAN bridge, provider mode reported `offline`, cloud/local were disabled, and M1–M5 passed. Restart verification passed for AI during mission authority, Worker 2 under load, Kafka/PostgreSQL recovery, and honest core in-memory reset.
+- 2026-09-01: Repeated-run M3 verification initially found a live/shadow mismatch because per-run sequence numbers were compared globally in `vessel_latest`. The update guard is now run-aware and ordered by produced time; subsequent live/shadow replay matched 1,000/1,000 vessels, dropped zero events, and retained healthy mission API latency.
 - 2026-09-01: M4 verification passed on VM 214. `scripts/verify_m4.py` observed eight scoped MCP receipts, four validated citations, a matching deterministic replay checksum with `live_state_changed=false`, tampered-hash rejection, exact-hash approval by `demo-engineer`, mandatory mock regression, explicit real OpenRouter pass/fail/skip accounting, nine trace spans, unauthorized MCP denial, healthy core, and available M3 platform state.
 - 2026-09-01: The M4 Playwright Engineer workflow passed end to end in 35.4 seconds. Go tests/vet passed across all packages; frontend strict typecheck, six Vitest tests, and production build passed; Python Ruff, strict mypy, five pytest tests, and Bandit passed; Compose validation and image builds passed. Stopping the Python AI container left M1 bootstrap, M2 resilience, M3 platform, and core health operational; AI reported degraded and recovered after restart.
 - 2026-09-01: OpenRouter investigation routing visibly failed over across the ranked free pool. Provider regression was changed to make a separate schema-validated model call; a model may pass or fail individual assertions, or be explicitly skipped when no free model returns a complete result. No canned cloud success is displayed.
@@ -302,6 +307,7 @@ When sources conflict, use this order:
 
 ## Completed Work
 
+- 2026-09-01: Completed M5 Quiet Fleet authority/contracts/API/map/UI, VM release command, dual-network offline mode, restart verification, release viewport coverage, and M1–M5 regression verification. Fixed cross-run M3 `vessel_latest` updates using run-aware produced-time ordering; repeated 1,000-vessel shadow replay matched 1,000/1,000 with zero dropped events. No Proxmox snapshot was created.
 - 2026-09-01: Completed M4 contracts, private MCP security boundary, Python typed incident agent, adaptive OpenRouter/local/mock provider routing, bounded fixture RAG, isolated deterministic replay, human-gated incident-to-evaluation promotion, provider regression execution, AI evidence export, Engineer UI, M4 verifier/browser coverage, Compose/Kubernetes production shape, and expanded CI.
 - 2026-09-01: Completed M3 contracts, one-image multi-role topology, pinned Kafka/PostgreSQL stack, 1,000+ vessel producer, bounded outbox, three supervised consumers, set-based ingestion, idempotent projections, deterministic duplicate/out-of-order/quarantine faults, actual lag and process metrics, signed worker kill/recovery, redrive, Kafka shadow replay, pgvector fixture retrieval, Prometheus endpoint, live Cutaway UI, verifier/evidence, Kubernetes production shape, and expanded CI.
 - 2026-09-01: Completed M2 contracts, deterministic runtime packages, APIs/WebSocket events, map overlays, operator drill, shared fixtures, verifier, browser coverage, Compose deployment, and documentation. No Proxmox snapshot was created.

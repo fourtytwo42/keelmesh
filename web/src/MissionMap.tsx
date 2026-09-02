@@ -62,6 +62,9 @@ export function MissionMap({ snapshot, boundary, exclusion, holding, area, plan,
       map.addLayer({ id: "search-line", type: "line", source: "zones", filter: ["==", ["get", "kind"], "search"], paint: { "line-color": "#7be0d2", "line-width": 3 } });
       map.addSource("routes", { type: "geojson", data: fc([]) });
       map.addLayer({ id: "routes-preview", type: "line", source: "routes", paint: { "line-color": "#78e7d5", "line-width": 4, "line-opacity": .95, "line-dasharray": [2, 1.5] } });
+      map.addSource("quiet-fleet", { type: "geojson", data: fc([]) });
+      map.addLayer({ id: "quiet-old-routes", type: "line", source: "quiet-fleet", filter: ["==", ["get", "kind"], "old"], paint: { "line-color": "#4f6c72", "line-width": 2, "line-opacity": .55 } });
+      map.addLayer({ id: "quiet-proposed-routes", type: "line", source: "quiet-fleet", filter: ["==", ["get", "kind"], "proposed"], paint: { "line-color": "#f3be63", "line-width": 4, "line-dasharray": [2, 1], "line-opacity": .95 } });
       map.addSource("resilience", { type: "geojson", data: fc([]) });
       map.addLayer({ id: "resilience-links-up", type: "line", source: "resilience", filter: ["all", ["==", ["get", "kind"], "link"], ["==", ["get", "reachable"], true]], paint: { "line-color": ["case", ["==", ["get", "active"], true], "#f2c46f", "#3b7780"], "line-width": ["case", ["==", ["get", "active"], true], 4, 2], "line-opacity": .9 } });
       map.addLayer({ id: "resilience-links-down", type: "line", source: "resilience", filter: ["all", ["==", ["get", "kind"], "link"], ["==", ["get", "reachable"], false]], paint: { "line-color": "#ed6b72", "line-width": 2, "line-dasharray": [2, 2], "line-opacity": .75 } });
@@ -112,6 +115,16 @@ export function MissionMap({ snapshot, boundary, exclusion, holding, area, plan,
     (map.getSource("routes") as GeoJSONSource | undefined)?.setData(fc(features));
     if (map.getLayer("routes-preview")) map.setPaintProperty("routes-preview", "line-dasharray", snapshot.mission.phase === "executing" || snapshot.mission.phase === "completed" ? [1, 0] : [2, 1.5]);
   }, [plan, snapshot.mission.phase, ready]);
+
+  useEffect(() => {
+    const map=mapRef.current; if(!ready||!map)return;
+    const quiet=snapshot.quiet_fleet; const features:GeoJSON.Feature[]=[];
+    if(quiet){
+      for(const assignment of quiet.active_assignments) features.push({type:"Feature",properties:{kind:"old",vessel_id:assignment.vessel_id},geometry:{type:"LineString",coordinates:assignment.route}});
+      if(quiet.proposal&&quiet.phase!=="activated") for(const assignment of quiet.proposal.assignments) features.push({type:"Feature",properties:{kind:"proposed",vessel_id:assignment.vessel_id},geometry:{type:"LineString",coordinates:assignment.route}});
+    }
+    (map.getSource("quiet-fleet") as GeoJSONSource|undefined)?.setData(fc(features));
+  },[snapshot.quiet_fleet,ready]);
 
   useEffect(() => {
     const map = mapRef.current; if (!ready || !map) return;

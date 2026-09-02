@@ -52,6 +52,38 @@ test("resilient edge drill relays, holds, and bridges without stale replay", asy
   await expect(drill.getByText(/operator → vessel-03 → vessel-04/)).toBeVisible();
 });
 
+test("Quiet Fleet rejects unsafe quorum then activates an exact future commit", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Use suggested area" }).click();
+  await finishMissionFlow(page);
+  const quiet = page.getByRole("complementary", { name: "Quiet Fleet adaptation" });
+  await expect(quiet).toBeVisible();
+  await quiet.getByRole("button", { name: /Enter Quiet Fleet/ }).click();
+  await quiet.getByRole("button", { name: /Slow Vessel 4/ }).click();
+  await expect(quiet.getByText("3/3")).toBeVisible();
+  await expect(quiet.getByText("3/4")).toBeVisible();
+  await expect(quiet.getByText("SPEED_ENVELOPE_EXCEEDED")).toBeVisible();
+  await quiet.getByRole("button", { name: /Revise proposal/ }).click();
+  await expect(quiet.getByText("4/3")).toBeVisible();
+  await expect(quiet.getByText("4/4")).toBeVisible();
+  await quiet.getByRole("button", { name: /Commit exact hash/ }).click();
+  await expect(quiet.getByText("FUTURE COMMIT")).toBeVisible();
+  await quiet.getByRole("button", { name: /Advance to activation/ }).click();
+  await expect(quiet.getByRole("heading", { name: "activated" })).toBeVisible();
+});
+
+test("release laptop viewports retain the primary controls", async ({ page }) => {
+  for (const viewport of [{width:1280,height:720},{width:1366,height:768},{width:1440,height:900}]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: "Use suggested area" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Operator" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Engineer" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Cutaway" })).toBeVisible();
+  }
+});
+
 test("live cutaway exposes measured scale-plane state", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Cutaway" }).click();
