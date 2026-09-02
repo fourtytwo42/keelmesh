@@ -60,6 +60,14 @@ func (s *Server) patchGroupV2(w http.ResponseWriter, r *http.Request) {
 	v, err := s.fleetops.PatchGroup(r.PathValue("id"), req)
 	respondV2(w, v, err, http.StatusOK)
 }
+func (s *Server) moveGroupMemberV2(w http.ResponseWriter, r *http.Request) {
+	var req fleetops.MoveGroupMemberRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.fleetops.MoveGroupMember(r.PathValue("id"), req)
+	respondV2(w, v, err, http.StatusOK)
+}
 func (s *Server) deleteGroupV2(w http.ResponseWriter, r *http.Request) {
 	var req fleetops.Mutation
 	if !decode(w, r, &req) {

@@ -9,6 +9,24 @@ async function resetFleet(page: import("@playwright/test").Page) {
   expect(response.ok()).toBeTruthy();
 }
 
+async function restoreFixtureGroups(page: import("@playwright/test").Page) {
+  const fleet = await (await page.request.get("/api/v2/fleet")).json();
+  const gannet = fleet.vessels.find((vessel: { callsign: string }) => vessel.callsign === "Gannet");
+  const watchShoal = fleet.groups.find((group: { code: string }) => group.code === "WS");
+  if (!gannet || !watchShoal || gannet.group_id === watchShoal.id) return;
+
+  const key = `e2e-restore-gannet-${Date.now()}-${Math.random()}`;
+  const response = await page.request.post(`/api/v2/groups/${watchShoal.id}/members:move`, {
+    data: {
+      request_id: key,
+      idempotency_key: key,
+      expected_version: watchShoal.revision,
+      vessel_id: gannet.id,
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+}
+
 test.beforeEach(async ({ page }) => {
   page.on("pageerror", error => console.error("BROWSER_PAGE_ERROR", error.message));
   page.on("console", message => {
@@ -19,10 +37,12 @@ test.beforeEach(async ({ page }) => {
     localStorage.removeItem("keelmesh.theme");
   });
   await resetFleet(page);
+  await restoreFixtureGroups(page);
 });
 
 test.afterEach(async ({ page }) => {
   await resetFleet(page);
+  await restoreFixtureGroups(page);
 });
 
 test("map-first workspace exposes the persistent 48-vessel operating picture", async ({ page }) => {
@@ -81,9 +101,8 @@ test("fleet rail, search, group, and filtered selection resolve exact targets", 
   await rail.getByPlaceholder("Callsign, class, group, status…").fill("Gannet");
   await rail.getByRole("checkbox").check();
   await expect(page.locator(".selection-ribbon > strong")).toHaveText("1");
-  await page.getByRole("button", { name: "Inspect" }).click();
-  await expect(page.getByRole("region", { name: /Gannet \(KM-214\)/ })).toContainText("REACHABLE SWARM");
-  await expect(page.getByText("Reachability ≠ authority")).toBeVisible();
+  await page.getByRole("button", { name: "Inspect all", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Selection · 1", exact: true })).toContainText("Gannet");
 
   await rail.getByRole("button", { name: "Manage WS Watch Shoal", exact: true }).click();
   await expect(page.getByRole("region", { name: "Group · WS", exact: true })).toContainText("PRIMARY OPERATIONAL GROUP");
@@ -115,6 +134,33 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   await canvas.click({ position: { x: 700, y: 250 }, button: "right" });
   await page.getByRole("menu").getByRole("menuitem", { name: "Clear selection" }).click();
   await expect(page.locator(".selection-ribbon > strong")).toHaveText("0");
+});
+
+test("selected-assets drawer inspects every scope and reassigns a vessel by drag and drop", async ({ page }) => {
+  await page.goto("/");
+  const rail = page.getByRole("region", { name: "Fleet / Groups" });
+  await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
+  await page.getByTitle("Expand selected assets").click();
+  const drawer = page.locator(".selection-drawer");
+  await expect(drawer).toBeVisible();
+  await expect(drawer.locator(".selected-vessel-row")).toHaveCount(6);
+
+  await drawer.locator(".selected-vessel-row", { hasText: "Gannet" }).dragTo(drawer.getByTitle("Drop a vessel into BL Bay Lantern"));
+  await expect.poll(async () => {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Gannet")?.group_code;
+  }).toBe("BL");
+  await expect(drawer).toContainText("BL · Bay Lantern");
+  await drawer.getByTitle("Inspect group WS").click();
+  const groupInspector = page.getByRole("region", { name: "Group · WS", exact: true });
+  await expect(groupInspector).toBeVisible();
+  await groupInspector.getByTitle("Close").click();
+  await drawer.getByTitle("Inspect Gannet").click();
+  const vesselInspector = page.getByRole("region", { name: /Gannet \(KM-214\)/ });
+  await expect(vesselInspector).toBeVisible();
+  await vesselInspector.getByTitle("Close").click();
+  await page.getByRole("button", { name: "Inspect all" }).click();
+  await expect(page.getByRole("region", { name: "Selection · 6", exact: true })).toContainText("AVG RESERVE");
 });
 
 test("dragged geometry follows the exact preview, authorization, and execution path", async ({ page }) => {

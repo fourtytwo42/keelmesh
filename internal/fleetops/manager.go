@@ -44,6 +44,10 @@ type PatchGroupRequest struct {
 	Pattern   *string   `json:"pattern"`
 	MemberIDs *[]string `json:"member_ids"`
 }
+type MoveGroupMemberRequest struct {
+	Mutation
+	VesselID string `json:"vessel_id"`
+}
 type CreateCollectionRequest struct {
 	Mutation
 	Name      string   `json:"name"`
@@ -394,6 +398,45 @@ func (m *Manager) PatchGroup(id string, req PatchGroupRequest) (domain.Operation
 	m.fleetVersion++
 	m.persistAsync()
 	return g, nil
+}
+func (m *Manager) MoveGroupMember(id string, req MoveGroupMemberRequest) (domain.OperationalGroupV2, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	destination, ok := m.groups[id]
+	if !ok {
+		return destination, &Error{"GROUP_NOT_FOUND", "Destination group not found."}
+	}
+	if err := m.check(req.Mutation, destination.Revision); err != nil {
+		return destination, err
+	}
+	vessel, ok := m.vessels[req.VesselID]
+	if !ok {
+		return destination, &Error{"VESSEL_NOT_FOUND", "Vessel not found: " + req.VesselID}
+	}
+	if vessel.GroupID == id {
+		return destination, nil
+	}
+	if conflicts := m.conflicts([]string{req.VesselID}, ""); len(conflicts) > 0 {
+		return destination, &Error{"ACTIVE_MISSION_REPLAN_REQUIRED", "End or re-plan active movement authority before changing this vessel's operational group."}
+	}
+	source, ok := m.groups[vessel.GroupID]
+	if !ok {
+		return destination, &Error{"PRIMARY_GROUP_REQUIRED", "Vessel source group is unavailable."}
+	}
+	source.MemberIDs = remove(source.MemberIDs, req.VesselID)
+	source.Revision++
+	destination.MemberIDs = unique(append(destination.MemberIDs, req.VesselID))
+	destination.Revision++
+	vessel.GroupID = destination.ID
+	vessel.GroupCode = destination.Code
+	vessel.GroupColor = destination.Color
+	vessel.GroupPattern = destination.Pattern
+	m.groups[source.ID] = source
+	m.groups[destination.ID] = destination
+	m.vessels[vessel.ID] = vessel
+	m.fleetVersion++
+	m.persistAsync()
+	return destination, nil
 }
 func (m *Manager) DeleteGroup(id string, req Mutation) error {
 	m.mu.Lock()

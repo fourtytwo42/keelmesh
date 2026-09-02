@@ -393,3 +393,49 @@ func TestPatchGroupCannotOrphanPrimaryMembers(t *testing.T) {
 		t.Fatalf("expected primary-group rejection, got %v", err)
 	}
 }
+
+func TestMoveGroupMemberIsAtomicAndUpdatesVesselIdentity(t *testing.T) {
+	m := New("", slog.Default())
+	source := m.groups["group-01"]
+	destination := m.groups["group-02"]
+	vesselID := source.MemberIDs[0]
+	updated, err := m.MoveGroupMember(destination.ID, MoveGroupMemberRequest{
+		Mutation: Mutation{RequestID: "move-member", IdempotencyKey: "move-member", ExpectedVersion: destination.Revision},
+		VesselID: vesselID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(updated.MemberIDs, vesselID) || contains(m.groups[source.ID].MemberIDs, vesselID) {
+		t.Fatalf("membership was not transferred atomically: source=%v destination=%v", m.groups[source.ID].MemberIDs, updated.MemberIDs)
+	}
+	vessel := m.vessels[vesselID]
+	if vessel.GroupID != destination.ID || vessel.GroupCode != destination.Code || vessel.GroupColor != destination.Color || vessel.GroupPattern != destination.Pattern {
+		t.Fatalf("vessel identity did not follow destination group: %#v", vessel)
+	}
+}
+
+func TestMoveGroupMemberFailsClosedDuringMission(t *testing.T) {
+	m := New("", slog.Default())
+	source := m.groups["group-01"]
+	destination := m.groups["group-02"]
+	vesselID := source.MemberIDs[0]
+	_, err := m.CreateMission(CreateMissionRequest{
+		Mutation:  Mutation{RequestID: "move-mission", IdempotencyKey: "move-mission", ExpectedVersion: m.fleetVersion},
+		Name:      "Frozen membership",
+		TargetIDs: []string{vesselID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.MoveGroupMember(destination.ID, MoveGroupMemberRequest{
+		Mutation: Mutation{RequestID: "blocked-move", IdempotencyKey: "blocked-move", ExpectedVersion: destination.Revision},
+		VesselID: vesselID,
+	})
+	if typed, ok := err.(*Error); !ok || typed.Code != "ACTIVE_MISSION_REPLAN_REQUIRED" {
+		t.Fatalf("expected active mission rejection, got %v", err)
+	}
+	if m.vessels[vesselID].GroupID != source.ID {
+		t.Fatal("failed move changed vessel membership")
+	}
+}

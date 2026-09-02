@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: M6 map selection now has explicit scope escalation and clearing: double-click chooses a vessel's operational group and binds it to the bottom planning dock; triple-click selects every vessel in the geographic viewport; quadruple-click selects the full accessible fleet. The selection ribbon and right-click scope menu both provide one-action Clear Selection controls.
+- Last meaningful change: The compact selected-assets ribbon now expands into a bounded scrollable drawer grouped by operational group. Per-group and per-vessel eye actions open scoped inspectors without changing selection; Inspect All opens an aggregate selection inspector. Vessel rows drag onto group targets through an atomic server mutation, while active-mission membership remains frozen and fails closed pending replan.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -323,6 +323,14 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Expandable selected-assets drawer and group reassignment
+
+- Context: The compact selected-assets ribbon did not expose a manageable full selection, scoped inspection, or direct membership reassignment.
+- Decision: Retain the compact ribbon, add an expandable limited-height drawer organized by operational group, add independent group/vessel inspection actions and aggregate Inspect All, and implement drag-to-group reassignment as one version-checked backend mutation. Reject membership changes while the vessel is bound to an active mission.
+- Files: `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, `internal/api/server.go`, `internal/api/fleetops.go`, `web/src/FleetWorkspace.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: local strict TypeScript, seven Vitest assertions, and Vite production build; VM full Go suite; nine Playwright workflows including drawer expansion, scoped inspection, persistent drag/drop, and deterministic fixture restoration; central plus twelve-node health/hash checks.
+- Result: Selection remains compact by default but can expose and manage the complete selected scope. Group moves persist atomically, update source/destination revisions and vessel identity, and fail closed during active missions. VM 214 and all twelve vessel nodes run binary SHA-256 `5fd915f33752a71a30d6057c2fb7871a2a8deac55092dab5039e383b58d540a3`. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - One-action selection clearing
 
