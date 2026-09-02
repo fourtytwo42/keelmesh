@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: Plan M6 Fleet Operations Workspace after the completed M5 interview release.
-- Last meaningful change: Defined a universal M6 floating-window manager: every popup is movable, minimizable, closable, restorable, viewport-clamped, keyboard-manageable, and optionally resizable/dockable; unresolved alerts remain represented in the status center after their popup closes.
+- Last meaningful change: Required TTS and STT to run privately on VM 214. M6A now builds a reproducible CPU-first speech benchmark in parallel with the visual work; Pocket TTS and multiple streaming STT candidates are measured on the actual VM before M6D integrates the winner.
 - Next step: review the M6 scope and implement M6A first: local map, 24 named/classed vessels, scalable selection, groups, swarm inspector, environmental metrics, vessel sprites, and the compact visual shell.
 - Blockers: The optional M5 Proxmox snapshot still awaits host storage preflight and explicit user authorization; no snapshot was attempted.
 
