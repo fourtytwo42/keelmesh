@@ -21,6 +21,21 @@ async function restoreFixtureGroups(page: import("@playwright/test").Page) {
     });
     expect(response.ok()).toBeTruthy();
   }
+  for (;;) {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    const detachment = fleet.groups.find((group: { name: string }) => group.name === "E2E Jaeger Detachment");
+    if (!detachment) break;
+    const key = `e2e-group-cleanup-${Date.now()}-${Math.random()}`;
+    const response = await page.request.delete(`/api/v2/groups/${detachment.id}`, {
+      data: { request_id: key, idempotency_key: key, expected_version: detachment.revision },
+    });
+    expect(response.ok()).toBeTruthy();
+  }
+}
+
+async function expectSelected(page: import("@playwright/test").Page, count: number) {
+  const rail = page.getByRole("region", { name: "Fleet / Groups" });
+  await expect(rail.getByRole("button", { name: `Create mission from ${count} selected`, exact: true })).toBeVisible();
 }
 
 test.beforeEach(async ({ page }) => {
@@ -86,19 +101,18 @@ test("fleet rail, search, group, and filtered selection resolve exact targets", 
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
   await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
-  await expect(page.locator(".selection-ribbon > strong")).toHaveText("6");
+  await expectSelected(page, 6);
 
   await rail.getByPlaceholder("Callsign, class, group, status…").fill("Kestrel");
   await rail.getByRole("button", { name: "Select all filtered" }).click();
-  await expect(page.locator(".selection-ribbon > strong")).toHaveText("24");
+  await expectSelected(page, 24);
 
   await rail.getByRole("button", { name: "Clear" }).click();
-  await expect(page.locator(".selection-ribbon > strong")).toHaveText("0");
+  await expectSelected(page, 0);
   await rail.getByPlaceholder("Callsign, class, group, status…").fill("Gannet");
   await rail.getByRole("checkbox").check();
-  await expect(page.locator(".selection-ribbon > strong")).toHaveText("1");
-  await page.getByRole("button", { name: "Inspect all", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Selection · 1", exact: true })).toContainText("Gannet");
+  await expectSelected(page, 1);
+  await expect(rail.locator(".fleet-vessel-row.selected", { hasText: "Gannet" })).toBeVisible();
 
   await rail.getByRole("button", { name: "Manage WS Watch Shoal", exact: true }).click();
   await expect(page.getByRole("region", { name: "Group · WS", exact: true })).toContainText("PRIMARY OPERATIONAL GROUP");
@@ -112,23 +126,27 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   const groupMenu = page.getByRole("menu");
   await expect(groupMenu.getByRole("menuitem", { name: "Select operational group" })).toBeEnabled();
   await groupMenu.getByRole("menuitem", { name: "Select operational group" }).click();
-  await expect(page.locator(".selection-ribbon > strong")).toHaveText("6");
-  await page.getByTitle("Clear selection").click();
-  await expect(page.locator(".selection-ribbon > strong")).toHaveText("0");
+  await expectSelected(page, 6);
+  const rail = page.getByRole("region", { name: "Fleet / Groups" });
+  await rail.getByRole("button", { name: "Clear", exact: true }).click();
+  await expectSelected(page, 0);
+  await rail.getByTitle("Minimize").click();
+  await expect(rail).not.toBeVisible();
   await canvas.dispatchEvent("click", { detail: 3, bubbles: true, clientX: 700, clientY: 250 });
-  await expect(page.locator(".selection-ribbon > strong")).toHaveText("48");
+  await expect(rail).toBeVisible();
+  await expectSelected(page, 48);
   await page.keyboard.press("Escape");
-  await expect(page.locator(".selection-ribbon > strong")).toHaveText("0");
+  await expectSelected(page, 0);
   await canvas.dispatchEvent("click", { detail: 4, bubbles: true, clientX: 700, clientY: 250 });
-  await expect(page.locator(".selection-ribbon > strong")).toHaveText("48");
+  await expectSelected(page, 48);
   await page.keyboard.press("Escape");
   await canvas.click({ position: { x: 700, y: 250 }, button: "right" });
   const allMenu = page.getByRole("menu");
   await allMenu.getByRole("menuitem", { name: "Select all vessels" }).click();
-  await expect(page.locator(".selection-ribbon > strong")).toHaveText("48");
+  await expectSelected(page, 48);
   await canvas.click({ position: { x: 700, y: 250 }, button: "right" });
   await page.getByRole("menu").getByRole("menuitem", { name: "Clear selection" }).click();
-  await expect(page.locator(".selection-ribbon > strong")).toHaveText("0");
+  await expectSelected(page, 0);
 });
 
 test("water context menu manages numbered colored waypoints and preview-only guidance", async ({ page }) => {
@@ -193,34 +211,15 @@ test("water context menu manages numbered colored waypoints and preview-only gui
   }).toEqual(["cyan:1"]);
 });
 
-test("selected-assets drawer inspects every scope and reassigns a vessel by drag and drop", async ({ page }) => {
+test("fleet rail is the single selection and group-reassignment surface", async ({ page }) => {
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
   await rail.getByPlaceholder("Callsign, class, group, status…").fill("Jaeger");
   await rail.locator(".fleet-vessel-row", { hasText: "Jaeger" }).getByRole("checkbox").check();
-  await page.getByTitle("Expand selected assets").click();
-  const drawer = page.locator(".selection-drawer");
-  await expect(drawer).toBeVisible();
-  await expect(drawer.locator(".selected-vessel-row")).toHaveCount(1);
+  await expectSelected(page, 1);
+  await expect(page.locator(".selection-stack, .selection-drawer, .selection-ribbon")).toHaveCount(0);
 
-  await drawer.locator(".selected-vessel-row", { hasText: "Jaeger" }).dragTo(drawer.getByTitle("Drop a vessel into BL Bay Lantern"));
-  await expect.poll(async () => {
-    const fleet = await (await page.request.get("/api/v2/fleet")).json();
-    return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger")?.group_code;
-  }).toBe("BL");
-  await expect(drawer).toContainText("BL · Bay Lantern");
-
-  // The same selected-list row exposes every destination without a separate drop strip.
-  await drawer.locator(".selected-vessel-row", { hasText: "Jaeger" }).click({ button: "right" });
-  const drawerMenu = page.getByRole("menu", { name: "Assign Jaeger to group" });
-  await expect(drawerMenu).toBeVisible();
-  await drawerMenu.getByRole("menuitem", { name: /BG Block Guard/ }).click();
-  await expect.poll(async () => {
-    const fleet = await (await page.request.get("/api/v2/fleet")).json();
-    return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger")?.group_code;
-  }).toBe("BG");
-
-  // Fleet/Groups rows are draggable onto ordinary group sections too.
+  // Selected rows move directly between ordinary group sections.
   const jaeger = rail.locator(".fleet-vessel-row", { hasText: "Jaeger" });
   await jaeger.dragTo(rail.getByTitle("Drop a vessel into BL Bay Lantern"));
   await expect.poll(async () => {
@@ -236,27 +235,19 @@ test("selected-assets drawer inspects every scope and reassigns a vessel by drag
     return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger")?.group_code;
   }).toBe("BG");
 
-  await drawer.locator(".selected-vessel-row", { hasText: "Jaeger" }).click({ button: "right" });
+  await rail.locator(".fleet-vessel-row", { hasText: "Jaeger" }).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Create new group with this vessel" }).click();
   await expect(page.getByPlaceholder("New group name")).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menu", { name: "Assign Jaeger to group" })).not.toBeVisible();
 
-  await drawer.getByTitle("Inspect group BG").click();
+  await rail.getByRole("button", { name: "Manage BG Block Guard", exact: true }).click();
   const groupInspector = page.getByRole("region", { name: "Group · BG", exact: true });
   await expect(groupInspector).toBeVisible();
   await groupInspector.getByTitle("Close").click();
-  await drawer.getByTitle("Inspect Jaeger").click();
-  const vesselInspector = page.getByRole("region", { name: /Jaeger \(KM-232\)/ });
-  await expect(vesselInspector).toBeVisible();
-  await vesselInspector.getByTitle("Close").click();
-  await page.getByRole("button", { name: "Inspect all" }).click();
-  const selectionInspector = page.getByRole("region", { name: "Selection · 1", exact: true });
-  await expect(selectionInspector).toContainText("AVG RESERVE");
-  await selectionInspector.getByTitle("Close").click();
 
   // Creation uses the same exclusive-membership API, then this test restores its fixture.
-  await drawer.locator(".selected-vessel-row", { hasText: "Jaeger" }).click({ button: "right" });
+  await rail.locator(".fleet-vessel-row", { hasText: "Jaeger" }).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Create new group with this vessel" }).click();
   await page.getByPlaceholder("New group name").fill("E2E Jaeger Detachment");
   await page.getByRole("button", { name: "Create", exact: true }).click();

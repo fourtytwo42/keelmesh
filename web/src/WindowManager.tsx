@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Home, Minus, PanelLeft, SquareDashed, X } from "lucide-react";
 
-export type WindowDefinition = { id:string; title:string; icon?:ReactNode; content:ReactNode; initial:{x:number;y:number;width:number;height:number}; singleton?:boolean };
+export type WindowDefinition = { id:string; title:string; icon?:ReactNode; content:ReactNode; initial:{x:number;y:number;width:number;height:number}; singleton?:boolean; activation?:number };
 type WindowState = { x:number;y:number;width:number;height:number; minimized:boolean; closed:boolean; z:number; dock?:"left"|"right" };
 type Drag = { id:string; mode:"move"|"resize"; startX:number;startY:number; initial:WindowState };
 
@@ -12,7 +12,9 @@ export function WindowManager({windows,onClose}:{windows:WindowDefinition[];onCl
   const defaults=useMemo(()=>Object.fromEntries(windows.map((w,i)=>[w.id,{...w.initial,minimized:false,closed:false,z:120+i}])),[windows]);
   const [states,setStates]=useState<Record<string,WindowState>>(()=>{try{return {...defaults,...JSON.parse(localStorage.getItem(storageKey)??"{}")}}catch{return defaults}});
   const drag=useRef<Drag|null>(null);
+  const activations=useRef<Record<string,number>>({});
   useEffect(()=>{setStates(current=>{const next={...current};for(const w of windows)if(!next[w.id])next[w.id]=defaults[w.id];return next})},[windows,defaults]);
+  useEffect(()=>{for(const w of windows){const token=w.activation??0;if(token>0&&token!==activations.current[w.id]){activations.current[w.id]=token;setStates(current=>{const state=current[w.id]??defaults[w.id];if(!state)return current;return{...current,[w.id]:{...state,z:Math.max(...Object.values(current).map(value=>value.z),120)+1,closed:false,minimized:false}}})}}},[windows,defaults]);
   useEffect(()=>{localStorage.setItem(storageKey,JSON.stringify(states))},[states]);
   useEffect(()=>{const move=(e:PointerEvent)=>{const d=drag.current;if(!d)return;setStates(s=>{const maxX=window.innerWidth-180,maxY=window.innerHeight-90;if(d.mode==="move")return{...s,[d.id]:{...s[d.id],x:clamp(d.initial.x+e.clientX-d.startX,0,maxX),y:clamp(d.initial.y+e.clientY-d.startY,44,maxY),dock:undefined}};return{...s,[d.id]:{...s[d.id],width:clamp(d.initial.width+e.clientX-d.startX,280,window.innerWidth-d.initial.x),height:clamp(d.initial.height+e.clientY-d.startY,180,window.innerHeight-d.initial.y-42)}}})};const up=()=>{drag.current=null};window.addEventListener("pointermove",move);window.addEventListener("pointerup",up);return()=>{window.removeEventListener("pointermove",move);window.removeEventListener("pointerup",up)}},[]);
   const focus=(id:string)=>setStates(s=>({...s,[id]:{...s[id],z:Math.max(...Object.values(s).map(v=>v.z),120)+1,closed:false,minimized:false}}));

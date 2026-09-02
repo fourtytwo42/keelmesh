@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: Operational-group reassignment is now inline in both vessel lists. Selected assets can be dragged directly onto any group row in the expanded drawer, Fleet/Groups vessels can be dragged onto group sections, and right-clicking a vessel in either list opens a group picker plus an inline create-group form. The old separate color-coded drop strip was removed.
+- Last meaningful change: Fleet / Groups is now the single authoritative selection surface. The redundant selected-assets ribbon, chip list, expandable drawer, and aggregate selection inspector were removed; map/group/multi-click selection restores and foregrounds Fleet / Groups, where selected rows, per-group counts, direct drag/drop, context reassignment, clear, and mission creation remain together.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -138,6 +138,7 @@ When sources conflict, use this order:
 
 ## Verification Ledger
 
+- 2026-09-02: Selection consolidation passed strict TypeScript, seven Vitest assertions, production Vite build, targeted three-workflow Playwright coverage, and the full eleven-workflow browser suite on VM 214. Coverage proves the duplicate selection DOM is absent, Fleet / Groups reflects exact counts, minimized Fleet / Groups automatically restores on map selection, and drag/context group reassignment remains functional. VM 214 and all twelve vessel nodes run binary SHA-256 `1b8f7bca0c724b00bb606f825edc28189af2fe2314204b148b1d3360c78dde04`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Inline group drag/drop and vessel context assignment passed strict TypeScript, seven Vitest assertions, production frontend build, and all eleven Playwright workflows on VM 214. Coverage includes the exact `Jaeger → BL Bay Lantern` move in both lists, context-menu reassignment, create-group form/API, fixture cleanup, selection retention, and inspection. VM 214 and all twelve vessel nodes run binary SHA-256 `320885ef2e8c82029213ddddfa6489fac3150d84d0a3189aadb15026c5eab5fc`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Numbered/color-coded waypoint and water-context behavior passed the full Go suite, strict TypeScript, seven Vitest assertions, production frontend build, and all eleven Playwright workflows on VM 214. VM 214 and all twelve vessel nodes run core binary SHA-256 `81a7ed4750243d84730a70d27d6078b5ae9b313ce390c7a5f375eb3a195147d7`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Provisioned and booted twelve M7 vessel VMs as 2 vCPU/2 GiB/12 GiB linked clones: A01-A05 on `fourtyfour` (220-224), A06 plus B01-B03 on `mini42` (225,229,231,232), and B04-B06 on `mini43` (233,234,236). Every VM has management `192.168.50.<VMID>` on `eth0`, radio `10.77.0.<VMID>` on `eth1`, active QEMU guest agent, faction-pinned node service, and separately installed root-only OpenRouter secret. All twelve management health checks and cross-host radio connectivity passed. No snapshots were created.
@@ -325,6 +326,14 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Unified fleet selection surface
+
+- Context: Fleet / Groups and the top selected-assets ribbon/drawer represented the same selection twice and consumed map space.
+- Decision: Keep all selection state and group manipulation in Fleet / Groups. Automatically restore and focus that window whenever a non-empty map, group, filtered, collection, triple-click, or four-click selection occurs.
+- Files: `web/src/FleetWorkspace.tsx`, `web/src/WindowManager.tsx`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: strict TypeScript, seven Vitest assertions, production Vite build, targeted three-test browser run, full eleven-test Playwright run, central and twelve-node health/hash verification.
+- Result: The ribbon/drawer is no longer rendered; selected rows and group counts remain highlighted in Fleet / Groups, clear and mission creation stay in the same window, and minimized/closed Fleet / Groups reopens on selection. Binary SHA-256 is `1b8f7bca0c724b00bb606f825edc28189af2fe2314204b148b1d3360c78dde04`. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - Depth-aware coastal intent and higher-accuracy STT
 
