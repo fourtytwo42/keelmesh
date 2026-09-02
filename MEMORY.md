@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: M1 is complete and ready for handoff.
-- Last meaningful change: Commit `e235500` passed hosted CI run `33573287885` end to end and is deployed on VM 214 behind the healthy LAN and Quick Tunnel endpoints.
-- Next step: Begin M2 with the deterministic link graph, signed peer bundles, and rolling mission tape while retaining M1 as a regression gate.
+- Current task: M2 resilient-autonomy implementation is planned and ready to begin.
+- Last meaningful change: `M2_IMPLEMENTATION_PLAN.md` defines contracts, package boundaries, seven build stages, the Vessel 4 incident timeline, APIs, UX, and delivery gates.
+- Next step: Implement Stage 1: deterministic mission clock, M2 contracts/fixtures, and M1-safe snapshot extensions.
 - Blockers: None.
 
 ## Current State
@@ -123,6 +123,8 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+- 2026-09-01: Planned M2 as a deterministic Vessel 4 incident layered onto an authorized M1 mission: direct Starlink failure, Vessel 3 HaLow relay, full partition, six-segment tape depletion, GNSS source exclusion, uncertainty-triggered safe hold, stale-segment rejection, and policy-checked bridge-to-future rejoin.
 
 - 2026-09-01: Completed M1 on VM 214. Go tests/vet cover contract decoding, polygon validation, deterministic plan/hash output, segment-level exclusion avoidance, policy validity, preview immutability, stale-state rejection, tamper rejection, idempotent start, and authorized movement.
 - 2026-09-01: Frontend dependency audit reported zero vulnerabilities; Vitest, strict TypeScript, and production Vite build passed. The production MapLibre 6 worker is bundled with Vite `?worker&url`, preventing the silent missing-worker failure seen during visual QA.
@@ -276,7 +278,7 @@ When sources conflict, use this order:
 
 ## Open Follow-ups
 
-- Begin M2 with the deterministic link graph, signed peer bundle, and six-segment mission tape; preserve the current M1 flow as a regression gate.
+- Execute M2 Stage 1 from `M2_IMPLEMENTATION_PLAN.md`: deterministic clock, versioned contracts/fixtures, and optional resilience snapshot while preserving M1.
 - Replace the ephemeral Cloudflare Quick Tunnel with a named tunnel and stable hostname after the Cloudflare account/domain choice is available.
 - Prioritize the deterministic Go mesh/PNT digital twin and its visible failure controls in the first vertical slice.
 - Implement the rolling mission tape, link scoring/peer egress, and safe rejoin state machine before adding real networking or broad infrastructure services.

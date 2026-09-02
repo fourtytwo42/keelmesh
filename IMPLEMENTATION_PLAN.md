@@ -261,6 +261,7 @@ and hand-drawn-area workflows.
 
 ### M2 - Resilient edge wow path
 
+- Detailed implementation source: `M2_IMPLEMENTATION_PLAN.md`.
 - Add peer bundle envelope, simulated link graph, route scoring, hop receipts,
   content deduplication, and fault controls.
 - Add six-segment mission tape and full/low/critical/empty watermarks.
@@ -272,6 +273,9 @@ and hand-drawn-area workflows.
 
 Gate: the scripted incident passes with no duplicate execution and no stale replay,
 and the UI can explain the route, tape, PNT, and policy decisions.
+
+Build order: contracts/clock → tape-backed node execution → mesh routing → full
+partition → PNT spoof/uncertainty → safe contingency/rejoin → operator drill.
 
 ### M3 - Durable platform and cutaway
 
