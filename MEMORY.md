@@ -6,7 +6,7 @@ Durable project context lives here. Update this file whenever information should
 
 - Current task: Finalize and deliver the implemented M4 AI Infrastructure and Autonomy Tooling slice on VM 214.
 - Last meaningful change: The full Engineer workflow passed in the browser with a private real MCP boundary, Python agent, adaptive OpenRouter/local/mock routing, deterministic replay, exact-hash human approval, and observed provider regression outcomes.
-- Next step: commit and push M4, confirm GitHub Actions, then rehearse the live three-view demo.
+- Next step: preserve VM 214 as the release-verification environment and rehearse the live three-view demo.
 - Blockers: None.
 
 ## Current State
@@ -24,6 +24,7 @@ Durable project context lives here. Update this file whenever information should
 ## User Preferences
 
 - Keep `MEMORY.md` updated consistently with durable context that should survive chat compression.
+- Do not run builds, tests, or workflows on GitHub-hosted Actions because they may cost money. Run release verification on VM 214 instead; repository pushes must not trigger GitHub workflows.
 - Agents should read `AGENTS.md` at startup and check `MEMORY.md` whenever context is missing, stale, or uncertain.
 - Use uppercase filenames `AGENTS.md` and `MEMORY.md`.
 - The user likes Rust/Tauri portable applications but explicitly decided not to force Rust or Tauri into this demo; prefer the stack most strongly supported by Havoc's disclosures.
@@ -134,6 +135,7 @@ When sources conflict, use this order:
 - 2026-09-01: The M4 Playwright Engineer workflow passed end to end in 35.4 seconds. Go tests/vet passed across all packages; frontend strict typecheck, six Vitest tests, and production build passed; Python Ruff, strict mypy, five pytest tests, and Bandit passed; Compose validation and image builds passed. Stopping the Python AI container left M1 bootstrap, M2 resilience, M3 platform, and core health operational; AI reported degraded and recovered after restart.
 - 2026-09-01: OpenRouter investigation routing visibly failed over across the ranked free pool. Provider regression was changed to make a separate schema-validated model call; a model may pass or fail individual assertions, or be explicitly skipped when no free model returns a complete result. No canned cloud success is displayed.
 - 2026-09-01: No M4 Proxmox snapshot was created. The durable thin-pool inspection and explicit-authorization rule remains in force.
+- 2026-09-01: The user prohibited GitHub-hosted builds/tests because of possible cost. Automatic workflow execution was removed; future release gates run on VM 214. The already-started M4 run had completed before cancellation reached GitHub.
 
 - 2026-09-01: Pushed M3 implementation `8416ccb`, Cutaway reconnect fix `975584a`, and CI topology correction `b3c8f1f`. GitHub Actions run `33581609728` passed in 3m53s: the degraded core job passed M1/M2 tests and three browser flows without Kafka/PostgreSQL, while the full scale job passed Compose/Kustomize validation, the real M3 fault/recovery/replay verifier, and the Cutaway browser workflow against all scale services.
 - 2026-09-01: M3 release evidence on VM 214 passed with seed `424242`: 1,000 vessels at 2 Hz, 123,416 attempted and exactly accounted events, 2,216 events/s measured baseline, 13.4 ms ingest p95, 228.6 ms p99, 4.32 ms foreground API p95, peak Kafka lag 202, Worker 2 PID `15 -> 29`, two-worker degraded operation, 20.6 s recovery, 978 duplicates suppressed, 242 out-of-order records, 485 quarantined deliveries, zero drops, successful repair/redrive, and 1,000/1,000 live/shadow projection parity with matching SHA-256 checksum. Evidence files: `evidence/m3.json` and `evidence/m3.md`.
