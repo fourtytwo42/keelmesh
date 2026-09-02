@@ -195,9 +195,29 @@ The model never issues vessel commands or approves a plan. Authorization remains
 
 ## 9. Voice pipeline
 
-TTS runs as a private service on VM 214. STT is an operator-edge hybrid: browser-local inference is preferred when the measured browser/runtime is healthy, with a private VM 214 streaming service as the automatic fallback. Neither path calls a cloud speech API. Speech loss must not affect mission execution or deterministic safety.
+TTS, STT, and local open-source LLM inference are node capabilities, not permanent centralized services. Every operator and vessel node uses the same portable inference-runtime contract and may eventually carry its own GPU and preloaded models. The browser is the closest execution tier on an operator device; its fallback is the colocated node runtime, followed by an explicitly trusted reachable mesh peer. VM 214 hosts the initial node runtime for the interview appliance. No path requires a cloud speech API. Inference loss must not affect mission execution or deterministic safety.
 
 Serve the operator UI over HTTPS. Microphone capture and WebGPU require a secure browser context, so the current plain `http://192.168.50.214:8080` origin is insufficient for voice. During M6 development and the near-term interview demo, the existing free Cloudflare Quick Tunnel is the accepted HTTPS entry point; its generated hostname is explicitly temporary and must not be presented as a stable product URL. A named tunnel/domain is deferred. A later offline release must add a locally trusted hostname/certificate because the Quick Tunnel still depends on internet reachability.
+
+### Distributed node inference fabric
+
+- Package a portable node inference runtime with versioned STT, TTS, embedding, and local-LLM adapters. It can run on the operator appliance, a vessel computer, VM 214, or another authenticated edge node.
+- Each node publishes a signed, short-lived capability advertisement containing supported tasks, model/runtime versions, acceleration class, available memory, queue depth, measured latency class, power mode, and whether it may accept remote work.
+- Do not expose unrestricted hardware/process information or secrets in advertisements.
+- Route each request local-first:
+
+  `browser local → colocated node runtime → trusted reachable peer → deferred/typed fallback`
+
+- The central/cloud provider may remain an optional additional route when policy and connectivity permit, but it is never necessary for an already provisioned node to interpret local speech, synthesize feedback, or run its bounded advisory agent.
+- A node with cached models, current schemas/runbooks, and valid mission authority continues its local workflow without VM 214 or internet access. Mesh connectivity adds peer coordination, shared evidence, and optional inference failover; it does not create authority.
+- Browser and node providers use one request ID and immutable input hash. Exactly one result is accepted. Late, duplicate, or conflicting results are discarded and audited.
+- Peer inference requires authenticated transport, an allowed capability, bounded request size, deadline, hop limit, and explicit data classification. Raw audio is never broadcast.
+- When local STT fails and peer fallback is allowed, send one encrypted, short-lived compressed audio stream to one selected peer. Return text immediately and retain no audio after the request completes.
+- Select a peer using trust, task compatibility, measured latency, link cost, queue, power/reserve impact, and route stability with hysteresis. Mission-tape and safety traffic always outrank inference.
+- TTS returns text plus optional compressed audio to the requesting human-interface node. Vessel nodes without a local speaker/microphone keep the capability dormant and do not generate continuous speech traffic.
+- Local LLM output remains advisory. It may compile intent, explain state, retrieve cached runbooks, or propose a typed plan; it cannot sign leases, alter policy, authorize itself, or command actuators directly.
+- Distribute model artifacts before missions through signed manifests, immutable hashes, resumable chunks, and storage quotas. Do not transfer multi-hundred-megabyte models over a degraded operational mesh unless an explicit maintenance policy permits it.
+- The interview build may host several logical node providers on VM 214 for routing/failure demonstrations, but must label them simulated node isolation rather than claiming separate physical GPUs.
 
 ### TTS
 
@@ -207,26 +227,27 @@ Serve the operator UI over HTTPS. Microphone capture and WebGPU require a secure
 - Do not include voice training or cloning UI.
 - Keep the worker warm, synthesize sentence-sized chunks, stream PCM/WAV audio to the browser, and support immediate cancel/barge-in.
 - Preserve the applicable Pocket TTS and voice-source license/attribution files in the image and UI.
-- Benchmark Pocket TTS on VM 214 during M6A rather than relying on results from PPTtoVoice hardware. Record cold start, warm first-audio latency, total synthesis latency, real-time factor, CPU, and RSS for Morgan and at least two other voices.
+- Benchmark Pocket TTS first on VM 214 and later on each supported node hardware profile rather than relying on results from PPTtoVoice hardware. Record cold start, warm first-audio latency, total synthesis latency, real-time factor, CPU/GPU, and RSS for Morgan and at least two other voices.
 - Initial TTS gate on VM 214: warm p95 first-audio below 300 ms and p95 real-time factor below 0.5 for short operator responses. If it misses, shorten speech chunks and prioritize first-audio latency before changing the voice engine.
 
 ### STT
 
-Use one typed STT adapter with three measured execution paths:
+Use one typed STT adapter with four measured execution paths:
 
 1. **Browser WebGPU:** quantized Whisper/ONNX through Transformers.js in a dedicated Web Worker.
 2. **Browser WASM:** sherpa-onnx streaming transducer/Zipformer with VAD and endpointing in a dedicated Web Worker.
-3. **VM fallback:** private WebSocket streaming to a CPU model on VM 214, benchmarking sherpa-onnx, NeMo-Speech.cpp-supported quantized models, and `whisper.cpp` `tiny.en`/`base.en`.
+3. **Colocated node runtime:** private local streaming to the node's selected CPU/GPU model.
+4. **Trusted peer runtime:** policy-bounded encrypted streaming to one selected reachable peer when local tiers are unhealthy.
 
 At startup, a capability probe checks secure context, microphone permission, WebGPU adapter/limits, WASM SIMD, memory, model cache, and a short local calibration clip. Route in this order only when the path passed its benchmark threshold:
 
-`browser WebGPU → browser WASM → VM CPU streaming → typed input`
+`browser WebGPU → browser WASM → colocated node → trusted mesh peer → typed input`
 
 Display the active path and measured latency, for example `STT · Browser WASM · 184 ms`. Failover occurs only between utterances; one utterance has one accepted transcript and shared request ID.
 
 Serve versioned, checksum-verified browser models from the KeelMesh appliance and cache them locally through browser storage. Runtime inference must not download models from Hugging Face or another internet host. A model update uses a new immutable version and never silently replaces the active cached model.
 
-Browser microphone audio is converted to 16 kHz mono PCM. Browser-local modes keep raw audio on the operator device. Only the VM fallback sends bounded PCM frames over the private WebSocket. Every implementation emits the same partial text, final text, confidence, endpoint reason, timing, and provider metadata. Maritime callsigns, formations, and place names are supplied as a bounded vocabulary/boosting list where supported.
+Browser microphone audio is converted to 16 kHz mono PCM. Browser-local modes keep raw audio on the operator device. Node fallback sends bounded compressed frames only to the selected colocated or trusted peer provider. Every implementation emits the same partial text, final text, confidence, endpoint reason, timing, provider node, and route metadata. Maritime callsigns, formations, and place names are supplied as a bounded vocabulary/boosting list where supported.
 
 Build the STT benchmark harness in parallel with M6A instead of waiting for the voice UI. Run browser candidates on the actual interview laptop/browser and VM candidates on VM 214. Use at least 100 command utterances plus quiet, fan, office, wind, and marine-noise fixtures. Run identical audio, chunking, VAD, warm-up conditions, and scoring against every candidate. Record:
 
@@ -241,7 +262,7 @@ Build the STT benchmark harness in parallel with M6A instead of waiting for the 
 
 Publish machine-readable JSON and a concise Markdown comparison containing exact model/runtime versions, model hashes, thread count, VM or operator hardware, browser/version, execution backend, corpus hash, warm/cold state, and raw per-utterance timings. Select the lowest-latency path that satisfies the command-accuracy and UI-responsiveness gates, not simply the model with the lowest real-time factor.
 
-Initial gates for both browser and VM paths: p50 first partial below 250 ms, p95 endpoint-to-final below 700 ms, real-time factor below 0.25, at least 95% typed-command slot accuracy, and no map/input frame stall above 100 ms caused by browser inference. If no candidate meets every gate, choose the best measured path, show the actual latency in the UI/evidence, and continue typed/chat operation while optimizing STT. Do not claim the fastest engine until this harness produces measurements.
+Initial gates for both browser and node-runtime paths: p50 first partial below 250 ms, p95 endpoint-to-final below 700 ms, real-time factor below 0.25, at least 95% typed-command slot accuracy, and no map/input frame stall above 100 ms caused by browser inference. If no candidate meets every gate, choose the best measured path, show the actual latency in the UI/evidence, and continue typed/chat operation while optimizing STT. Do not claim the fastest engine until this harness produces measurements.
 
 Run VM speech services with explicit CPU and memory limits. Run browser models only in workers with bounded audio/model memory. Keep STT and TTS queues bounded, allow only one active microphone session in the interview profile, cancel stale utterances, and ensure speech workloads cannot starve the map, Go mission authority, Kafka workers, or PostgreSQL.
 
@@ -295,6 +316,11 @@ Add versioned contracts mirrored in Go, Python, TypeScript, and fixtures:
 - `FleetPlanCandidateV2`
 - `VoiceCatalogV1`
 - `TranscriptEventV1`
+- `NodeInferenceCapabilityV1`
+- `InferenceCapabilityAdvertisementV1`
+- `InferenceRouteV1`
+- `InferenceRequestV1`
+- `InferenceAttemptV1`
 - `WindowLayoutV1`
 
 Initial APIs:
@@ -315,6 +341,8 @@ Initial APIs:
 - `GET /api/v2/voices`
 - `POST /api/v2/speech:synthesize`
 - `GET /api/v2/speech/capabilities`
+- `GET /api/v2/inference/routes`
+- `POST /api/v2/inference/faults`
 - `GET /api/v2/transcription/stream` (WebSocket)
 
 All persistent mutations use request ID, idempotency key, and the relevant fleet/group/mission version. Existing M1–M5 v1 endpoints remain available for regression and the scripted interview drill.
@@ -347,8 +375,9 @@ All persistent mutations use request ID, idempotency key, and the relevant fleet
 ### M6D — Conversational operation
 
 - Typed/chat `CommandDraftV2` first.
-- Integrate the measured browser WebGPU/WASM winner behind the STT adapter and retain the measured VM 214 CPU winner as the packaged automatic fallback.
+- Integrate the measured browser WebGPU/WASM winner, colocated VM 214 node runtime, signed capability advertisements, route selection, and one simulated trusted peer fallback behind the same STT adapter.
 - Pocket TTS with Morgan default, all voices, cancel, and barge-in.
+- Demonstrate loss of browser inference, loss of the colocated provider, trusted peer selection, deduplication of a late result, and recovery to local-first routing.
 - AI formation/maneuver options using the same deterministic planning tools.
 
 ### M6E — Scale and release hardening
@@ -372,9 +401,12 @@ All persistent mutations use request ID, idempotency key, and the relevant fleet
 - Voice interruption stops playback immediately; partial/final transcript timing is visible and measured.
 - The near-term demo uses the free Cloudflare Quick Tunnel; microphone and WebGPU feature checks pass without browser security overrides. Evidence labels the tunnel URL ephemeral and does not claim voice availability during internet loss.
 - The later offline voice gate remains pending until a locally trusted HTTPS origin exists; a Quick Tunnel alone cannot satisfy it.
-- Browser-local STT keeps audio on the operator device; VM fallback sends audio only to VM 214; outbound cloud speech access remains disabled.
-- The chosen browser and VM fallback paths win reproducible same-corpus benchmarks on their actual hardware while satisfying command accuracy, or the release explicitly records which gate remains unmet.
-- Disconnecting or degrading browser inference visibly fails over to VM STT between utterances without accepting duplicate transcripts.
+- Browser-local STT keeps audio on the operator device; fallback sends encrypted bounded audio only to one selected colocated or trusted peer node; outbound cloud speech access remains disabled.
+- The chosen browser and node-runtime paths win reproducible same-corpus benchmarks on their actual hardware while satisfying command accuracy, or the release explicitly records which gate remains unmet.
+- Disconnecting or degrading browser inference visibly fails over to the colocated node; losing that provider selects one eligible mesh peer between utterances without accepting duplicate transcripts.
+- A node with preloaded models and cached policy/runbooks remains locally useful without VM 214 or internet access; mesh connectivity enables coordination and peer inference but never expands mission authority.
+- Speech and LLM requests never broadcast, never preempt mission-tape/safety traffic, and never trigger operational model downloads over a degraded mesh.
+- Signed capability advertisements expire, stale routes are rejected, and a late provider result cannot create a second command draft.
 - Browser worker and VM speech resource limits preserve map responsiveness, M1 command/snapshot latency, and active mission execution under simultaneous TTS/STT load.
 - Every panel can move, resize where supported, minimize, restore, dock, and close without losing mission state.
 - Reopening a singleton panel focuses the existing instance; windows remain reachable after viewport changes and never escape the screen bounds.

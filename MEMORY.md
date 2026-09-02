@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: Plan M6 Fleet Operations Workspace after the completed M5 interview release.
-- Last meaningful change: Updated M6 speech architecture and HTTPS rollout: Pocket TTS stays on VM 214; STT prefers browser WebGPU/WASM with VM fallback; the free ephemeral Cloudflare Quick Tunnel is acceptable for immediate microphone/WebGPU access. Named-domain and locally trusted offline HTTPS are deferred and the quick tunnel is not an offline-voice proof.
+- Last meaningful change: Expanded M6 into a distributed node-inference fabric. Every future operator/vessel node can host portable TTS, STT, and local open-source LLM capabilities; routing is browser-local, colocated node, then one trusted reachable peer. Signed advertisements, strict traffic priority, one-result deduplication, and preloaded model manifests preserve mesh scale and mission authority. VM 214 hosts the initial logical node providers.
 - Next step: review the M6 scope and implement M6A first: local map, 24 named/classed vessels, scalable selection, groups, swarm inspector, environmental metrics, vessel sprites, and the compact visual shell.
 - Blockers: The optional M5 Proxmox snapshot still awaits host storage preflight and explicit user authorization; no snapshot was attempted.
 
