@@ -3,12 +3,21 @@
   "source": "Natural Earth 1:10m land",
   "source_url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_land.geojson",
   "source_revision": "ca96624a56bd078437bca8184e78163e5039ad19",
+  "depth_source": "NOAA NCEI ETOPO 2022 v1 15 arc-second, sampled at 60 arc-seconds",
+  "depth_source_url": "https://coastwatch.pfeg.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csv?z[(40.75):4:(42.05)][(-72.1):4:(-70.55)]",
+  "depth_levels_meters": [
+    5,
+    10,
+    20,
+    40,
+    80
+  ],
   "bounds_wgs84": [
     -72.1,
     40.75,
     -70.55,
     42.05
   ],
-  "output_sha256": "0d5d9340cbff3081ba7a16d3647d6b05ca759c6844c76dce8512918eb968b2f7",
+  "output_sha256": "73eb1a6ebfda4a9f1f1df5c671b5edddbc859e92a46365c5de8ad5f745c05975",
   "display_notice": "Offline simulation basemap; not for navigation."
 }

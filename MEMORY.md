@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: the blank-map regression from removing the coarse placeholder geometry was corrected with a pinned Natural Earth 1:10m coastline clipped to the local operating area. It is deployed on VM 214 and all twelve vessel VMs; the partial NOAA raster remains out of the default render path.
+- Last meaningful change: native environmental layers were added to the restored offline map: animated current and wind vectors driven by the M6 environment fixture plus NOAA ETOPO 2022 depth contours. All three are independently toggleable and no second raster map is overlaid.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -322,6 +322,14 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Native environmental map layers
+
+- Context: The operator needed changing currents, wind, and depth context without another rectangular raster map overlay.
+- Decision: Generate 5/10/20/40/80 m contour vectors from NOAA NCEI ETOPO 2022, render them as native MapLibre lines, and animate current/wind arrow fields over water anchors using the existing deterministic M6 environment fixture. Provide compact independent layer toggles and live fixture values.
+- Files: `scripts/generate_narragansett_map.py`, `web/public/assets/maps/narragansett.geojson`, `web/public/assets/maps/narragansett-manifest.json`, `web/src/OperationsMap.tsx`, `web/src/app.css`, `web/e2e/mission.spec.ts`.
+- Commands/tests: TypeScript typecheck, seven Vitest assertions, Vite production build, six Playwright workflows plus targeted Pirate regression, deployed browser visual inspection, zero console errors.
+- Result: Wind/current arrows animate every 500 ms while depth remains stable; all layers are local/offline and individually toggleable. The partial NOAA chart raster remains disabled. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - Restored geographic map after overlay cleanup
 

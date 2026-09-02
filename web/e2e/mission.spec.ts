@@ -38,6 +38,13 @@ test("map-first workspace exposes the persistent 48-vessel operating picture", a
   await expect(page.getByText("NOAA-DERIVED FIXTURE", { exact: true })).toBeVisible();
   await expect(page.getByText("SIMULATION ONLY", { exact: true })).toBeVisible();
   await expect(page.locator("img[src='/assets/vessels/kestrel.png']").first()).toBeVisible();
+  const overlays = page.locator(".environment-overlays");
+  await expect(overlays.getByText("TIME-VARYING FIXTURE", { exact: true })).toBeVisible();
+  await expect(overlays.getByRole("button", { name: /CURRENT/ })).toHaveClass(/on/);
+  await expect(overlays.getByRole("button", { name: /WIND/ })).toHaveClass(/on/);
+  await expect(overlays.getByRole("button", { name: /DEPTH/ })).toHaveClass(/on/);
+  await overlays.getByRole("button", { name: /WIND/ }).click();
+  await expect(overlays.getByRole("button", { name: /WIND/ })).not.toHaveClass(/on/);
   expect(rasterRequests).toEqual([]);
 });
 
@@ -51,7 +58,7 @@ test("pirate watch changes nomenclature, agent voice, and returns cleanly to nav
   await page.getByRole("button", { name: /High Seas/ }).click();
   const arena = page.getByRole("region", { name: /High Seas/ });
   await arena.getByRole("button", { name: /ASK MORGAN, ARR!/ }).click();
-  await expect(arena.getByText(/Arrr, Captain/)).toBeVisible();
+  await expect(arena.locator(".arena-agent p")).toContainText("Arrr, Captain");
 
   await expect(page.evaluate(() => localStorage.getItem("keelmesh.theme"))).resolves.toBe("pirate");
   await page.getByRole("button", { name: "Return to navy mode" }).click();
