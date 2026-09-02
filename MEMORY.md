@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: Implement M6 Fleet Operations Workspace end to end on VM 214, preserving M1-M5 compatibility.
+- Current task: M6 Fleet Operations Workspace implementation is deployed, verified, and pushed; preserve M1-M5 compatibility while hardening the remaining explicitly documented M6 follow-ups.
 - Last meaningful change: M6 is deployed and verified on VM 214: 48 persistent vessels, scalable local NOAA map, fleet/group/collection controls, movable workspace windows, three concurrent mission workspaces, deterministic formation planning, exact authorization, VM Pocket TTS, and node-local faster-whisper STT. All M1-M6 API verifiers and five M6 Playwright workflows pass.
-- Next step: commit and push the verified M6 implementation without GitHub Actions. Later hardening can add the full 100-utterance/noise speech benchmark, browser WebGPU/WASM routes, POI/direct-guidance ergonomics, and 1,000-feature frame-time evidence.
+- Next step: rehearse the map-first M6 interview path. Later hardening can add the full 100-utterance/noise speech benchmark, browser WebGPU/WASM routes, POI/direct-guidance ergonomics, and 1,000-feature frame-time evidence.
 - Blockers: Browser WebGPU/WASM and trusted-peer STT routes remain planned rather than implemented. The optional Proxmox snapshot remains separate and requires storage preflight plus explicit user authorization; no snapshot is authorized.
 
 ## Current State
@@ -134,7 +134,7 @@ When sources conflict, use this order:
 
 ## Verification Ledger
 
-- 2026-09-02: M6 deployed as `keelmesh/core:m6` on VM 214 and passed all Go tests/vet, strict TypeScript, seven Vitest tests, production build, Compose validation, M1-M6 API verifiers, tracked-file secret scan, and five Playwright workflows. Browser coverage includes the 48-vessel map, search/group/filter selection, reachability inspector, group manager, geometry-to-plan-to-execution flow, movable/dockable windows, legacy M2/M4/M5 panels, and 1280×720, 1366×768, and 1440×900 viewports.
+- 2026-09-02: M6 commit `da99565` was pushed to `main` without GitHub Actions. It is deployed as `keelmesh/core:m6` on VM 214 and passed all Go tests/vet, strict TypeScript, seven Vitest tests, production build, Compose validation, M1-M6 API verifiers, tracked-file secret scan, and five Playwright workflows. Browser coverage includes the 48-vessel map, search/group/filter selection, reachability inspector, group manager, geometry-to-plan-to-execution flow, movable/dockable windows, legacy M2/M4/M5 panels, and 1280×720, 1366×768, and 1440×900 viewports.
 - 2026-09-02: Post-M6 M3 measured run attempted/accounted 121,598 events with zero drops, 2,227 events/s, 3.38 ms foreground API p95, 202 peak lag, real Worker 2 PID `15 -> 29`, 19.10 s recovery, and exact 1,000/1,000 live/shadow replay checksum parity. M4 collected eight scoped MCP receipts and four citations, visibly failed over from an OpenRouter timeout to an accepted provider response, matched deterministic replay, and passed the mandatory 11-assertion mock evaluation.
 - 2026-09-02: M6 map extract contains 1,171 local NOAA NCDS PNG tiles (13,792,933 bytes) for bounds `[-71.62,41.08,-71.08,41.62]`, zooms 8-14; manifest SHA-256 is `c23c6954bceb4662ffc6086b392ccca2c50c2aa6230d236332f7c297fc9c0683`. The VM-local faster-whisper tiny.en model is pinned to revision `0d3d19a32d3338f10357c0889762bd8d64bbdeba`, checksum `0148cf880b0f01d37cb359a3844a0f60292900504310fd2da156de1f1cf685d3`; a 3.84-second Morgan smoke utterance transcribed in 361 ms (RTF 0.094) with two expected tiny-model wording errors. This is a smoke measurement, not the planned 100-utterance accuracy benchmark.
 - 2026-09-02: Three transparent north-up vessel sprites were generated with built-in ImageGen and stored at `web/public/assets/vessels/{kestrel,mariner,atlas}.png`. Group identity is rendered separately through color/pattern overlays. No Proxmox snapshot was created.
