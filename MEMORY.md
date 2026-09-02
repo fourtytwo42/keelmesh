@@ -356,7 +356,7 @@ When sources conflict, use this order:
 - Decision: Expose seven distinct, depth-aware local corridor candidates with stable IDs, names, centers, exact boundaries, ordered waypoints, and target distance. Require the model to select one allow-listed ID; explicit place names outrank proximity, while an unspecified patrol/search uses vessel position and environment. Deterministic Go copies and validates the candidate and rejects arbitrary coordinates.
 - Files: `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `internal/agent/manager.go`, `ai/keelmesh_ai/service.py`, `web/src/types.ts`, `web/src/FleetWorkspace.tsx`, `web/src/app.css`, and tests.
 - Commands/tests: full Go suite/vet; TypeScript/Vitest/Vite; Ruff/pytest; two named-region live OpenAI proofs; generic search proof; temporary mission cleanup; central and twelve-node deployment.
-- Result: AI-created and natural-language patrol/search missions can place their own reviewed boundary and waypoints without inventing coordinates or bypassing policy. The planner identifies the provider-selected sector in its evidence card. VM 214 and all twelve nodes run binary SHA-256 `ed0d7b787dd340d519930b16b2086ec4c6db402e2cef87262800cadaede1c55b`. No snapshot or GitHub-hosted workflow.
+- Result: AI-created and natural-language patrol/search missions can place their own reviewed boundary and waypoints without inventing coordinates or bypassing policy. The planner identifies the provider-selected sector in its evidence card. Implementation commit `a801bbe` is pushed; VM 214 and all twelve nodes run binary SHA-256 `ed0d7b787dd340d519930b16b2086ec4c6db402e2cef87262800cadaede1c55b`. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - Persistent semantic entity naming
 
