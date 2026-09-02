@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: Finalize and hand off M1, the deterministic golden mission loop.
-- Last meaningful change: M1 is implemented and verified on VM 214: local map UI, six vessels, typed/drawn intent, two computed plans, immutable preview, exact-hash authorization, signed lease, idempotent start, execution, audit, and reconnect refresh.
-- Next step: Push the verified M1 checkpoint, confirm hosted CI, then begin M2 link graph and rolling mission tape.
+- Current task: M1 is complete and ready for handoff.
+- Last meaningful change: Commit `e235500` passed hosted CI run `33573287885` end to end and is deployed on VM 214 behind the healthy LAN and Quick Tunnel endpoints.
+- Next step: Begin M2 with the deterministic link graph, signed peer bundles, and rolling mission tape while retaining M1 as a regression gate.
 - Blockers: None.
 
 ## Current State
@@ -128,6 +128,7 @@ When sources conflict, use this order:
 - 2026-09-01: Frontend dependency audit reported zero vulnerabilities; Vitest, strict TypeScript, and production Vite build passed. The production MapLibre 6 worker is bundled with Vite `?worker&url`, preventing the silent missing-worker failure seen during visual QA.
 - 2026-09-01: `scripts/verify_m1.py` passed against the clean Compose deployment with two plans, 1,165 one-second samples, required audit events, preview stability, exact-hash rejection/authorization, idempotency, and vessel movement.
 - 2026-09-01: Playwright passed both suggested-area and hand-drawn-area workflows against VM 214. Visual QA confirmed local search/exclusion/holding geometry, computed route overlays, six vessel markers in DOM, plan comparison, and reconnect bootstrap refresh.
+- 2026-09-01: GitHub Actions run `33573287885` passed for M1 commit `e235500` in 2m31s, including npm audit/typecheck/unit/build, Go tests/vet, Compose validation, clean Docker build, API smoke, and two Playwright workflows.
 
 - 2026-09-01: Queried Vurra's read-only local catalog and transcript for asset `8d9083fc944e`; verified the recruiter stack and scale statements at approximately 00:07:40-00:13:50 and 00:18:24.
 - 2026-09-01: Read the supplied AI Infrastructure Engineer job posting and incorporated agent, MCP, RAG, ML workflow, eval, observability, security, documentation, and infrastructure requirements into `PRD.md`.
@@ -275,7 +276,6 @@ When sources conflict, use this order:
 
 ## Open Follow-ups
 
-- Push M1 and confirm the expanded hosted CI workflow passes from a clean checkout.
 - Begin M2 with the deterministic link graph, signed peer bundle, and six-segment mission tape; preserve the current M1 flow as a regression gate.
 - Replace the ephemeral Cloudflare Quick Tunnel with a named tunnel and stable hostname after the Cloudflare account/domain choice is available.
 - Prioritize the deterministic Go mesh/PNT digital twin and its visible failure controls in the first vertical slice.
