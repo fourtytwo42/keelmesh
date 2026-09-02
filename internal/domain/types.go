@@ -45,13 +45,14 @@ type MissionStateV1 struct {
 }
 
 type FleetSnapshotV1 struct {
-	SchemaVersion  int            `json:"schema_version"`
-	StateVersion   int64          `json:"state_version"`
-	ScenarioID     string         `json:"scenario_id"`
-	ScenarioName   string         `json:"scenario_name"`
-	SimulationRate float64        `json:"simulation_rate"`
-	Vessels        []VesselV1     `json:"vessels"`
-	Mission        MissionStateV1 `json:"mission"`
+	SchemaVersion  int                   `json:"schema_version"`
+	StateVersion   int64                 `json:"state_version"`
+	ScenarioID     string                `json:"scenario_id"`
+	ScenarioName   string                `json:"scenario_name"`
+	SimulationRate float64               `json:"simulation_rate"`
+	Vessels        []VesselV1            `json:"vessels"`
+	Mission        MissionStateV1        `json:"mission"`
+	Resilience     *ResilienceSnapshotV1 `json:"resilience,omitempty"`
 }
 
 type IntentConstraintsV1 struct {
@@ -154,11 +155,12 @@ type AuditEventV1 struct {
 }
 
 type StreamMessageV1 struct {
-	SchemaVersion int              `json:"schema_version"`
-	Sequence      int64            `json:"sequence"`
-	Kind          string           `json:"kind"`
-	Snapshot      *FleetSnapshotV1 `json:"snapshot,omitempty"`
-	Audit         *AuditEventV1    `json:"audit,omitempty"`
+	SchemaVersion int                   `json:"schema_version"`
+	Sequence      int64                 `json:"sequence"`
+	Kind          string                `json:"kind"`
+	Snapshot      *FleetSnapshotV1      `json:"snapshot,omitempty"`
+	Audit         *AuditEventV1         `json:"audit,omitempty"`
+	Resilience    *ResilienceSnapshotV1 `json:"resilience,omitempty"`
 }
 
 type BootstrapV1 struct {

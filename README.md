@@ -31,6 +31,21 @@ and embeds the production UI in `keelmesh-core`.
 
 The application is available on the LAN at `http://192.168.50.214:8080`.
 
+## M2 resilient autonomy
+
+After starting an authorized M1 mission, the Resilience Drill runs a deterministic
+Vessel 4 incident: direct Starlink failure, Vessel 3 HaLow relay, full partition,
+60-second signed mission-tape depletion, GNSS spoof exclusion, safe hold, and a
+policy-checked bridge to future work. Manual controls and auto-run use the same
+versioned fault API and state machine.
+
+```bash
+python3 scripts/verify_m2.py http://localhost:8080
+```
+
+The drill is simulation-only. Radio links and PNT evidence are modeled locally;
+it makes no physical range, anti-jam, or certified-navigation claim.
+
 See `infrastructure/README.md` for the reproducible VM and host setup. Never
 commit passwords, private keys, provider tokens, GitHub credentials, Cloudflare
 credentials, or model secrets.

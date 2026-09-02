@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "state_version": 3,
+  "scenario_id": "resilient-edge-v1",
+  "phase": "ready",
+  "mission_tick": 0,
+  "incident_node_id": "vessel-04",
+  "relay_node_id": "vessel-03",
+  "nodes": [],
+  "links": [],
+  "advertisements": [],
+  "active_path": ["operator", "vessel-04"],
+  "hop_receipts": [],
+  "queued_bundles": 0,
+  "duplicate_deliveries": 0,
+  "discarded_sequences": [],
+  "pnt_transitions": [],
+  "summary": "All nodes have direct reachability and a validated 60-second mission tape.",
+  "next_action": "fail_starlink",
+  "auto_run_available": true
+}

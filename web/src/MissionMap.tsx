@@ -62,6 +62,12 @@ export function MissionMap({ snapshot, boundary, exclusion, holding, area, plan,
       map.addLayer({ id: "search-line", type: "line", source: "zones", filter: ["==", ["get", "kind"], "search"], paint: { "line-color": "#7be0d2", "line-width": 3 } });
       map.addSource("routes", { type: "geojson", data: fc([]) });
       map.addLayer({ id: "routes-preview", type: "line", source: "routes", paint: { "line-color": "#78e7d5", "line-width": 4, "line-opacity": .95, "line-dasharray": [2, 1.5] } });
+      map.addSource("resilience", { type: "geojson", data: fc([]) });
+      map.addLayer({ id: "resilience-links-up", type: "line", source: "resilience", filter: ["all", ["==", ["get", "kind"], "link"], ["==", ["get", "reachable"], true]], paint: { "line-color": ["case", ["==", ["get", "active"], true], "#f2c46f", "#3b7780"], "line-width": ["case", ["==", ["get", "active"], true], 4, 2], "line-opacity": .9 } });
+      map.addLayer({ id: "resilience-links-down", type: "line", source: "resilience", filter: ["all", ["==", ["get", "kind"], "link"], ["==", ["get", "reachable"], false]], paint: { "line-color": "#ed6b72", "line-width": 2, "line-dasharray": [2, 2], "line-opacity": .75 } });
+      map.addLayer({ id: "rejoin-bridge", type: "line", source: "resilience", filter: ["==", ["get", "kind"], "bridge"], paint: { "line-color": "#f2c46f", "line-width": 5, "line-dasharray": [1, 1] } });
+      map.addLayer({ id: "pnt-uncertainty", type: "circle", source: "resilience", filter: ["==", ["get", "kind"], "fused"], paint: { "circle-radius": ["+", 8, ["/", ["get", "uncertainty"], 2]], "circle-color": "#f0bb61", "circle-opacity": .13, "circle-stroke-color": "#f0bb61", "circle-stroke-width": 2 } });
+      map.addLayer({ id: "gnss-ghost", type: "circle", source: "resilience", filter: ["==", ["get", "kind"], "ghost"], paint: { "circle-radius": 8, "circle-color": "#ef5965", "circle-opacity": .35, "circle-stroke-color": "#ff8d94", "circle-stroke-width": 3 } });
       setReady(true);
     });
     const terra = draw.getTerraDrawInstance();
@@ -86,7 +92,7 @@ export function MissionMap({ snapshot, boundary, exclusion, holding, area, plan,
     const east = Math.max(...points.map((point) => point[0]));
     const south = Math.min(...points.map((point) => point[1]));
     const north = Math.max(...points.map((point) => point[1]));
-    map.fitBounds([[west, south], [east, north]], { padding: { top: 58, right: 430, bottom: 300, left: 58 }, duration: 0, maxZoom: 14 });
+    map.fitBounds([[west, south], [east, north]], { padding: { top: 58, right: 430, bottom: 390, left: 58 }, duration: 0, maxZoom: 14 });
   }, [ready, area, exclusion, holding]);
 
   useEffect(() => {
@@ -106,6 +112,26 @@ export function MissionMap({ snapshot, boundary, exclusion, holding, area, plan,
     (map.getSource("routes") as GeoJSONSource | undefined)?.setData(fc(features));
     if (map.getLayer("routes-preview")) map.setPaintProperty("routes-preview", "line-dasharray", snapshot.mission.phase === "executing" || snapshot.mission.phase === "completed" ? [1, 0] : [2, 1.5]);
   }, [plan, snapshot.mission.phase, ready]);
+
+  useEffect(() => {
+    const map = mapRef.current; if (!ready || !map) return;
+    const resilience = snapshot.resilience;
+    const features: GeoJSON.Feature[] = [];
+    if (resilience) {
+      const nodePositions = new Map(resilience.nodes.map((node) => [node.id, node.position]));
+      const first = snapshot.vessels[0]?.position ?? [-69.99, 40.02] as Point;
+      nodePositions.set("operator", [first[0] - .006, first[1] + .006]);
+      for (const link of resilience.links) {
+        const from = nodePositions.get(link.source_id); const to = nodePositions.get(link.destination_id);
+        if (from && to) features.push({ type: "Feature", properties: { kind: "link", reachable: link.reachable, active: resilience.active_path.includes(link.source_id) && resilience.active_path.includes(link.destination_id), underlay: link.underlay }, geometry: { type: "LineString", coordinates: [from, to] } });
+      }
+      const incident = resilience.nodes.find((node) => node.id === resilience.incident_node_id);
+      if (incident) features.push({ type: "Feature", properties: { kind: "fused", uncertainty: incident.pnt.uncertainty_m }, geometry: { type: "Point", coordinates: incident.pnt.position } });
+      if (resilience.raw_gnss_position) features.push({ type: "Feature", properties: { kind: "ghost" }, geometry: { type: "Point", coordinates: resilience.raw_gnss_position } });
+      if (resilience.bridge) features.push({ type: "Feature", properties: { kind: "bridge" }, geometry: { type: "LineString", coordinates: resilience.bridge.route } });
+    }
+    (map.getSource("resilience") as GeoJSONSource | undefined)?.setData(fc(features));
+  }, [snapshot.resilience, snapshot.vessels, ready]);
 
   useEffect(() => {
     const map = mapRef.current; if (!map) return;

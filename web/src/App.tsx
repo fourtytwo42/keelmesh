@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, KeelMeshError, requestID, streamURL } from "./api";
 import { MissionMap } from "./MissionMap";
+import { ResilienceDrill } from "./ResilienceDrill";
 import type { AuditEvent, Bootstrap, FleetSnapshot, Lease, MissionIntent, PlanCandidate, Point, Polygon, Preview, StreamMessage } from "./types";
 import "./app.css";
 
@@ -34,7 +35,7 @@ export default function App() {
     const connect = () => {
       if (stopped) return; socket = new WebSocket(streamURL());
       socket.onopen = () => { setConnected(true); retry = 500; refresh().catch(() => undefined); };
-      socket.onmessage = (event) => { const message = JSON.parse(event.data) as StreamMessage; if (message.snapshot) setSnapshot(message.snapshot); if (message.audit) setAudit((current) => [...current.slice(-19), message.audit!]); };
+      socket.onmessage = (event) => { const message = JSON.parse(event.data) as StreamMessage; if (message.snapshot) setSnapshot(message.snapshot); if (message.resilience) setSnapshot((current) => current ? { ...current, state_version: message.resilience!.state_version, resilience: message.resilience } : current); if (message.audit) setAudit((current) => [...current.slice(-19), message.audit!]); };
       socket.onclose = () => { setConnected(false); if (!stopped) window.setTimeout(connect, retry); retry = Math.min(5000, retry * 2); };
     };
     connect(); return () => { stopped = true; socket?.close(); };
@@ -87,6 +88,8 @@ export default function App() {
 
     <section className="workspace">
       <MissionMap snapshot={snapshot} boundary={bootstrap.boundary} exclusion={bootstrap.exclusion_zone} holding={bootstrap.holding_area} area={area} plan={selectedPlan} previewPositions={phase === "previewing" ? previewPositions : null} drawNonce={drawNonce} onAreaDrawn={(polygon) => { setArea(polygon); setError(""); setPlans([]); setPreview(null); }} />
+
+      {snapshot.resilience && <ResilienceDrill value={snapshot.resilience} onChange={(resilience) => setSnapshot((current) => current ? { ...current, state_version: resilience.state_version, resilience } : current)} onError={setError} />}
 
       <aside className={`plan-panel ${plans.length ? "open" : ""}`} aria-label="Plan comparison">
         <div className="panel-heading"><div><small>PLAN COMPARISON</small><h1>{plans.length ? "Choose the approach" : "Mission workspace"}</h1></div>{plans.length > 0 && <span>{plans.length} OPTIONS</span>}</div>

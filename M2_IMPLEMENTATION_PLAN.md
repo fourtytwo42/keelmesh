@@ -1,6 +1,6 @@
 # M2 — Resilient Autonomy Implementation Plan
 
-Status: implementation-ready  
+Status: implemented and verified on VM 214 (2026-09-01)
 Depends on: completed M1 golden mission loop  
 Primary incident vessel: Vessel 4  
 
@@ -332,4 +332,3 @@ is safe. A snapshot still requires explicit user authorization.
 
 Do not start with the fault buttons. The tape executor and integrity-bearing PNT
 contracts must be real before their failure states are animated.
-

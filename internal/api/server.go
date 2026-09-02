@@ -38,13 +38,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/plans/{action}", s.planAction)
 	mux.HandleFunc("POST /api/v1/missions/{action}", s.missionAction)
 	mux.HandleFunc("GET /api/v1/audit/{trace_id}", s.audit)
+	mux.HandleFunc("GET /api/v1/resilience", s.resilience)
+	mux.HandleFunc("POST /api/v1/faults", s.fault)
+	mux.HandleFunc("POST /api/v1/scenarios/resilient-edge:reset", s.resetResilience)
+	mux.HandleFunc("POST /api/v1/scenarios/resilient-edge:advance", s.advanceResilience)
 	mux.HandleFunc("GET /api/v1/stream", s.stream)
 	mux.Handle("GET /", spaHandler(s.web))
 	return requestLog(s.logger, mux)
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m1", "started_at": s.startedAt.Format(time.RFC3339)})
+	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m2", "started_at": s.startedAt.Format(time.RFC3339)})
 }
 func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
@@ -112,6 +116,35 @@ func (s *Server) missionAction(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) audit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"events": s.engine.Audit(r.PathValue("trace_id"))})
+}
+
+func (s *Server) resilience(w http.ResponseWriter, _ *http.Request) {
+	v, err := s.engine.Resilience()
+	respond(w, v, err, http.StatusOK)
+}
+func (s *Server) fault(w http.ResponseWriter, r *http.Request) {
+	var req domain.FaultCommandV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.engine.ApplyFault(req)
+	respond(w, v, err, http.StatusOK)
+}
+func (s *Server) resetResilience(w http.ResponseWriter, r *http.Request) {
+	var req domain.ResilienceMutationV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.engine.ResetResilience(req)
+	respond(w, v, err, http.StatusOK)
+}
+func (s *Server) advanceResilience(w http.ResponseWriter, r *http.Request) {
+	var req domain.FaultCommandV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.engine.AdvanceResilience(req)
+	respond(w, v, err, http.StatusOK)
 }
 
 func (s *Server) stream(w http.ResponseWriter, r *http.Request) {

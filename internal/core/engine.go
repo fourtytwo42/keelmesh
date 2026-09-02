@@ -18,6 +18,7 @@ import (
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 	"github.com/fourtytwo42/keelmesh/internal/geometry"
 	"github.com/fourtytwo42/keelmesh/internal/planner"
+	edge "github.com/fourtytwo42/keelmesh/internal/resilience"
 	"github.com/fourtytwo42/keelmesh/internal/scenario"
 )
 
@@ -74,6 +75,7 @@ type Engine struct {
 	lease        *domain.MissionLeaseV1
 	mission      domain.MissionStateV1
 	runtime      *missionRuntime
+	resilience   *edge.Runtime
 	audit        []domain.AuditEventV1
 	secret       []byte
 	sequence     int64
@@ -117,7 +119,12 @@ func (e *Engine) Snapshot() domain.FleetSnapshotV1 {
 	return e.snapshotLocked()
 }
 func (e *Engine) snapshotLocked() domain.FleetSnapshotV1 {
-	return domain.FleetSnapshotV1{SchemaVersion: domain.SchemaVersion, StateVersion: e.stateVersion, ScenarioID: e.scenario.ID, ScenarioName: e.scenario.Name, SimulationRate: e.scenario.SimulationRate, Vessels: cloneVessels(e.vessels), Mission: e.mission}
+	var resilienceSnapshot *domain.ResilienceSnapshotV1
+	if e.resilience != nil {
+		snapshot := e.resilience.Snapshot()
+		resilienceSnapshot = &snapshot
+	}
+	return domain.FleetSnapshotV1{SchemaVersion: domain.SchemaVersion, StateVersion: e.stateVersion, ScenarioID: e.scenario.ID, ScenarioName: e.scenario.Name, SimulationRate: e.scenario.SimulationRate, Vessels: cloneVessels(e.vessels), Mission: e.mission, Resilience: resilienceSnapshot}
 }
 
 func (e *Engine) Compile(req CompileRequest) (domain.MissionIntentV1, error) {
@@ -151,6 +158,7 @@ func (e *Engine) Compile(req CompileRequest) (domain.MissionIntentV1, error) {
 	e.previews = map[string]domain.PlanPreviewV1{}
 	e.lease = nil
 	e.runtime = nil
+	e.resilience = nil
 	e.mission = domain.MissionStateV1{Phase: "intent_ready"}
 	e.appendAuditLocked(trace, "intent.compiled", "Mission intent compiled", map[string]any{"intent_id": intent.ID, "state_version": e.stateVersion})
 	return intent, nil
@@ -271,12 +279,132 @@ func (e *Engine) Start(missionID string, req StartRequest) (domain.MissionStateV
 	}
 	now := time.Now().UTC()
 	e.runtime = &missionRuntime{plan: plan, distance: distances, total: totals, lastTick: now}
+	e.resilience = edge.New(*e.lease, plan, e.vessels, e.stateVersion+1)
 	e.mission.Phase = "executing"
 	e.mission.StartedAt = now.Format(time.RFC3339Nano)
 	e.idempotency[req.IdempotencyKey] = fingerprint
 	e.stateVersion++
+	e.resilience.SetStateVersion(e.stateVersion)
 	e.appendAuditLocked(e.intent.TraceID, "mission.started", "Authorized mission execution started", map[string]any{"mission_id": missionID, "simulation_rate": e.scenario.SimulationRate})
 	return e.mission, nil
+}
+
+func (e *Engine) Resilience() (domain.ResilienceSnapshotV1, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.resilience == nil {
+		return domain.ResilienceSnapshotV1{}, errCode("LEASE_REQUIRED", "Start an authorized mission before running the resilience drill.")
+	}
+	return e.resilience.Snapshot(), nil
+}
+
+func (e *Engine) ApplyFault(req domain.FaultCommandV1) (domain.ResilienceSnapshotV1, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if req.IdempotencyKey == "" {
+		return domain.ResilienceSnapshotV1{}, errCode("IDEMPOTENCY_CONFLICT", "An idempotency key is required.")
+	}
+	fingerprint := "fault|" + req.Kind + "|" + req.TargetID
+	if prior, ok := e.idempotency[req.IdempotencyKey]; ok {
+		if prior != fingerprint {
+			return domain.ResilienceSnapshotV1{}, errCode("IDEMPOTENCY_CONFLICT", "The idempotency key was already used for a different command.")
+		}
+		if e.resilience == nil {
+			return domain.ResilienceSnapshotV1{}, errCode("LEASE_REQUIRED", "The resilience runtime is no longer active.")
+		}
+		return e.resilience.Snapshot(), nil
+	}
+	if err := e.checkVersion(req.ExpectedStateVersion); err != nil {
+		return domain.ResilienceSnapshotV1{}, err
+	}
+	if e.resilience == nil {
+		return domain.ResilienceSnapshotV1{}, errCode("LEASE_REQUIRED", "Start an authorized mission before running the resilience drill.")
+	}
+	current := e.resilience.Snapshot()
+	if req.TargetID != current.IncidentNodeID {
+		return domain.ResilienceSnapshotV1{}, errCode("INVALID_FAULT", "Fault target must be the incident vessel.")
+	}
+	if req.ScenarioTick != current.MissionTick {
+		return domain.ResilienceSnapshotV1{}, errCode("FAULT_CONFLICT", "Fault command references a stale mission tick.")
+	}
+	streamKind, err := e.resilience.Apply(req.Kind)
+	if err != nil {
+		code := err.Error()
+		if code == "INVALID_FAULT_SEQUENCE" {
+			code = "FAULT_CONFLICT"
+		}
+		return domain.ResilienceSnapshotV1{}, errCode(code, "The fault is invalid for the current deterministic drill phase.")
+	}
+	e.idempotency[req.IdempotencyKey] = fingerprint
+	e.stateVersion++
+	e.resilience.SetStateVersion(e.stateVersion)
+	snapshot := e.resilience.Snapshot()
+	e.appendAuditLocked(e.traceIDLocked(), streamKind, snapshot.Summary, map[string]any{"request_id": req.RequestID, "fault": req.Kind, "mission_tick": snapshot.MissionTick})
+	e.broadcastResilienceLocked(streamKind, snapshot)
+	return snapshot, nil
+}
+
+func (e *Engine) ResetResilience(req domain.ResilienceMutationV1) (domain.ResilienceSnapshotV1, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if req.IdempotencyKey == "" {
+		return domain.ResilienceSnapshotV1{}, errCode("IDEMPOTENCY_CONFLICT", "An idempotency key is required.")
+	}
+	fingerprint := "resilience-reset"
+	if prior, ok := e.idempotency[req.IdempotencyKey]; ok {
+		if prior != fingerprint {
+			return domain.ResilienceSnapshotV1{}, errCode("IDEMPOTENCY_CONFLICT", "The idempotency key was already used for another command.")
+		}
+		if e.resilience != nil {
+			return e.resilience.Snapshot(), nil
+		}
+	}
+	if err := e.checkVersion(req.ExpectedStateVersion); err != nil {
+		return domain.ResilienceSnapshotV1{}, err
+	}
+	if e.lease == nil {
+		return domain.ResilienceSnapshotV1{}, errCode("LEASE_REQUIRED", "Start an authorized mission before resetting the drill.")
+	}
+	plan := e.plans[e.lease.PlanID]
+	e.stateVersion++
+	e.resilience = edge.New(*e.lease, plan, e.vessels, e.stateVersion)
+	e.idempotency[req.IdempotencyKey] = fingerprint
+	snapshot := e.resilience.Snapshot()
+	e.appendAuditLocked(e.traceIDLocked(), "resilience.scenario.reset", snapshot.Summary, map[string]any{"request_id": req.RequestID})
+	e.broadcastResilienceLocked("resilience.scenario.reset", snapshot)
+	return snapshot, nil
+}
+
+func (e *Engine) AdvanceResilience(req domain.FaultCommandV1) (domain.ResilienceSnapshotV1, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if req.IdempotencyKey == "" {
+		return domain.ResilienceSnapshotV1{}, errCode("IDEMPOTENCY_CONFLICT", "An idempotency key is required.")
+	}
+	seconds := req.ScenarioTick
+	if seconds <= 0 || seconds > 60 {
+		return domain.ResilienceSnapshotV1{}, errCode("INVALID_ADVANCE", "Advance must be between 1 and 60 mission seconds.")
+	}
+	fingerprint := fmt.Sprintf("resilience-advance|%d", seconds)
+	if prior, ok := e.idempotency[req.IdempotencyKey]; ok {
+		if prior != fingerprint {
+			return domain.ResilienceSnapshotV1{}, errCode("IDEMPOTENCY_CONFLICT", "The idempotency key was already used for another advance.")
+		}
+		return e.resilience.Snapshot(), nil
+	}
+	if err := e.checkVersion(req.ExpectedStateVersion); err != nil {
+		return domain.ResilienceSnapshotV1{}, err
+	}
+	if e.resilience == nil {
+		return domain.ResilienceSnapshotV1{}, errCode("LEASE_REQUIRED", "Start an authorized mission before advancing the drill.")
+	}
+	e.resilience.Advance(seconds)
+	e.idempotency[req.IdempotencyKey] = fingerprint
+	e.stateVersion++
+	e.resilience.SetStateVersion(e.stateVersion)
+	snapshot := e.resilience.Snapshot()
+	e.broadcastResilienceLocked("resilience.clock.advanced", snapshot)
+	return snapshot, nil
 }
 
 func (e *Engine) Audit(traceID string) []domain.AuditEventV1 {
@@ -317,6 +445,10 @@ func (e *Engine) tick(now time.Time) {
 	progressSum := 0.0
 	for i := range e.vessels {
 		v := &e.vessels[i]
+		if e.resilience != nil && !e.resilience.CanMove(v.ID) {
+			v.SpeedMPS = 0
+			continue
+		}
 		var a *domain.AssignmentV1
 		for j := range e.runtime.plan.Assignments {
 			if e.runtime.plan.Assignments[j].VesselID == v.ID {
@@ -347,6 +479,9 @@ func (e *Engine) tick(now time.Time) {
 			progress = e.runtime.distance[v.ID] / total
 		}
 		progressSum += progress
+		if e.resilience != nil {
+			e.resilience.SetPosition(v.ID, v.Position)
+		}
 	}
 	e.mission.Progress = progressSum / float64(len(e.runtime.plan.Assignments))
 	if complete == len(e.runtime.plan.Assignments) {
@@ -355,7 +490,28 @@ func (e *Engine) tick(now time.Time) {
 		e.appendAuditLocked(e.intent.TraceID, "mission.completed", "All six vessels completed their assigned routes", nil)
 		e.runtime = nil
 		e.stateVersion++
+		if e.resilience != nil {
+			e.resilience.SetStateVersion(e.stateVersion)
+		}
 	}
+}
+
+func (e *Engine) broadcastResilienceLocked(kind string, snapshot domain.ResilienceSnapshotV1) {
+	e.sequence++
+	msg := domain.StreamMessageV1{SchemaVersion: domain.SchemaVersion, Sequence: e.sequence, Kind: kind, Resilience: &snapshot}
+	for ch := range e.subs {
+		select {
+		case ch <- msg:
+		default:
+		}
+	}
+}
+
+func (e *Engine) traceIDLocked() string {
+	if e.intent != nil {
+		return e.intent.TraceID
+	}
+	return "resilient-edge-v1"
 }
 
 func (e *Engine) broadcastSnapshot() {

@@ -4,6 +4,9 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/fourtytwo42/keelmesh/internal/domain"
+	edge "github.com/fourtytwo42/keelmesh/internal/resilience"
 )
 
 func goldenPlan(t *testing.T, e *Engine) (int64, string, string) {
@@ -24,6 +27,48 @@ func goldenPlan(t *testing.T, e *Engine) (int64, string, string) {
 	}
 	t.Fatal("no recommended plan")
 	return 0, "", ""
+}
+
+func TestResilientEdgeFaultScheduleFailsClosedAndRejoins(t *testing.T) {
+	e := New()
+	version, planID, hash := goldenPlan(t, e)
+	lease, err := e.Authorize(planID, AuthorizeRequest{RequestID: "m2-auth", ExpectedStateVersion: version, PlanHash: hash, OperatorID: "demo-operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = e.Start(lease.MissionID, StartRequest{RequestID: "m2-start", ExpectedStateVersion: version, LeaseID: lease.ID, PlanHash: hash, IdempotencyKey: "m2-start"}); err != nil {
+		t.Fatal(err)
+	}
+	before := e.Snapshot().Vessels[3].Position
+	state := e.Snapshot().StateVersion
+	if _, wrongTarget := e.ApplyFault(domain.FaultCommandV1{Kind: edge.FaultFailStarlink, TargetID: "vessel-06", RequestID: "wrong", IdempotencyKey: "wrong", ExpectedStateVersion: state}); errorCode(wrongTarget) != "INVALID_FAULT" {
+		t.Fatalf("wrong target error=%v", wrongTarget)
+	}
+	for index, kind := range []string{edge.FaultFailStarlink, edge.FaultPartition, edge.FaultGNSSSpoof, edge.FaultRestore} {
+		state := e.Snapshot().StateVersion
+		command := domain.FaultCommandV1{SchemaVersion: 1, Kind: kind, TargetID: "vessel-04", ScenarioTick: e.resilience.Snapshot().MissionTick, RequestID: "m2", IdempotencyKey: "fault-" + kind, ExpectedStateVersion: state}
+		result, faultErr := e.ApplyFault(command)
+		if faultErr != nil {
+			t.Fatalf("fault %d %s: %v", index, kind, faultErr)
+		}
+		if result.StateVersion <= state {
+			t.Fatal("fault did not advance state version")
+		}
+		if replay, replayErr := e.ApplyFault(command); replayErr != nil || replay.StateVersion != result.StateVersion {
+			t.Fatalf("idempotent replay=%#v err=%v", replay, replayErr)
+		}
+	}
+	result, err := e.Resilience()
+	if err != nil || result.Phase != "rejoined" || result.Bridge == nil {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	incident := result.Nodes[4]
+	if incident.PNT.Position != before {
+		t.Fatalf("position jumped: before=%v after=%v", before, incident.PNT.Position)
+	}
+	if incident.PNT.Integrity != "trusted" || len(incident.PNT.ExcludedSources) == 0 {
+		t.Fatalf("PNT not safely recovered: %#v", incident.PNT)
+	}
 }
 
 func TestPreviewDoesNotMoveVesselsAndExecutionDoes(t *testing.T) {

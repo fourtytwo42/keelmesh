@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fixtureJSON from "../../contracts/fixtures/mission-intent-v1.json";
-import type { MissionIntent } from "./types";
+import resilienceJSON from "../../contracts/fixtures/resilience-snapshot-v1.json";
+import type { MissionIntent, ResilienceSnapshot } from "./types";
 
 describe("shared contract fixtures", () => {
   it("reads MissionIntentV1 using the TypeScript contract", () => {
@@ -9,5 +10,12 @@ describe("shared contract fixtures", () => {
     expect(fixture.requested_asset_count).toBe(6);
     expect(fixture.area.type).toBe("Polygon");
     expect(fixture.constraints.avoid_zones).toEqual(["exclusion-2"]);
+  });
+
+  it("reads ResilienceSnapshotV1 using the TypeScript contract", () => {
+    const fixture = resilienceJSON as ResilienceSnapshot;
+    expect(fixture.scenario_id).toBe("resilient-edge-v1");
+    expect(fixture.incident_node_id).toBe("vessel-04");
+    expect(fixture.active_path).toEqual(["operator", "vessel-04"]);
   });
 });

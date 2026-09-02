@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: M2 resilient-autonomy implementation is planned and ready to begin.
-- Last meaningful change: `M2_IMPLEMENTATION_PLAN.md` defines contracts, package boundaries, seven build stages, the Vessel 4 incident timeline, APIs, UX, and delivery gates.
-- Next step: Implement Stage 1: deterministic mission clock, M2 contracts/fixtures, and M1-safe snapshot extensions.
+- Current task: M2 resilient autonomy is implemented, deployed, and verified on VM 214.
+- Last meaningful change: the live appliance now runs the four-step Vessel 4 resilience drill with signed tape/bundles, mesh relay/partition, PNT spoof rejection, safe hold, and bridge-to-future rejoin.
+- Next step: review the live UI and prepare the interview walkthrough; M3 scale/cutaway work remains separate.
 - Blockers: None.
 
 ## Current State
@@ -15,6 +15,7 @@ Durable project context lives here. Update this file whenever information should
 - Core scenario: the operator defines a simulated search mission through the map, suggestions, voice, or chat; the system previews and simulates a constrained plan before authorization.
 - Core demo thesis: “Program the mission once. Coordinate locally. Adapt together. Degrade safely when the uplink disappears.” The mesh transports signed state and proposals; authenticated edge nodes make bounded decisions under the Group Mission Contract.
 - `PRD.md` is the product source of truth. The M1 React/TypeScript/MapLibre interface and deterministic Go mission authority are embedded in one offline Compose appliance running on VM 214.
+- M2 is live in the same appliance. It adds a mission-relative clock, six signed 10-second tape segments per vessel, authenticated/deduplicated peer bundles, deterministic Starlink/HaLow faults, PNT evidence arbitration, bounded safe hold, and stale-safe bridge rejoin.
 - `IMPLEMENTATION_PLAN.md` is the Friday delivery plan. It sequences the work as visible vertical slices with acceptance gates, a three-day schedule, contingency cuts, API/contracts, verification evidence, and a six-minute rehearsal.
 - `ROLE_ALIGNMENT_AUDIT.md` is the coverage contract against the recruiter transcript and job posting. It requires both an Operator workflow and a scoped Autonomy Engineer incident-to-eval workflow.
 
@@ -123,6 +124,10 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+- 2026-09-01: Completed and deployed M2 on VM 214. `scripts/verify_m2.py` passed with tape depths `60,60,30,0,60`, one deduplicated delivery, 52 m maximum uncertainty, safe contingency at mission tick 60, three discarded stale segments, bridge target 9, and final `rejoined` state.
+- 2026-09-01: All Go package tests passed for monotonic clock, tape hashes/signatures/lifecycle/expiry, bundle immutability/hop limits/deduplication, mesh partition routing, PNT spoof exclusion, engine stale-state/idempotency behavior, and M1 regressions. Frontend typecheck, Vitest, and production build passed.
+- 2026-09-01: Playwright passed three workflows against VM 214: suggested-area M1, hand-drawn-area M1, and full M2 relay → partition → spoof/safe-hold → bridge/rejoin. A null-vs-empty Go slice crash discovered during browser QA was fixed by normalizing wire arrays and adding defensive client checks.
 
 - 2026-09-01: Planned M2 as a deterministic Vessel 4 incident layered onto an authorized M1 mission: direct Starlink failure, Vessel 3 HaLow relay, full partition, six-segment tape depletion, GNSS source exclusion, uncertainty-triggered safe hold, stale-segment rejection, and policy-checked bridge-to-future rejoin.
 
@@ -272,18 +277,16 @@ When sources conflict, use this order:
 
 ## Completed Work
 
+- 2026-09-01: Completed M2 contracts, deterministic runtime packages, APIs/WebSocket events, map overlays, operator drill, shared fixtures, verifier, browser coverage, Compose deployment, and documentation. No Proxmox snapshot was created.
 - 2026-09-01: Completed M0 naming, repository, VM/application identity migration, healthy renamed container, initial private GitHub push, baseline CI definition, and Proxmox snapshot.
 - 2026-09-01: Created the initial comprehensive `PRD.md`, including source alignment, traceability, UX, planner, guardrails, cutaway, scale, resilience, stack, MCP contract, data contracts, evaluations, priorities, and acceptance criteria.
 - 2026-07-12: Reset stale project-specific memory while retaining the durable memory-management logic.
 
 ## Open Follow-ups
 
-- Execute M2 Stage 1 from `M2_IMPLEMENTATION_PLAN.md`: deterministic clock, versioned contracts/fixtures, and optional resilience snapshot while preserving M1.
 - Replace the ephemeral Cloudflare Quick Tunnel with a named tunnel and stable hostname after the Cloudflare account/domain choice is available.
-- Prioritize the deterministic Go mesh/PNT digital twin and its visible failure controls in the first vertical slice.
-- Implement the rolling mission tape, link scoring/peer egress, and safe rejoin state machine before adding real networking or broad infrastructure services.
 - Validate the available local model/STT/TTS runtimes and benchmark hardware before selecting exact models.
-- Expand the M1 shared fixture pattern into JSON Schemas for M2 peer-bundle, tape, and PNT contracts.
+- Add formal JSON Schema files for M2 peer-bundle, tape, and PNT contracts if needed beyond the shared Go/TypeScript fixture tests.
 - Implement the P0 vertical slice before adding MLflow, Dagster, Kubernetes, or broad eval coverage.
 
 ## Do Not Forget

@@ -19,3 +19,17 @@ func TestMissionIntentV1Fixture(t *testing.T) {
 		t.Fatalf("fixture does not satisfy MissionIntentV1: %+v", intent)
 	}
 }
+
+func TestResilienceSnapshotV1Fixture(t *testing.T) {
+	data, err := os.ReadFile("../../contracts/fixtures/resilience-snapshot-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot ResilienceSnapshotV1
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.SchemaVersion != SchemaVersion || snapshot.IncidentNodeID != "vessel-04" || snapshot.NextAction != "fail_starlink" {
+		t.Fatalf("fixture does not satisfy ResilienceSnapshotV1: %+v", snapshot)
+	}
+}
