@@ -195,7 +195,9 @@ The model never issues vessel commands or approves a plan. Authorization remains
 
 ## 9. Voice pipeline
 
-Both TTS and STT run as private services on VM 214. Browser clients send microphone audio to the appliance and receive transcripts/audio from it; they do not run speech models locally and do not call cloud speech APIs. Speech loss must not affect mission execution or deterministic safety.
+TTS runs as a private service on VM 214. STT is an operator-edge hybrid: browser-local inference is preferred when the measured browser/runtime is healthy, with a private VM 214 streaming service as the automatic fallback. Neither path calls a cloud speech API. Speech loss must not affect mission execution or deterministic safety.
+
+Serve the operator UI over HTTPS. Microphone capture and WebGPU require a secure browser context, so the current plain `http://192.168.50.214:8080` origin is insufficient for voice. During M6 development and the near-term interview demo, the existing free Cloudflare Quick Tunnel is the accepted HTTPS entry point; its generated hostname is explicitly temporary and must not be presented as a stable product URL. A named tunnel/domain is deferred. A later offline release must add a locally trusted hostname/certificate because the Quick Tunnel still depends on internet reachability.
 
 ### TTS
 
@@ -210,16 +212,23 @@ Both TTS and STT run as private services on VM 214. Browser clients send microph
 
 ### STT
 
-Use an adapter and benchmark on VM 214 before freezing a model. The current 8-vCPU VM is the required baseline; no GPU is assumed. A future passthrough GPU may be measured as an optional profile but cannot be required for the release:
+Use one typed STT adapter with three measured execution paths:
 
-- Primary CPU candidate: a sherpa-onnx streaming transducer/Zipformer model with endpointing.
-- Native-runtime candidate: a quantized streaming model supported by NeMo-Speech.cpp on CPU.
-- Compatibility candidates: quantized `whisper.cpp` `tiny.en` and `base.en` with VAD.
-- Optional GPU candidates, only if VM 214 later receives GPU access: `nvidia/parakeet_realtime_eou_120m-v1` and `nvidia/parakeet-unified-en-0.6b`.
+1. **Browser WebGPU:** quantized Whisper/ONNX through Transformers.js in a dedicated Web Worker.
+2. **Browser WASM:** sherpa-onnx streaming transducer/Zipformer with VAD and endpointing in a dedicated Web Worker.
+3. **VM fallback:** private WebSocket streaming to a CPU model on VM 214, benchmarking sherpa-onnx, NeMo-Speech.cpp-supported quantized models, and `whisper.cpp` `tiny.en`/`base.en`.
 
-Browser microphone audio is converted to 16 kHz mono PCM and sent over a private WebSocket. The server emits partial text, final text, confidence, endpoint reason, and timing. Maritime callsigns, formations, and place names are supplied as a bounded vocabulary/boosting list where the selected engine supports it.
+At startup, a capability probe checks secure context, microphone permission, WebGPU adapter/limits, WASM SIMD, memory, model cache, and a short local calibration clip. Route in this order only when the path passed its benchmark threshold:
 
-Build the STT benchmark harness in parallel with M6A instead of waiting for the voice UI. Use at least 100 command utterances plus quiet, fan, office, wind, and marine-noise fixtures. Run identical audio, chunking, VAD, thread limits, and warm-up conditions against every candidate. Record:
+`browser WebGPU → browser WASM → VM CPU streaming → typed input`
+
+Display the active path and measured latency, for example `STT · Browser WASM · 184 ms`. Failover occurs only between utterances; one utterance has one accepted transcript and shared request ID.
+
+Serve versioned, checksum-verified browser models from the KeelMesh appliance and cache them locally through browser storage. Runtime inference must not download models from Hugging Face or another internet host. A model update uses a new immutable version and never silently replaces the active cached model.
+
+Browser microphone audio is converted to 16 kHz mono PCM. Browser-local modes keep raw audio on the operator device. Only the VM fallback sends bounded PCM frames over the private WebSocket. Every implementation emits the same partial text, final text, confidence, endpoint reason, timing, and provider metadata. Maritime callsigns, formations, and place names are supplied as a bounded vocabulary/boosting list where supported.
+
+Build the STT benchmark harness in parallel with M6A instead of waiting for the voice UI. Run browser candidates on the actual interview laptop/browser and VM candidates on VM 214. Use at least 100 command utterances plus quiet, fan, office, wind, and marine-noise fixtures. Run identical audio, chunking, VAD, warm-up conditions, and scoring against every candidate. Record:
 
 - First partial latency.
 - End-of-speech to final latency.
@@ -227,12 +236,14 @@ Build the STT benchmark harness in parallel with M6A instead of waiting for the 
 - Command exact-match and slot accuracy.
 - CPU, GPU, and memory.
 - False endpoint and false activation rates.
+- Model download/cache warm-up time and browser storage use.
+- Main-thread responsiveness and dropped audio frames.
 
-Publish machine-readable JSON and a concise Markdown comparison containing exact model/runtime versions, model hashes, thread count, VM hardware, corpus hash, warm/cold state, and raw per-utterance timings. Select the lowest-latency model that satisfies the command-accuracy gate, not simply the model with the lowest real-time factor.
+Publish machine-readable JSON and a concise Markdown comparison containing exact model/runtime versions, model hashes, thread count, VM or operator hardware, browser/version, execution backend, corpus hash, warm/cold state, and raw per-utterance timings. Select the lowest-latency path that satisfies the command-accuracy and UI-responsiveness gates, not simply the model with the lowest real-time factor.
 
-Initial VM 214 gates: p50 first partial below 250 ms, p95 endpoint-to-final below 700 ms, real-time factor below 0.25, and at least 95% typed-command slot accuracy. If no candidate meets every gate, choose the best measured engine, show the actual latency in the UI/evidence, and continue typed/chat operation while optimizing STT. Do not claim the fastest engine until this harness produces measurements.
+Initial gates for both browser and VM paths: p50 first partial below 250 ms, p95 endpoint-to-final below 700 ms, real-time factor below 0.25, at least 95% typed-command slot accuracy, and no map/input frame stall above 100 ms caused by browser inference. If no candidate meets every gate, choose the best measured path, show the actual latency in the UI/evidence, and continue typed/chat operation while optimizing STT. Do not claim the fastest engine until this harness produces measurements.
 
-Run speech services with explicit CPU and memory limits. Keep STT and TTS queues bounded, allow only one active microphone session in the interview profile, cancel stale utterances, and ensure speech workloads cannot starve the Go mission authority, Kafka workers, or PostgreSQL.
+Run VM speech services with explicit CPU and memory limits. Run browser models only in workers with bounded audio/model memory. Keep STT and TTS queues bounded, allow only one active microphone session in the interview profile, cancel stale utterances, and ensure speech workloads cannot starve the map, Go mission authority, Kafka workers, or PostgreSQL.
 
 ## 10. Compact airline-operations visual system
 
@@ -303,6 +314,7 @@ Initial APIs:
 - `POST /api/v2/missions/{id}/plans/{plan_id}:start`
 - `GET /api/v2/voices`
 - `POST /api/v2/speech:synthesize`
+- `GET /api/v2/speech/capabilities`
 - `GET /api/v2/transcription/stream` (WebSocket)
 
 All persistent mutations use request ID, idempotency key, and the relevant fleet/group/mission version. Existing M1–M5 v1 endpoints remain available for regression and the scripted interview drill.
@@ -316,7 +328,8 @@ All persistent mutations use request ID, idempotency key, and the relevant fleet
 - MapLibre symbol layers, clustering, click/shift-click/box/search/group selection.
 - Vessel/group inspector, deterministic environment, and reachable-swarm list.
 - Transparent sprites and compact non-blue shell.
-- VM 214 speech benchmark harness, Pocket TTS baseline, and first CPU STT candidate results run in parallel with the visual build.
+- Cloudflare Quick Tunnel HTTPS for immediate microphone/WebGPU access, with the ephemeral URL shown by `scripts/keelmesh status`; named tunnel/domain and locally trusted offline HTTPS remain later hardening.
+- Cross-runtime speech benchmark harness, Pocket TTS baseline, browser WebGPU/WASM results on the interview laptop, and CPU STT results on VM 214 run in parallel with the visual build.
 
 ### M6B — Groups, constraints, and multi-mission state
 
@@ -334,7 +347,7 @@ All persistent mutations use request ID, idempotency key, and the relevant fleet
 ### M6D — Conversational operation
 
 - Typed/chat `CommandDraftV2` first.
-- Integrate the VM 214 benchmark winner behind the streaming STT adapter and retain the next-best CPU engine as a packaged fallback.
+- Integrate the measured browser WebGPU/WASM winner behind the STT adapter and retain the measured VM 214 CPU winner as the packaged automatic fallback.
 - Pocket TTS with Morgan default, all voices, cancel, and barge-in.
 - AI formation/maneuver options using the same deterministic planning tools.
 
@@ -357,9 +370,12 @@ All persistent mutations use request ID, idempotency key, and the relevant fleet
 - The map remains interactive at 1,000 visible features; low zoom clusters instead of rendering 1,000 labels.
 - The application starts and performs map, selection, grouping, M1/M2/M5, TTS, and selected STT operations offline.
 - Voice interruption stops playback immediately; partial/final transcript timing is visible and measured.
-- TTS and STT execute on VM 214 with outbound cloud speech access disabled; browser clients remain thin audio capture/playback clients.
-- The selected STT engine wins a reproducible same-corpus benchmark on VM 214 while satisfying command accuracy, or the release explicitly records which latency/accuracy gate remains unmet.
-- Speech CPU and memory limits preserve M1 command/snapshot latency and active mission execution under simultaneous TTS/STT load.
+- The near-term demo uses the free Cloudflare Quick Tunnel; microphone and WebGPU feature checks pass without browser security overrides. Evidence labels the tunnel URL ephemeral and does not claim voice availability during internet loss.
+- The later offline voice gate remains pending until a locally trusted HTTPS origin exists; a Quick Tunnel alone cannot satisfy it.
+- Browser-local STT keeps audio on the operator device; VM fallback sends audio only to VM 214; outbound cloud speech access remains disabled.
+- The chosen browser and VM fallback paths win reproducible same-corpus benchmarks on their actual hardware while satisfying command accuracy, or the release explicitly records which gate remains unmet.
+- Disconnecting or degrading browser inference visibly fails over to VM STT between utterances without accepting duplicate transcripts.
+- Browser worker and VM speech resource limits preserve map responsiveness, M1 command/snapshot latency, and active mission execution under simultaneous TTS/STT load.
 - Every panel can move, resize where supported, minimize, restore, dock, and close without losing mission state.
 - Reopening a singleton panel focuses the existing instance; windows remain reachable after viewport changes and never escape the screen bounds.
 - Window layout survives reload, can be reset, has keyboard equivalents, and the full workflow remains usable at 1280×720.
@@ -375,6 +391,8 @@ M6 is a robust simulation and autonomy-infrastructure demonstration. It does not
 - [NVIDIA Parakeet Unified streaming model](https://huggingface.co/nvidia/parakeet-unified-en-0.6b)
 - [NVIDIA low-latency Parakeet EOU model](https://huggingface.co/nvidia/parakeet_realtime_eou_120m-v1)
 - [NeMo-Speech.cpp local CPU/CUDA/Vulkan runtime](https://github.com/NVIDIA/NeMo-Speech.cpp)
+- [Transformers.js browser WebGPU inference](https://huggingface.co/docs/transformers.js/en/guides/webgpu)
 - [sherpa-onnx streaming ASR runtime](https://github.com/k2-fsa/sherpa-onnx)
 - [whisper.cpp portable fallback](https://github.com/ggml-org/whisper.cpp)
+- [Browser microphone secure-context requirement](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)
 - Local PPTtoVoice source: Pocket TTS 2.1.0, pinned model revision, twelve voice assets, and Morgan provenance/integrity metadata.
