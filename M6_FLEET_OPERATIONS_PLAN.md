@@ -8,6 +8,58 @@ Turn KeelMesh from a six-vessel scenario into a persistent one-to-many operation
 
 M6 preserves the M1–M5 authority, resilience, scale, and AI boundaries. Voice, chat, and direct controls all compile into the same typed command-draft and exact-plan authorization path.
 
+## 0. System-wide redundancy doctrine
+
+KeelMesh has no cloud-dependent control spine. Every operator appliance and vessel is an authenticated peer node with local compute, GPU-ready inference, policy enforcement, mission-tape execution, durable state, and at least one fleet radio. Starlink is the preferred wide-area path; Wi-Fi HaLow is the local peer underlay. KeelMesh implements authenticated routing, store-and-forward bundles, deduplication, authority checks, and reconciliation above the radios rather than assuming that HaLow alone provides a complete mobile mesh.
+
+An operator controller within range of any authenticated HaLow peer may join the reachable mesh component and discover routes to every node that component can currently reach, subject to trust, policy, hop, bandwidth, and mission-authority limits. Joining the network grants connectivity, not command authority.
+
+### Connectivity modes
+
+1. **Fully connected:** Nodes use healthy direct Starlink paths for wide-area coordination, cloud services, fleet aggregation, and model/data maintenance. HaLow remains available for local traffic and redundant critical delivery.
+2. **Single-node Starlink loss:** The node routes signed bundles over HaLow to an authorized peer advertising healthy Starlink egress.
+3. **Fleet-wide Starlink loss:** The reachable HaLow component continues local command delivery, telemetry summaries, group coordination, browser/node speech, and node-local inference without internet or cloud services.
+4. **Mesh partition:** Each connected component executes only prior authority available to its members. A partition cannot lower quorum, add members, extend geography, or mint a new lease.
+5. **Isolated node:** The node executes validated unexpired mission tape, uses local perception/planning/inference within its lease, then follows the bounded communications-recovery or safe-contingency behavior.
+6. **Reconnection:** Nodes exchange signed high-water marks, discard stale work, reconcile immutable events, recover a trustworthy state estimate, and bridge to future mission work without replay or position jump.
+
+### Redundant layers
+
+| Layer | Preferred path | Independent fallback |
+| --- | --- | --- |
+| Operator UI | Browser connected to preferred node | Another reachable node serving the same signed mission workspace |
+| Speech | Browser WebGPU/WASM | Colocated node runtime, then one trusted mesh peer |
+| Advisory LLM/RAG | Node-local GPU/model/cache | Trusted peer inference, then deterministic tools and typed operation |
+| Mission planning | Connected planning service | Cached deterministic planner and policy runtime on each node |
+| Command transport | Direct Starlink | HaLow multi-hop, peer Starlink egress, store-and-forward outbox |
+| Mission execution | Fresh signed group plan | Sixty-second mission tape and bounded local contingency |
+| Group adaptation | Connected operator coordination | Cell-local proposal, deterministic validation, quorum, all-affected arming, future commit |
+| Navigation | Fused GNSS/inertial/radar/peer evidence | Uncertainty-aware dead reckoning, reduced envelope, safe hold |
+| Data durability | Kafka/PostgreSQL platform plane | Append-only node journal and later idempotent reconciliation |
+| Time | Signed mission activation plus monotonic clock | Local monotonic continuation; wall/GNSS time cannot revive work |
+
+### Independent and group intelligence
+
+- Each hardware node is designed to receive a GPU and an immutable, versioned open-source model bundle. CPU deterministic planning and safety remain available if the GPU or model fails.
+- A node-local LLM may interpret local operator speech, summarize observations, retrieve cached runbooks, identify anomalies, and propose typed individual or group adaptations.
+- Independent action is limited to immediate safety and behavior already inside the node's signed mission envelope.
+- Coupled group decisions use the existing Quiet Fleet protocol: models propose; deterministic node planners validate; original-membership quorum and every affected node arm the exact hash; a signed commit activates at a future boundary.
+- Model agreement is never treated as safety evidence because nodes may share the same model, prompt, data, or defect.
+- Coordination stays cell-local and hierarchical. Large fleets do not run one all-to-all vote; cells publish compact status and accept scoped mission contracts from authorized controllers.
+- Multiple controllers may be reachable, but authority has an explicit epoch, issuer, lease, and conflict rule. Network proximity or a better route cannot override the active authority chain.
+
+### Traffic and resource priority
+
+1. Collision, grounding, emergency stop, and PNT-integrity events.
+2. Lease, mission tape, commit, acknowledgment, and clock evidence.
+3. Link-state and bounded coordination deltas.
+4. Operator command text and inference results.
+5. Compressed audio only when local speech inference failed and peer processing is allowed.
+6. Telemetry summaries.
+7. Bulk telemetry, model artifacts, traces, and media.
+
+Every queue is bounded. Lower-priority traffic is delayed, summarized, or dropped before it can starve safety or mission authority. Large model synchronization is a maintenance activity and never an automatic response to an operational partition.
+
 ## 1. Real East Coast operating picture
 
 - Move the primary scenario to Narragansett Bay and Rhode Island Sound, with enough coastline, islands, harbor water, and open ocean to make zooming and grouping meaningful.
@@ -384,6 +436,7 @@ All persistent mutations use request ID, idempotency key, and the relevant fleet
 
 - Hundreds of visible vessels through clustering and filtered rendering while 1,000+ continue through M3 telemetry.
 - Concurrent mission and group stress tests.
+- Multi-layer fault matrix covering Starlink, HaLow routes, browser inference, node inference, GPU/model loss, operator-node loss, Kafka, PostgreSQL, and component reconnection without mission-authority coupling.
 - Offline map/voice/STT proof, restart recovery, Playwright interaction matrix, evidence, and rehearsal.
 
 ## 13. Acceptance gates
@@ -408,6 +461,11 @@ All persistent mutations use request ID, idempotency key, and the relevant fleet
 - Speech and LLM requests never broadcast, never preempt mission-tape/safety traffic, and never trigger operational model downloads over a degraded mesh.
 - Signed capability advertisements expire, stale routes are rejected, and a late provider result cannot create a second command draft.
 - Browser worker and VM speech resource limits preserve map responsiveness, M1 command/snapshot latency, and active mission execution under simultaneous TTS/STT load.
+- A controller joining through one authenticated HaLow peer discovers every currently reachable authorized route in that mesh component while unreachable partitions remain explicitly unavailable.
+- Fleet-wide Starlink loss preserves local HaLow command delivery, node-local planning/inference, authorized group adaptation, and cached mission execution.
+- Loss of all links preserves only local authority; no isolated node or partition invents work, expands a lease, changes membership, or lowers quorum.
+- GPU/model failure falls back to deterministic planning and safety without interrupting mission execution.
+- Kafka, PostgreSQL, cloud, AI, speech, and operator-UI failures remain outside the hard real-time mission execution dependency chain.
 - Every panel can move, resize where supported, minimize, restore, dock, and close without losing mission state.
 - Reopening a singleton panel focuses the existing instance; windows remain reachable after viewport changes and never escape the screen bounds.
 - Window layout survives reload, can be reset, has keyboard equivalents, and the full workflow remains usable at 1280×720.
