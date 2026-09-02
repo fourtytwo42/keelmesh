@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: Natural-language beach/coastal commands now resolve from selected-vessel positions onto deterministic routes sampled from the packaged NOAA ETOPO 5 m contour, including parsed nautical-mile coastal offsets. Policy-valid candidates rank ahead of prohibited ones. VM-local STT now uses pinned faster-distil-whisper-small.en int8 with improved capture/decoding instead of tiny.en.
+- Last meaningful change: The map now has distinct vessel and navigable-water context menus. Water right-click supports preview-safe go-to guidance, persistent numbered/color-coded waypoints, color-scoped planning, clearing one color or all waypoints, map centering, and fleet selection; right-clicking a waypoint deletes it directly. The deterministic compiler resolves requests such as “navigate through red waypoints” in sequence.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -138,6 +138,7 @@ When sources conflict, use this order:
 
 ## Verification Ledger
 
+- 2026-09-02: Numbered/color-coded waypoint and water-context behavior passed the full Go suite, strict TypeScript, seven Vitest assertions, production frontend build, and all eleven Playwright workflows on VM 214. VM 214 and all twelve vessel nodes run core binary SHA-256 `81a7ed4750243d84730a70d27d6078b5ae9b313ce390c7a5f375eb3a195147d7`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Provisioned and booted twelve M7 vessel VMs as 2 vCPU/2 GiB/12 GiB linked clones: A01-A05 on `fourtyfour` (220-224), A06 plus B01-B03 on `mini42` (225,229,231,232), and B04-B06 on `mini43` (233,234,236). Every VM has management `192.168.50.<VMID>` on `eth0`, radio `10.77.0.<VMID>` on `eth1`, active QEMU guest agent, faction-pinned node service, and separately installed root-only OpenRouter secret. All twelve management health checks and cross-host radio connectivity passed. No snapshots were created.
 - 2026-09-02: M7 verification passed on VM 214: twelve-node referee topology, disjoint six-node player projections, protected-plane denial, deterministic B coordinator failover `node-b-01`/VM 229 to `node-b-02`/VM 231 at epoch 2, exact-hash engagement authority, and semantic workspace actions. The Player B ingress followed that failover while preserving one URL; both LAN and public Quick Tunnel Playwright Arena workflows passed without page errors.
 - 2026-09-02: A clean VM-only `scripts/keelmesh verify` completed after the M7 integration: all Go packages, strict TypeScript, seven Vitest tests, frontend build, Python lint/type/security/tests, Compose rebuild, M1-M7 verifiers, and all six Playwright workflows passed. Its M3 run attempted 123,820 events at 2,033 events/s, dropped zero, peaked at 649 lag, and recovered Worker 2 in 16.73 seconds. No GitHub-hosted workflow ran.
@@ -363,6 +364,14 @@ When sources conflict, use this order:
 - Files: `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, `web/src/types.ts`, `web/src/FleetWorkspace.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
 - Commands/tests: local TypeScript typecheck, seven Vitest assertions, Vite production build; VM full Go suite; eight Playwright workflows plus targeted shoreline preview/authorization readiness; central and twelve-node health checks.
 - Result: A shoreline mission now generates three inspectable formation candidates without drawing an area, displays the inferred source and reserve-floor explanation, previews through the existing exact-hash authority path, and leaves genuinely ambiguous geography fail-closed. VM 214 and all twelve vessel nodes run binary SHA-256 `5c69a838361e5cac52cfea109c6590b635073bd3a09a2cbe0aa8b6d43b8540e8`. No snapshot or GitHub-hosted workflow.
+
+### 2026-09-02 - Water context navigation and colored waypoints
+
+- Context: Water, vessels, and waypoints needed distinct right-click behavior, with persistent numbered/color-coded waypoint sets usable by both operators and natural-language planning.
+- Decision: Restrict the navigation menu to rendered water, keep vessel selection in its own menu, and make waypoint right-click an immediate delete. Store stable waypoint identity/color/sequence in mission geometry; renumber after deletion and let the compiler select a named color in sequence. Keep go-to commands on the existing preview/hash/authorization path.
+- Files: `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, `web/src/types.ts`, `web/src/FleetWorkspace.tsx`, `web/src/OperationsMap.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: local strict TypeScript, seven Vitest assertions, production Vite build; VM 214 full Go suite and all eleven Playwright workflows; central deployment plus twelve-node binary/health verification.
+- Result: Water right-click exposes go-to, numbered waypoint, six colors, plan-by-color, clear-color/all, map centering, and visible/all-fleet selection. Waypoints display their sequence and retain color through API persistence. VM 214 and all twelve vessel nodes run binary SHA-256 `81a7ed4750243d84730a70d27d6078b5ae9b313ce390c7a5f375eb3a195147d7`. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - Water-safe fleet spawning
 

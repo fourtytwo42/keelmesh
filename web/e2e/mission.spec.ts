@@ -114,8 +114,8 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   await page.waitForTimeout(1_000);
   await canvas.click({ position: { x: 570, y: 160 }, button: "right" });
   const groupMenu = page.getByRole("menu");
-  await expect(groupMenu.getByRole("menuitem", { name: "Operational group" })).toBeEnabled();
-  await groupMenu.getByRole("menuitem", { name: "Operational group" }).click();
+  await expect(groupMenu.getByRole("menuitem", { name: "Select operational group" })).toBeEnabled();
+  await groupMenu.getByRole("menuitem", { name: "Select operational group" }).click();
   await expect(page.locator(".selection-ribbon > strong")).toHaveText("6");
   await page.getByTitle("Clear selection").click();
   await expect(page.locator(".selection-ribbon > strong")).toHaveText("0");
@@ -128,12 +128,73 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   await page.keyboard.press("Escape");
   await canvas.click({ position: { x: 700, y: 250 }, button: "right" });
   const allMenu = page.getByRole("menu");
-  await expect(allMenu.getByRole("menuitem", { name: "Operational group" })).toBeVisible();
-  await allMenu.getByRole("menuitem", { name: "All accessible vessels" }).click();
+  await allMenu.getByRole("menuitem", { name: "Select all vessels" }).click();
   await expect(page.locator(".selection-ribbon > strong")).toHaveText("48");
   await canvas.click({ position: { x: 700, y: 250 }, button: "right" });
   await page.getByRole("menu").getByRole("menuitem", { name: "Clear selection" }).click();
   await expect(page.locator(".selection-ribbon > strong")).toHaveText("0");
+});
+
+test("water context menu manages numbered colored waypoints and preview-only guidance", async ({ page }) => {
+  await page.goto("/");
+  const rail = page.getByRole("region", { name: "Fleet / Groups" });
+  await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
+  await rail.getByRole("button", { name: "Create mission from 6 selected" }).click();
+  const canvas = page.locator(".operations-map .maplibregl-canvas");
+  const first = { x: 650, y: 330 };
+  const second = { x: 760, y: 330 };
+  const menuPoint = first;
+  const destination = { x: 700, y: 400 };
+
+  await canvas.click({ position: first, button: "right" });
+  const water = page.getByRole("menu", { name: "Water navigation menu" });
+  await expect(water).toBeVisible();
+  await water.getByRole("button", { name: "Red waypoint" }).click();
+  await water.getByRole("menuitem", { name: "Add numbered waypoint" }).click();
+  await expect.poll(async () => {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    return fleet.missions[0]?.geometry.waypoint_details?.map((w: { color: string; sequence: number }) => `${w.color}:${w.sequence}`);
+  }).toEqual(["red:1"]);
+
+  // A waypoint owns its own context gesture: right-click deletes it directly.
+  await canvas.click({ position: first, button: "right" });
+  await expect(water).not.toBeVisible();
+  await expect.poll(async () => {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    return fleet.missions[0]?.geometry.waypoints?.length;
+  }).toBe(0);
+  await page.waitForTimeout(1200);
+
+  await canvas.click({ position: menuPoint, button: "right" });
+  await water.getByRole("button", { name: "Red waypoint" }).click();
+  await water.getByRole("menuitem", { name: "Add numbered waypoint" }).click();
+  await canvas.click({ position: second, button: "right" });
+  await water.getByRole("button", { name: "Green waypoint" }).click();
+  await water.getByRole("menuitem", { name: "Add numbered waypoint" }).click();
+  await expect.poll(async () => {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    return fleet.missions[0]?.geometry.waypoint_details?.map((w: { color: string; sequence: number }) => `${w.color}:${w.sequence}`);
+  }).toEqual(["red:1", "green:2"]);
+
+  await canvas.click({ position: destination, button: "right" });
+  await water.getByRole("button", { name: "Red waypoint" }).click();
+  await water.getByRole("menuitem", { name: "Clear red waypoints" }).click();
+  await expect.poll(async () => {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    return fleet.missions[0]?.geometry.waypoint_details?.map((w: { color: string; sequence: number }) => `${w.color}:${w.sequence}`);
+  }).toEqual(["green:1"]);
+  await page.waitForTimeout(250);
+
+  await canvas.click({ position: destination, button: "right" });
+  await water.getByRole("button", { name: "Cyan waypoint" }).click();
+  await water.getByRole("menuitem", { name: "Go to location · preview first" }).click();
+  const planner = page.getByRole("region", { name: "Mission Planner" });
+  await expect(planner.locator(".candidate-list > button")).toHaveCount(3);
+  await expect(planner.getByText("Nothing has been sent yet.")).not.toBeVisible();
+  await expect.poll(async () => {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    return fleet.missions[0]?.geometry.waypoint_details?.map((w: { color: string; sequence: number }) => `${w.color}:${w.sequence}`);
+  }).toEqual(["cyan:1"]);
 });
 
 test("selected-assets drawer inspects every scope and reassigns a vessel by drag and drop", async ({ page }) => {

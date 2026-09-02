@@ -113,11 +113,19 @@ type ConstraintSetV2 struct {
 }
 
 type MissionGeometryV2 struct {
-	Revision       int64          `json:"revision"`
-	IncludedAreas  [][][]float64  `json:"included_areas"`
-	ExclusionAreas [][][]float64  `json:"exclusion_areas"`
-	Waypoints      []GeoPointV2   `json:"waypoints"`
-	POIs           []MissionPOIV2 `json:"pois"`
+	Revision        int64               `json:"revision"`
+	IncludedAreas   [][][]float64       `json:"included_areas"`
+	ExclusionAreas  [][][]float64       `json:"exclusion_areas"`
+	Waypoints       []GeoPointV2        `json:"waypoints"`
+	WaypointDetails []MissionWaypointV2 `json:"waypoint_details,omitempty"`
+	POIs            []MissionPOIV2      `json:"pois"`
+}
+
+type MissionWaypointV2 struct {
+	ID       string     `json:"id"`
+	Position GeoPointV2 `json:"position"`
+	Color    string     `json:"color"`
+	Sequence int        `json:"sequence"`
 }
 
 type MissionPOIV2 struct {

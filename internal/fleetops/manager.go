@@ -75,10 +75,11 @@ type PatchMissionRequest struct {
 }
 type GeometryRequest struct {
 	Mutation
-	IncludedAreas  [][][]float64         `json:"included_areas"`
-	ExclusionAreas [][][]float64         `json:"exclusion_areas"`
-	Waypoints      []domain.GeoPointV2   `json:"waypoints"`
-	POIs           []domain.MissionPOIV2 `json:"pois"`
+	IncludedAreas   [][][]float64              `json:"included_areas"`
+	ExclusionAreas  [][][]float64              `json:"exclusion_areas"`
+	Waypoints       []domain.GeoPointV2        `json:"waypoints"`
+	WaypointDetails []domain.MissionWaypointV2 `json:"waypoint_details"`
+	POIs            []domain.MissionPOIV2      `json:"pois"`
 }
 type CompileRequest struct {
 	Mutation
@@ -126,6 +127,7 @@ var legacySpawnCenters = []domain.GeoPointV2{{-71.375, 41.49}, {-71.315, 41.47},
 var reserveAfterLabel = regexp.MustCompile(`(?i)(?:reserve|battery)[^0-9]{0,24}([0-9]{1,3})\s*%`)
 var reserveBeforeLabel = regexp.MustCompile(`(?i)([0-9]{1,3})\s*%\s*(?:reserve|battery)`)
 var coastalDistance = regexp.MustCompile(`(?i)(?:within|inside|no more than|max(?:imum)?(?: distance)?(?: of)?)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:nm|nmi|nautical\s*miles?)`)
+var waypointColor = regexp.MustCompile(`(?i)\b(amber|red|green|cyan|blue|violet|purple|white)\s+(?:waypoints?|route|markers?)\b`)
 
 // coastalDepthRoutes are deterministic samples from the packaged NOAA ETOPO
 // 5 m contour. They let natural-language coastal missions use the same local
@@ -622,7 +624,11 @@ func (m *Manager) SetGeometry(id string, req GeometryRequest) (domain.MissionWor
 	if len(req.IncludedAreas) > 0 && len(req.IncludedAreas[0]) < 3 {
 		return v, &Error{"INVALID_GEOMETRY", "Included polygon requires at least three vertices."}
 	}
-	v.Geometry = domain.MissionGeometryV2{Revision: v.Geometry.Revision + 1, IncludedAreas: req.IncludedAreas, ExclusionAreas: req.ExclusionAreas, Waypoints: req.Waypoints, POIs: req.POIs}
+	details, err := normalizeWaypointDetails(req.Waypoints, req.WaypointDetails)
+	if err != nil {
+		return v, err
+	}
+	v.Geometry = domain.MissionGeometryV2{Revision: v.Geometry.Revision + 1, IncludedAreas: req.IncludedAreas, ExclusionAreas: req.ExclusionAreas, Waypoints: req.Waypoints, WaypointDetails: details, POIs: req.POIs}
 	v.Version++
 	v.UpdatedAt = time.Now().UTC()
 	v.AuthorizedPlanID = ""
@@ -665,6 +671,19 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	}
 	geometrySource := ""
 	notes := []string{}
+	selectedWaypointColor := requestedWaypointColor(req.Text)
+	if selectedWaypointColor != "" {
+		wps = nil
+		for _, waypoint := range mission.Geometry.WaypointDetails {
+			if waypoint.Color == selectedWaypointColor {
+				wps = append(wps, waypoint.Position)
+			}
+		}
+		if len(wps) > 0 {
+			geometrySource = "intent:waypoint-color:" + selectedWaypointColor
+			notes = append(notes, fmt.Sprintf("Selected %d %s waypoints in numbered order from the active mission.", len(wps), selectedWaypointColor))
+		}
+	}
 	missionChanged := false
 	if len(wps) == 0 && len(mission.Geometry.IncludedAreas) == 0 {
 		if polygon, route, source, ok := m.resolveNamedGeometry(req.Text, targets); ok {
@@ -702,6 +721,9 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 		m.persistAsync()
 	}
 	amb := []string{}
+	if selectedWaypointColor != "" && len(wps) == 0 {
+		amb = append(amb, fmt.Sprintf("No %s waypoints exist in the active mission.", selectedWaypointColor))
+	}
 	if len(wps) == 0 && len(mission.Geometry.IncludedAreas) == 0 {
 		amb = append(amb, "Choose an area or waypoint before route generation.")
 	}
@@ -709,6 +731,57 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	draft.ContentHash = hashWithout(draft)
 	m.drafts[draft.ID] = draft
 	return draft, nil
+}
+
+func normalizeWaypointDetails(points []domain.GeoPointV2, details []domain.MissionWaypointV2) ([]domain.MissionWaypointV2, error) {
+	if len(details) > 0 && len(details) != len(points) {
+		return nil, &Error{"INVALID_GEOMETRY", "Waypoint metadata must match the waypoint list."}
+	}
+	out := make([]domain.MissionWaypointV2, len(points))
+	for i, point := range points {
+		waypoint := domain.MissionWaypointV2{ID: "waypoint-" + shortHash(fmt.Sprintf("%.7f:%.7f:%d", point[0], point[1], i+1)), Position: point, Color: "amber", Sequence: i + 1}
+		if len(details) > 0 {
+			waypoint = details[i]
+			waypoint.Position = point
+			waypoint.Sequence = i + 1
+			if waypoint.ID == "" {
+				waypoint.ID = "waypoint-" + shortHash(fmt.Sprintf("%.7f:%.7f:%d", point[0], point[1], i+1))
+			}
+		}
+		waypoint.Color = normalizeWaypointColor(waypoint.Color)
+		if waypoint.Color == "" {
+			return nil, &Error{"INVALID_GEOMETRY", "Waypoint color must be amber, red, green, cyan, violet, or white."}
+		}
+		out[i] = waypoint
+	}
+	return out, nil
+}
+
+func requestedWaypointColor(text string) string {
+	match := waypointColor.FindStringSubmatch(text)
+	if len(match) != 2 {
+		return ""
+	}
+	return normalizeWaypointColor(match[1])
+}
+
+func normalizeWaypointColor(color string) string {
+	switch strings.ToLower(strings.TrimSpace(color)) {
+	case "amber":
+		return "amber"
+	case "red":
+		return "red"
+	case "green":
+		return "green"
+	case "cyan", "blue":
+		return "cyan"
+	case "violet", "purple":
+		return "violet"
+	case "white":
+		return "white"
+	default:
+		return ""
+	}
 }
 
 func (m *Manager) resolveNamedGeometry(text string, targets []string) ([][]float64, []domain.GeoPointV2, string, bool) {

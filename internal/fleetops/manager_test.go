@@ -320,6 +320,68 @@ func TestCompileResolvesBeachDepthAndNauticalMileIntent(t *testing.T) {
 	}
 }
 
+func TestColoredWaypointsPersistRenumberAndCompileByColor(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation:  Mutation{RequestID: "color-mission", IdempotencyKey: "color-mission", ExpectedVersion: snapshot.FleetVersion},
+		Name:      "Colored route",
+		TargetIDs: m.groups["group-01"].MemberIDs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	points := []domain.GeoPointV2{{-71.34, 41.40}, {-71.32, 41.41}, {-71.30, 41.42}}
+	mission, err = m.SetGeometry(mission.ID, GeometryRequest{
+		Mutation:  Mutation{RequestID: "color-geometry", IdempotencyKey: "color-geometry", ExpectedVersion: mission.Version},
+		Waypoints: points,
+		WaypointDetails: []domain.MissionWaypointV2{
+			{ID: "red-1", Color: "red"},
+			{ID: "green-1", Color: "green"},
+			{ID: "red-2", Color: "red"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, waypoint := range mission.Geometry.WaypointDetails {
+		if waypoint.Sequence != index+1 || waypoint.Position != points[index] {
+			t.Fatalf("waypoint metadata was not normalized: %#v", mission.Geometry.WaypointDetails)
+		}
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation: Mutation{RequestID: "color-compile", IdempotencyKey: "color-compile", ExpectedVersion: mission.Version},
+		Text:     "Send the selected boats through the red waypoints in order.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.GeometrySource != "intent:waypoint-color:red" || len(draft.Waypoints) != 2 || draft.Waypoints[0] != points[0] || draft.Waypoints[1] != points[2] {
+		t.Fatalf("colored route selection = %#v", draft)
+	}
+}
+
+func TestWaypointMetadataFailsClosed(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation:  Mutation{RequestID: "invalid-waypoint-mission", IdempotencyKey: "invalid-waypoint-mission", ExpectedVersion: snapshot.FleetVersion},
+		Name:      "Invalid waypoint",
+		TargetIDs: snapshot.Groups[0].MemberIDs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.SetGeometry(mission.ID, GeometryRequest{
+		Mutation:        Mutation{RequestID: "invalid-waypoint", IdempotencyKey: "invalid-waypoint", ExpectedVersion: mission.Version},
+		Waypoints:       []domain.GeoPointV2{{-71.34, 41.40}},
+		WaypointDetails: []domain.MissionWaypointV2{{ID: "bad", Color: "orange"}},
+	})
+	if err == nil || err.(*Error).Code != "INVALID_GEOMETRY" {
+		t.Fatalf("invalid waypoint color error = %v", err)
+	}
+}
+
 func TestCompileStillRequiresGeometryForUnresolvedPlaceIntent(t *testing.T) {
 	m := New("", slog.Default())
 	snapshot := m.Snapshot()
