@@ -1,0 +1,245 @@
+package domain
+
+import "time"
+
+type GeoPointV2 [2]float64
+
+type VesselClassV2 struct {
+	ID                 string  `json:"id"`
+	Name               string  `json:"name"`
+	Role               string  `json:"role"`
+	MaxSpeedMPS        float64 `json:"max_speed_mps"`
+	MinimumReserve     float64 `json:"minimum_reserve"`
+	EnduranceHours     float64 `json:"endurance_hours"`
+	CommunicationsRole bool    `json:"communications_role"`
+}
+
+type EnvironmentV2 struct {
+	WindSpeedMPS        float64  `json:"wind_speed_mps"`
+	WindDirectionDeg    float64  `json:"wind_direction_deg"`
+	CurrentSpeedMPS     float64  `json:"current_speed_mps"`
+	CurrentDirectionDeg float64  `json:"current_direction_deg"`
+	WaveHeightM         float64  `json:"wave_height_m"`
+	WaterTemperatureC   float64  `json:"water_temperature_c"`
+	FixtureAt           string   `json:"fixture_at"`
+	Label               string   `json:"label"`
+	SourceIDs           []string `json:"source_ids"`
+}
+
+type VesselTelemetryV2 struct {
+	Position         GeoPointV2    `json:"position"`
+	HeadingDeg       float64       `json:"heading_deg"`
+	SpeedMPS         float64       `json:"speed_mps"`
+	Reserve          float64       `json:"reserve"`
+	ProjectedReserve float64       `json:"projected_reserve"`
+	Mode             string        `json:"mode"`
+	Health           string        `json:"health"`
+	PNTIntegrity     string        `json:"pnt_integrity"`
+	UncertaintyM     float64       `json:"uncertainty_m"`
+	TapeDepthSeconds int           `json:"tape_depth_seconds"`
+	MissionID        string        `json:"mission_id,omitempty"`
+	Route            []GeoPointV2  `json:"route"`
+	Environment      EnvironmentV2 `json:"environment"`
+}
+
+type VesselProfileV2 struct {
+	SchemaVersion int               `json:"schema_version"`
+	ID            string            `json:"id"`
+	Designation   string            `json:"designation"`
+	Callsign      string            `json:"callsign"`
+	DisplayName   string            `json:"display_name"`
+	Class         VesselClassV2     `json:"class"`
+	GroupID       string            `json:"group_id"`
+	GroupCode     string            `json:"group_code"`
+	GroupColor    string            `json:"group_color"`
+	GroupPattern  string            `json:"group_pattern"`
+	Available     bool              `json:"available"`
+	Telemetry     VesselTelemetryV2 `json:"telemetry"`
+}
+
+type OperationalGroupV2 struct {
+	SchemaVersion int      `json:"schema_version"`
+	ID            string   `json:"id"`
+	Code          string   `json:"code"`
+	Name          string   `json:"name"`
+	Color         string   `json:"color"`
+	Pattern       string   `json:"pattern"`
+	MemberIDs     []string `json:"member_ids"`
+	Revision      int64    `json:"revision"`
+}
+
+type SavedCollectionV2 struct {
+	SchemaVersion int      `json:"schema_version"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	MemberIDs     []string `json:"member_ids"`
+	Revision      int64    `json:"revision"`
+}
+
+type ReachabilityPathV2 struct {
+	VesselID  string   `json:"vessel_id"`
+	State     string   `json:"state"`
+	Hops      []string `json:"hops"`
+	Underlay  []string `json:"underlay"`
+	LatencyMS float64  `json:"latency_ms"`
+}
+
+type ReachabilityV2 struct {
+	SchemaVersion int                  `json:"schema_version"`
+	VesselID      string               `json:"vessel_id"`
+	Authority     string               `json:"authority"`
+	DirectPeers   []ReachabilityPathV2 `json:"direct_peers"`
+	RelayedPeers  []ReachabilityPathV2 `json:"relayed_peers"`
+	Unreachable   []string             `json:"unreachable_group_members"`
+	ExternalPeers []ReachabilityPathV2 `json:"reachable_outside_group"`
+}
+
+type ConstraintSetV2 struct {
+	MinimumReserve              float64 `json:"minimum_reserve"`
+	MaximumSpeedMPS             float64 `json:"maximum_speed_mps"`
+	MinimumVesselSeparationM    float64 `json:"minimum_vessel_separation_m"`
+	MinimumObjectSeparationM    float64 `json:"minimum_object_separation_m"`
+	MaximumWaveHeightM          float64 `json:"maximum_wave_height_m"`
+	MaximumWindMPS              float64 `json:"maximum_wind_mps"`
+	MaximumPNTUncertaintyM      float64 `json:"maximum_pnt_uncertainty_m"`
+	MaximumDurationMinutes      float64 `json:"maximum_duration_minutes"`
+	MaximumRouteDistanceKM      float64 `json:"maximum_route_distance_km"`
+	MinimumTapeWatermarkSeconds int     `json:"minimum_tape_watermark_seconds"`
+	Formation                   string  `json:"formation"`
+	FormationSpacingM           float64 `json:"formation_spacing_m"`
+	LeaderPolicy                string  `json:"leader_policy"`
+	RegroupThresholdM           float64 `json:"regroup_threshold_m"`
+}
+
+type MissionGeometryV2 struct {
+	Revision       int64          `json:"revision"`
+	IncludedAreas  [][][]float64  `json:"included_areas"`
+	ExclusionAreas [][][]float64  `json:"exclusion_areas"`
+	Waypoints      []GeoPointV2   `json:"waypoints"`
+	POIs           []MissionPOIV2 `json:"pois"`
+}
+
+type MissionPOIV2 struct {
+	ID       string     `json:"id"`
+	Name     string     `json:"name"`
+	Kind     string     `json:"kind"`
+	Position GeoPointV2 `json:"position"`
+	RadiusM  float64    `json:"radius_m"`
+}
+
+type MissionWorkspaceV2 struct {
+	SchemaVersion      int               `json:"schema_version"`
+	ID                 string            `json:"id"`
+	Name               string            `json:"name"`
+	Objective          string            `json:"objective"`
+	Status             string            `json:"status"`
+	TargetIDs          []string          `json:"target_ids"`
+	TargetSnapshotHash string            `json:"target_snapshot_hash"`
+	FleetVersion       int64             `json:"fleet_version"`
+	Version            int64             `json:"version"`
+	Geometry           MissionGeometryV2 `json:"geometry"`
+	Constraints        ConstraintSetV2   `json:"constraints"`
+	Formation          string            `json:"formation"`
+	PlanIDs            []string          `json:"plan_ids"`
+	AuthorizedPlanID   string            `json:"authorized_plan_id,omitempty"`
+	CreatedAt          time.Time         `json:"created_at"`
+	UpdatedAt          time.Time         `json:"updated_at"`
+}
+
+type CommandDraftV2 struct {
+	SchemaVersion       int             `json:"schema_version"`
+	ID                  string          `json:"id"`
+	MissionID           string          `json:"mission_id"`
+	SourceText          string          `json:"source_text"`
+	Objective           string          `json:"objective"`
+	TargetIDs           []string        `json:"target_ids"`
+	TargetSnapshotHash  string          `json:"target_snapshot_hash"`
+	GeometryRevision    int64           `json:"geometry_revision"`
+	FleetVersion        int64           `json:"fleet_version"`
+	Constraints         ConstraintSetV2 `json:"constraints"`
+	FormationPreference string          `json:"formation_preference"`
+	GuidanceKind        string          `json:"guidance_kind"`
+	Waypoints           []GeoPointV2    `json:"waypoints"`
+	Ambiguities         []string        `json:"unresolved_ambiguities"`
+	ContentHash         string          `json:"content_hash"`
+}
+
+type FleetAssignmentV2 struct {
+	VesselID   string       `json:"vessel_id"`
+	Route      []GeoPointV2 `json:"route"`
+	SpeedMPS   float64      `json:"speed_mps"`
+	DistanceKM float64      `json:"distance_km"`
+}
+
+type FleetPlanV2 struct {
+	SchemaVersion        int                 `json:"schema_version"`
+	ID                   string              `json:"id"`
+	MissionID            string              `json:"mission_id"`
+	DraftID              string              `json:"draft_id"`
+	Name                 string              `json:"name"`
+	Formation            string              `json:"formation"`
+	Maneuvers            []string            `json:"maneuvers"`
+	Assignments          []FleetAssignmentV2 `json:"assignments"`
+	CoveragePercent      float64             `json:"coverage_percent"`
+	MinimumReserve       float64             `json:"minimum_reserve"`
+	DurationMinutes      float64             `json:"duration_minutes"`
+	EnergyKWH            float64             `json:"energy_kwh"`
+	LinkExposureSeconds  float64             `json:"link_exposure_seconds"`
+	MinimumSeparationM   float64             `json:"minimum_separation_m"`
+	PolicyStatus         string              `json:"policy_status"`
+	ReasonCodes          []string            `json:"reason_codes"`
+	Recommended          bool                `json:"recommended"`
+	ContentHash          string              `json:"content_hash"`
+	SourceMissionVersion int64               `json:"source_mission_version"`
+}
+
+type FleetPreviewV2 struct {
+	PlanID          string                  `json:"plan_id"`
+	PlanHash        string                  `json:"plan_hash"`
+	DurationSeconds int                     `json:"duration_seconds"`
+	Routes          map[string][]GeoPointV2 `json:"routes"`
+	NothingSent     bool                    `json:"nothing_sent"`
+}
+
+type FleetLeaseV2 struct {
+	ID         string    `json:"id"`
+	MissionID  string    `json:"mission_id"`
+	PlanID     string    `json:"plan_id"`
+	PlanHash   string    `json:"plan_hash"`
+	OperatorID string    `json:"operator_id"`
+	TargetIDs  []string  `json:"target_ids"`
+	IssuedAt   time.Time `json:"issued_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	Signature  string    `json:"signature"`
+}
+
+type FleetSnapshotV2 struct {
+	SchemaVersion int                  `json:"schema_version"`
+	FleetVersion  int64                `json:"fleet_version"`
+	GeneratedAt   time.Time            `json:"generated_at"`
+	Vessels       []VesselProfileV2    `json:"vessels"`
+	Groups        []OperationalGroupV2 `json:"groups"`
+	Collections   []SavedCollectionV2  `json:"collections"`
+	Missions      []MissionWorkspaceV2 `json:"missions"`
+	Environment   EnvironmentV2        `json:"environment"`
+	Map           map[string]any       `json:"map"`
+}
+
+type VoiceV2 struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Default   bool   `json:"default"`
+	Available bool   `json:"available"`
+}
+
+type SpeechCapabilitiesV2 struct {
+	TTSNode             string   `json:"tts_node"`
+	TTSEngine           string   `json:"tts_engine"`
+	TTSVersion          string   `json:"tts_version"`
+	DefaultVoice        string   `json:"default_voice"`
+	Streaming           bool     `json:"streaming"`
+	BargeIn             bool     `json:"barge_in"`
+	TranscriptionRoutes []string `json:"transcription_routes"`
+	HTTPSRequired       bool     `json:"https_required_for_browser"`
+	DemoLimitations     []string `json:"demo_limitations"`
+}

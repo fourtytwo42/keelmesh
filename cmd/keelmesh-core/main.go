@@ -16,6 +16,7 @@ import (
 	"github.com/fourtytwo42/keelmesh/internal/agent"
 	"github.com/fourtytwo42/keelmesh/internal/api"
 	"github.com/fourtytwo42/keelmesh/internal/core"
+	"github.com/fourtytwo42/keelmesh/internal/fleetops"
 	"github.com/fourtytwo42/keelmesh/internal/platform"
 )
 
@@ -75,7 +76,8 @@ func main() {
 	engine := core.New()
 	platformManager := platform.NewManager(cfg, logger)
 	agentManager := agent.NewManager(agent.ConfigFromEnv(), logger)
-	serverAPI := api.New(engine, logger, webRoot, platformManager, agentManager)
+	fleetManager := fleetops.New(cfg.DatabaseURL, logger)
+	serverAPI := api.New(engine, logger, webRoot, platformManager, agentManager, fleetManager)
 
 	server := &http.Server{
 		Addr:              ":8080",
@@ -87,6 +89,7 @@ func main() {
 	go engine.Run(ctx)
 	go platformManager.Run(ctx)
 	go agentManager.Run(ctx)
+	go fleetManager.Run(ctx)
 	privateServer := &http.Server{Addr: ":8081", Handler: privateHandler(agentManager), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	go func() {
 		logger.Info("keelmesh private AI boundary listening", "address", privateServer.Addr)

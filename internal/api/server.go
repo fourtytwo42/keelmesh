@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/fourtytwo42/keelmesh/internal/agent"
 	"github.com/fourtytwo42/keelmesh/internal/core"
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/fleetops"
 	"github.com/fourtytwo42/keelmesh/internal/platform"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -28,21 +30,26 @@ type Server struct {
 	startedAt      time.Time
 	platform       *platform.Manager
 	agent          *agent.Manager
+	fleetops       *fleetops.Manager
+	speechURL      string
 	metricsHandler http.Handler
 }
 
 func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...any) *Server {
 	var manager *platform.Manager
 	var agentManager *agent.Manager
+	var fleetManager *fleetops.Manager
 	for _, value := range managers {
 		switch typed := value.(type) {
 		case *platform.Manager:
 			manager = typed
 		case *agent.Manager:
 			agentManager = typed
+		case *fleetops.Manager:
+			fleetManager = typed
 		}
 	}
-	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager, agent: agentManager}
+	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager, agent: agentManager, fleetops: fleetManager, speechURL: strings.TrimRight(os.Getenv("KEELMESH_SPEECH_URL"), "/")}
 	if manager != nil {
 		registry := prometheus.NewRegistry()
 		gauges := []struct {
@@ -103,12 +110,38 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/traces/{trace_id}", s.trace)
 	mux.HandleFunc("GET /api/v1/evidence/ai/{run_id}", s.aiEvidence)
 	mux.HandleFunc("POST /api/v1/scenarios/ai-tooling:reset", s.resetAI)
+	mux.HandleFunc("GET /api/v2/fleet", s.fleetV2)
+	mux.HandleFunc("GET /api/v2/vessels/{id}", s.vesselV2)
+	mux.HandleFunc("GET /api/v2/vessels/{id}/reachability", s.reachabilityV2)
+	mux.HandleFunc("GET /api/v2/groups", s.groupsV2)
+	mux.HandleFunc("POST /api/v2/groups", s.createGroupV2)
+	mux.HandleFunc("PATCH /api/v2/groups/{id}", s.patchGroupV2)
+	mux.HandleFunc("DELETE /api/v2/groups/{id}", s.deleteGroupV2)
+	mux.HandleFunc("GET /api/v2/collections", s.collectionsV2)
+	mux.HandleFunc("POST /api/v2/collections", s.createCollectionV2)
+	mux.HandleFunc("PATCH /api/v2/collections/{id}", s.patchCollectionV2)
+	mux.HandleFunc("GET /api/v2/missions", s.missionsV2)
+	mux.HandleFunc("POST /api/v2/missions", s.createMissionV2)
+	mux.HandleFunc("GET /api/v2/missions/{id}", s.missionV2)
+	mux.HandleFunc("PATCH /api/v2/missions/{id}", s.patchMissionV2)
+	mux.HandleFunc("POST /api/v2/missions/{id}/geometry", s.geometryV2)
+	mux.HandleFunc("POST /api/v2/missions/{id}/commands:compile", s.compileV2)
+	mux.HandleFunc("POST /api/v2/missions/{id}/plans", s.plansV2)
+	mux.HandleFunc("POST /api/v2/missions/{id}/plans/{action}", s.planActionV2)
+	mux.HandleFunc("GET /api/v2/voices", s.voicesV2)
+	mux.HandleFunc("POST /api/v2/speech:synthesize", s.synthesizeV2)
+	mux.HandleFunc("GET /api/v2/speech/capabilities", s.speechCapabilitiesV2)
+	mux.HandleFunc("POST /api/v2/transcription", s.transcriptionV2)
+	mux.HandleFunc("GET /api/v2/transcription/stream", s.transcriptionStreamV2)
+	mux.HandleFunc("GET /api/v2/inference/routes", s.inferenceRoutesV2)
+	mux.HandleFunc("POST /api/v2/inference/faults", s.aiFault)
+	mux.HandleFunc("POST /api/v2/scenarios/fleet-operations:reset", s.resetFleetOperationsV2)
 	mux.Handle("GET /", spaHandler(s.web))
 	return requestLog(s.logger, mux)
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m5", "started_at": s.startedAt.Format(time.RFC3339)})
+	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m6", "started_at": s.startedAt.Format(time.RFC3339)})
 }
 func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})

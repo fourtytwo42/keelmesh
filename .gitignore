@@ -35,3 +35,4 @@ secrets/
 *.key
 *.token
 *.credentials.json
+.keelmesh-models/

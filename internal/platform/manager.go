@@ -457,6 +457,9 @@ func (m *Manager) Replay(ctx context.Context, sourceRunID string, req domain.Pla
 	m.mu.RLock()
 	pool := m.pool
 	m.mu.RUnlock()
+	// A request or process may disappear while a synchronous replay is running.
+	// Retire abandoned rows so one dead caller cannot lock replay forever.
+	_, _ = pool.Exec(ctx, `UPDATE replay_runs SET state='failed',completed_at=now() WHERE state='running' AND started_at < now()-interval '2 minutes'`)
 	var active int
 	_ = pool.QueryRow(ctx, `SELECT count(*) FROM replay_runs WHERE state='running'`).Scan(&active)
 	if active > 0 {
@@ -467,44 +470,103 @@ func (m *Manager) Replay(ctx context.Context, sourceRunID string, req domain.Pla
 	if err != nil {
 		return replay, err
 	}
-	// Rebuild from immutable Kafka history at earliest offsets into an isolated projection.
-	replayClient, err := kgo.NewClient(kgo.SeedBrokers(m.cfg.Brokers...), kgo.ConsumerGroup("keelmesh-shadow-"+replay.ID), kgo.ConsumeTopics(RawTopic, RetryTopic), kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()), kgo.DisableAutoCommit())
+	// Rebuild from immutable Kafka history at each partition's earliest retained
+	// offset. Direct assignment avoids a consumer-group rebalance and four readers
+	// use Kafka's partition parallelism without changing deterministic projection.
+	metadataClient, err := kgo.NewClient(kgo.SeedBrokers(m.cfg.Brokers...))
 	if err != nil {
 		return replay, err
 	}
-	defer replayClient.Close()
-	admin := kadm.NewClient(replayClient)
+	defer metadataClient.Close()
+	admin := kadm.NewClient(metadataClient)
 	ends, err := admin.ListEndOffsets(ctx, RawTopic, RetryTopic)
 	if err != nil {
 		return replay, err
 	}
-	done := map[string]map[int32]bool{}
-	latest := map[string]domain.EventEnvelopeV1{}
+	starts, err := admin.ListStartOffsets(ctx, RawTopic, RetryTopic)
+	if err != nil {
+		return replay, err
+	}
+	const replayReaders = 4
+	assignments := make([]map[string]map[int32]kgo.Offset, replayReaders)
+	readerEnds := make([]map[string]map[int32]int64, replayReaders)
+	for i := 0; i < replayReaders; i++ {
+		assignments[i] = map[string]map[int32]kgo.Offset{}
+		readerEnds[i] = map[string]map[int32]int64{}
+	}
+	shard := 0
 	for topic, partitions := range ends {
-		done[topic] = map[int32]bool{}
 		for partition, end := range partitions {
-			done[topic][partition] = end.Offset == 0
+			start := starts[topic][partition].Offset
+			if end.Offset <= start {
+				continue
+			}
+			reader := shard % replayReaders
+			if assignments[reader][topic] == nil {
+				assignments[reader][topic] = map[int32]kgo.Offset{}
+				readerEnds[reader][topic] = map[int32]int64{}
+			}
+			assignments[reader][topic][partition] = kgo.NewOffset().At(start)
+			readerEnds[reader][topic][partition] = end.Offset
+			shard++
 		}
 	}
-	replayCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	latest := map[string]domain.EventEnvelopeV1{}
+	var latestMu sync.Mutex
+	replayCtx, cancel := context.WithTimeout(ctx, 65*time.Second)
 	defer cancel()
-	for !allReplayPartitionsDone(done) {
-		fetches := replayClient.PollRecords(replayCtx, 2000)
-		if replayCtx.Err() != nil {
-			return replay, platformError("PLATFORM_UNAVAILABLE", "Kafka replay timed out before reaching captured end offsets.")
+	var readers sync.WaitGroup
+	replayErrors := make(chan error, replayReaders)
+	for reader := 0; reader < replayReaders; reader++ {
+		if len(assignments[reader]) == 0 {
+			continue
 		}
-		fetches.EachRecord(func(record *kgo.Record) {
-			if end, ok := ends[record.Topic][record.Partition]; ok && record.Offset >= end.Offset-1 {
-				done[record.Topic][record.Partition] = true
-			}
-			var event domain.EventEnvelopeV1
-			if json.Unmarshal(record.Value, &event) != nil || event.RunID != sourceRunID || checksumPayload(event.Payload) != event.Checksum {
+		readers.Add(1)
+		go func(owned map[string]map[int32]kgo.Offset, ownedEnds map[string]map[int32]int64) {
+			defer readers.Done()
+			client, clientErr := kgo.NewClient(kgo.SeedBrokers(m.cfg.Brokers...), kgo.ConsumePartitions(owned))
+			if clientErr != nil {
+				replayErrors <- clientErr
 				return
 			}
-			if prior, ok := latest[event.VesselID]; !ok || event.Sequence > prior.Sequence {
-				latest[event.VesselID] = event
+			defer client.Close()
+			done := map[string]map[int32]bool{}
+			for topic, partitions := range ownedEnds {
+				done[topic] = map[int32]bool{}
+				for partition := range partitions {
+					done[topic][partition] = false
+				}
 			}
-		})
+			for !allReplayPartitionsDone(done) && replayCtx.Err() == nil {
+				fetches := client.PollRecords(replayCtx, 20000)
+				fetches.EachRecord(func(record *kgo.Record) {
+					if record.Offset >= ownedEnds[record.Topic][record.Partition]-1 {
+						done[record.Topic][record.Partition] = true
+					}
+					var event domain.EventEnvelopeV1
+					if json.Unmarshal(record.Value, &event) != nil || event.RunID != sourceRunID || checksumPayload(event.Payload) != event.Checksum {
+						return
+					}
+					latestMu.Lock()
+					if prior, ok := latest[event.VesselID]; !ok || event.Sequence > prior.Sequence {
+						latest[event.VesselID] = event
+					}
+					latestMu.Unlock()
+				})
+			}
+		}(assignments[reader], readerEnds[reader])
+	}
+	readers.Wait()
+	close(replayErrors)
+	if replayCtx.Err() != nil {
+		_, _ = pool.Exec(context.Background(), `UPDATE replay_runs SET state='failed',completed_at=now() WHERE id=$1`, replay.ID)
+		replay.State = "failed"
+		return replay, platformError("PLATFORM_UNAVAILABLE", "Kafka replay timed out before reaching captured end offsets.")
+	}
+	for replayErr := range replayErrors {
+		if replayErr != nil {
+			return replay, replayErr
+		}
 	}
 	tx, err := pool.Begin(ctx)
 	if err != nil {

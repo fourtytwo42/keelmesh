@@ -12,7 +12,7 @@ wait_ready() {
   echo "KeelMesh did not become ready" >&2; return 1
 }
 verify_scenarios() {
-  for milestone in 1 2 3 4 5; do python3 "$ROOT/scripts/verify_m${milestone}.py" "$BASE_URL"; done
+  for milestone in 1 2 3 4 5 6; do python3 "$ROOT/scripts/verify_m${milestone}.py" "$BASE_URL"; done
 }
 case "${1:-status}" in
   start)
@@ -41,6 +41,8 @@ print(f"  M2 resilience: {(snapshot.get('resilience') or {}).get('phase', 'unava
 print(f"  M3 platform: {platform.get('phase', 'unavailable')}")
 print(f"  M4 AI: {ai.get('phase', 'unavailable')} ({(ai.get('provider') or {}).get('mode', 'unknown')})")
 print(f"  M5 Quiet Fleet: {quiet.get('phase', 'unavailable')}")
+fleet = json.load(urllib.request.urlopen(base + "/api/v2/fleet"))
+print(f"  M6 Fleet Operations: {len(fleet['vessels'])} vessels, {len(fleet['missions'])} retained missions")
 PY
     docker system df
     ;;
@@ -50,6 +52,10 @@ import json,sys,time,urllib.request
 b=sys.argv[1]; boot=json.load(urllib.request.urlopen(b+'/api/v1/bootstrap')); key='release-reset-'+str(time.time_ns())
 data=json.dumps({'request_id':key,'idempotency_key':key,'expected_state_version':boot['snapshot']['state_version']}).encode()
 print(json.load(urllib.request.urlopen(urllib.request.Request(b+'/api/v1/scenarios/demo:reset',data=data,headers={'Content-Type':'application/json'})))['mission']['phase'])
+fleet=json.load(urllib.request.urlopen(b+'/api/v2/fleet')); key='release-m6-reset-'+str(time.time_ns())
+data=json.dumps({'request_id':key,'idempotency_key':key,'expected_version':fleet['fleet_version']}).encode()
+reset=json.load(urllib.request.urlopen(urllib.request.Request(b+'/api/v2/scenarios/fleet-operations:reset',data=data,headers={'Content-Type':'application/json'})))
+print(f"M6 reset: {len(reset['vessels'])} vessels, {len(reset['missions'])} retained missions")
 PY
     ;;
   verify)
@@ -105,7 +111,7 @@ urllib.request.urlopen(urllib.request.Request(b+f'/api/v1/load/runs/{r}:stop',da
 PY
     "${COMPOSE[@]}" restart kafka postgres
     for service in kafka postgres; do for _ in $(seq 1 60); do test "$(docker inspect -f '{{.State.Health.Status}}' "keelmesh-${service}-1" 2>/dev/null)" = healthy && break; sleep 2; done; done
-    "${COMPOSE[@]}" restart core
+    "${COMPOSE[@]}" up -d --force-recreate migrate topic-init loadgen worker-1 worker-2 worker-3 core ai
     wait_ready
     test "$(curl -fsS "$BASE_URL/api/v1/bootstrap" | python3 -c 'import json,sys; print(json.load(sys.stdin)["snapshot"]["mission"]["phase"])')" = idle
     "$0" reset-demo
@@ -130,14 +136,14 @@ result = {name.replace("-", "_"): (gate_dir / name).read_text().strip() if (gate
 result["all_required_gates_recorded"] = all(result.values())
 output.write_text(json.dumps(result, indent=2) + "\n")
 PY
-    printf '# KeelMesh release evidence\n\nCommit: `%s`\n\nAll M1–M5 verifiers passed. See `SHA256SUMS`.\n' "$(cat "$out/commit.txt")" > "$out/README.md"
+    printf '# KeelMesh release evidence\n\nCommit: `%s`\n\nAll M1–M6 verifiers passed. See `SHA256SUMS`.\n' "$(cat "$out/commit.txt")" > "$out/README.md"
     find "$out" -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > "$out/SHA256SUMS"
     test "$(du -sm "$out" | cut -f1)" -le 256
     echo "$out"
     ;;
   rehearse)
     mode="${2:---six-minute}"; "$0" reset-demo
-    echo "Rehearsal $mode: M1 plan/approve → M2 resilience → M5 Quiet Fleet → Cutaway → Engineer"
+    echo "Rehearsal $mode: M6 fleet workspace/formation → M2 resilience → M5 Quiet Fleet → Cutaway → Engineer"
     verify_scenarios
     ;;
   stop) "${OFFLINE_COMPOSE[@]}" stop ;;

@@ -59,6 +59,58 @@ CREATE TABLE IF NOT EXISTS eval_runs (id text PRIMARY KEY, candidate_id text NOT
 CREATE TABLE IF NOT EXISTS otel_spans (trace_id text NOT NULL, span_id text NOT NULL, parent_span_id text NOT NULL DEFAULT '', service text NOT NULL, name text NOT NULL, state text NOT NULL, started_at timestamptz NOT NULL, duration_ms double precision NOT NULL, attributes jsonb NOT NULL DEFAULT '{}', PRIMARY KEY(trace_id,span_id));
 CREATE INDEX IF NOT EXISTS otel_spans_started_idx ON otel_spans(started_at);
 CREATE TABLE IF NOT EXISTS ai_security_events (id bigserial PRIMARY KEY, kind text NOT NULL, reason text NOT NULL, trace_id text NOT NULL DEFAULT '', created_at timestamptz NOT NULL DEFAULT now());
+
+-- M6 fleet operations workspace. These records persist operator organization and
+-- mission workspaces while the deterministic execution engine remains isolated.
+CREATE TABLE IF NOT EXISTS fleet_vessels (
+  id text PRIMARY KEY,
+  designation text NOT NULL UNIQUE,
+  callsign text NOT NULL UNIQUE,
+  class_id text NOT NULL,
+  profile jsonb NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS operational_groups (
+  id text PRIMARY KEY,
+  revision bigint NOT NULL,
+  payload jsonb NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS saved_collections (
+  id text PRIMARY KEY,
+  revision bigint NOT NULL,
+  payload jsonb NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS mission_workspaces (
+  id text PRIMARY KEY,
+  version bigint NOT NULL,
+  status text NOT NULL,
+  payload jsonb NOT NULL,
+  updated_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS mission_workspaces_status_idx ON mission_workspaces(status, updated_at DESC);
+CREATE TABLE IF NOT EXISTS mission_command_drafts (
+  id text PRIMARY KEY,
+  mission_id text NOT NULL,
+  content_hash text NOT NULL UNIQUE,
+  payload jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS fleet_plans (
+  id text PRIMARY KEY,
+  mission_id text NOT NULL,
+  content_hash text NOT NULL UNIQUE,
+  state text NOT NULL,
+  payload jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS operator_window_layouts (
+  operator_id text PRIMARY KEY,
+  revision bigint NOT NULL,
+  payload jsonb NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 INSERT INTO incidents(id,title,summary,provenance,fixture,embedding) VALUES
 ('fixture-worker-rebalance','Consumer worker loss and cooperative recovery','A consumer child exited; partitions were reassigned and lag recovered after supervised restart.','deterministic M3 fixture',true,array_prepend(1::real,array_fill(0::real,ARRAY[383]))::vector),
 ('fixture-pnt-spoof','GNSS spoof rejected at the edge','A large GNSS jump was excluded while fused uncertainty increased and the vessel entered safe hold.','deterministic M2 fixture',true,array_prepend(0::real,array_prepend(1::real,array_fill(0::real,ARRAY[382])))::vector)

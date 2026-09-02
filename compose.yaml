@@ -45,7 +45,7 @@ services:
     build: &app-build
       context: .
       dockerfile: Dockerfile
-    image: keelmesh/core:m5
+    image: keelmesh/core:m6
     command: ["--role", "migrate"]
     environment: &app-env
       KEELMESH_DATABASE_URL: postgres://keelmesh:keelmesh@postgres:5432/keelmesh?sslmode=disable
@@ -55,13 +55,14 @@ services:
       KEELMESH_CORE_AI_TOKEN_FILE: /run/keelmesh-auth/core-ai/token
       KEELMESH_MCP_INVESTIGATOR_TOKEN_FILE: /run/keelmesh-auth/investigator/token
       KEELMESH_MCP_SEEDER_TOKEN_FILE: /run/keelmesh-auth/seeder/token
+      KEELMESH_SPEECH_URL: http://speech:8091
     depends_on:
       postgres:
         condition: service_healthy
     restart: "no"
 
   topic-init:
-    image: keelmesh/core:m5
+    image: keelmesh/core:m6
     command: ["--role", "topic-init"]
     environment: *app-env
     depends_on:
@@ -103,7 +104,7 @@ services:
 
   core:
     build: *app-build
-    image: keelmesh/core:m5
+    image: keelmesh/core:m6
     restart: unless-stopped
     environment: *app-env
     depends_on:
@@ -127,7 +128,7 @@ services:
       start_period: 5s
 
   loadgen:
-    image: keelmesh/core:m5
+    image: keelmesh/core:m6
     command: ["--role", "loadgen"]
     environment: *app-env
     volumes:
@@ -140,7 +141,7 @@ services:
     restart: unless-stopped
 
   worker-1: &worker
-    image: keelmesh/core:m5
+    image: keelmesh/core:m6
     command: ["--role", "worker-supervisor"]
     environment:
       <<: *app-env
@@ -206,6 +207,24 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=2)"]
       interval: 10s
       timeout: 3s
+      retries: 5
+
+  speech:
+    build:
+      context: .
+      dockerfile: Dockerfile.speech
+    image: keelmesh/speech:m6
+    restart: unless-stopped
+    volumes:
+      - ./.keelmesh-models/pocket-tts:/models:ro
+      - ./.keelmesh-models/stt/faster-whisper-tiny.en:/stt-model:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8091/healthz'))['status'] in ('ready','degraded')"]
+      interval: 15s
+      timeout: 5s
       retries: 5
 
 volumes:

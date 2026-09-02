@@ -104,6 +104,31 @@ Only port 8080 remains published. The Python API, MCP server, generated
 capability tokens, provider credential, Kafka, and PostgreSQL stay private.
 CI uses an empty provider secret and proves the same workflow through mock.
 
+## M6 fleet operations workspace
+
+M6 makes the default interface a compact map-first operating workspace for 48
+persistent named vessels in Narragansett Bay and Rhode Island Sound. Operators
+can select individuals or complete groups, inspect mesh reachability separately
+from authority, retain overlapping collections, manage operational-group
+identity, and run independent mission tabs. Area, exclusion, and waypoint
+geometry plus typed or spoken intent produce deterministic formation options;
+every option still follows preview → exact-hash authorization → execution.
+
+The chart is a packaged NOAA NCDS extract and all vessel/environment state is
+clearly labeled simulation data. Pocket TTS and faster-whisper run privately on
+VM 214; Morgan is the default voice. Browser capture requires HTTPS, so the
+temporary Cloudflare Quick Tunnel is used for microphone demos while the LAN URL
+continues to provide the rest of the workspace.
+
+```bash
+scripts/keelmesh status
+python3 scripts/verify_m6.py http://localhost:8080
+```
+
+The deterministic VM-local STT smoke measurement is recorded in the M6 plan.
+Browser WebGPU/WASM and trusted-peer speech routes remain measured follow-up
+work and are not represented as completed physical-node redundancy.
+
 See `infrastructure/README.md` for the reproducible VM and host setup. Never
 commit passwords, private keys, provider tokens, GitHub credentials, Cloudflare
 credentials, or model secrets.
