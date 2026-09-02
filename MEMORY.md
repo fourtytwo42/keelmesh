@@ -128,6 +128,7 @@ When sources conflict, use this order:
 - 2026-09-01: Completed and deployed M2 on VM 214. `scripts/verify_m2.py` passed with tape depths `60,60,30,0,60`, one deduplicated delivery, 52 m maximum uncertainty, safe contingency at mission tick 60, three discarded stale segments, bridge target 9, and final `rejoined` state.
 - 2026-09-01: All Go package tests passed for monotonic clock, tape hashes/signatures/lifecycle/expiry, bundle immutability/hop limits/deduplication, mesh partition routing, PNT spoof exclusion, engine stale-state/idempotency behavior, and M1 regressions. Frontend typecheck, Vitest, and production build passed.
 - 2026-09-01: Playwright passed three workflows against VM 214: suggested-area M1, hand-drawn-area M1, and full M2 relay → partition → spoof/safe-hold → bridge/rejoin. A null-vs-empty Go slice crash discovered during browser QA was fixed by normalizing wire arrays and adding defensive client checks.
+- 2026-09-01: Pushed M2 commit `79a9cee`; GitHub Actions run `33576109969` passed in 3m04s, including frontend audit/typecheck/unit/build, Go test/vet, Compose/container build, M1+M2 API verifiers, and all three Playwright workflows.
 
 - 2026-09-01: Planned M2 as a deterministic Vessel 4 incident layered onto an authorized M1 mission: direct Starlink failure, Vessel 3 HaLow relay, full partition, six-segment tape depletion, GNSS source exclusion, uncertainty-triggered safe hold, stale-segment rejection, and policy-checked bridge-to-future rejoin.
 
