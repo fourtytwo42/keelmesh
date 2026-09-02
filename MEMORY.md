@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: Plan M6 Fleet Operations Workspace after the completed M5 interview release.
-- Last meaningful change: Added the M6 system-wide redundancy doctrine. Starlink is preferred wide-area connectivity; authenticated routing over the HaLow underlay provides peer paths and peer Starlink egress. Every GPU-ready node retains local policy, planning, mission tape, journal, speech, and advisory LLM capability; partitions preserve prior authority only, while group adaptations still require deterministic validation, fixed quorum, all-affected arming, and future commit.
+- Last meaningful change: Simplified M6 TTS for the interview: Pocket TTS runs only as the real VM 214 node service and browsers only play streamed audio. Browser TTS and peer TTS failover are deferred; visible text is the fallback. Browser-local STT with node fallback remains in scope.
 - Next step: review the M6 scope and implement M6A first: local map, 24 named/classed vessels, scalable selection, groups, swarm inspector, environmental metrics, vessel sprites, and the compact visual shell.
 - Blockers: The optional M5 Proxmox snapshot still awaits host storage preflight and explicit user authorization; no snapshot was attempted.
 

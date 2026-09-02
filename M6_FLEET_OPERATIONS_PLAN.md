@@ -247,13 +247,13 @@ The model never issues vessel commands or approves a plan. Authorization remains
 
 ## 9. Voice pipeline
 
-TTS, STT, and local open-source LLM inference are node capabilities, not permanent centralized services. Every operator and vessel node uses the same portable inference-runtime contract and may eventually carry its own GPU and preloaded models. The browser is the closest execution tier on an operator device; its fallback is the colocated node runtime, followed by an explicitly trusted reachable mesh peer. VM 214 hosts the initial node runtime for the interview appliance. No path requires a cloud speech API. Inference loss must not affect mission execution or deterministic safety.
+STT and local open-source LLM inference are redundant node capabilities. Every operator and vessel node may eventually carry its own GPU and preloaded models. The browser remains the closest STT tier on an operator device; its fallback is the colocated node runtime, followed by an explicitly trusted reachable mesh peer. For the interview build, Pocket TTS runs only in the VM 214 node service and the browser is a thin streamed-audio player. Browser TTS and peer TTS failover are deferred. No path requires a cloud speech API. Inference loss must not affect mission execution or deterministic safety.
 
 Serve the operator UI over HTTPS. Microphone capture and WebGPU require a secure browser context, so the current plain `http://192.168.50.214:8080` origin is insufficient for voice. During M6 development and the near-term interview demo, the existing free Cloudflare Quick Tunnel is the accepted HTTPS entry point; its generated hostname is explicitly temporary and must not be presented as a stable product URL. A named tunnel/domain is deferred. A later offline release must add a locally trusted hostname/certificate because the Quick Tunnel still depends on internet reachability.
 
 ### Distributed node inference fabric
 
-- Package a portable node inference runtime with versioned STT, TTS, embedding, and local-LLM adapters. It can run on the operator appliance, a vessel computer, VM 214, or another authenticated edge node.
+- Package a portable node inference runtime with versioned STT, TTS, embedding, and local-LLM adapters. It can eventually run on the operator appliance, a vessel computer, VM 214, or another authenticated edge node. The interview deployment runs one real Pocket TTS service on VM 214 and does not simulate redundant TTS execution.
 - Each node publishes a signed, short-lived capability advertisement containing supported tasks, model/runtime versions, acceleration class, available memory, queue depth, measured latency class, power mode, and whether it may accept remote work.
 - Do not expose unrestricted hardware/process information or secrets in advertisements.
 - Route each request local-first:
@@ -266,7 +266,7 @@ Serve the operator UI over HTTPS. Microphone capture and WebGPU require a secure
 - Peer inference requires authenticated transport, an allowed capability, bounded request size, deadline, hop limit, and explicit data classification. Raw audio is never broadcast.
 - When local STT fails and peer fallback is allowed, send one encrypted, short-lived compressed audio stream to one selected peer. Return text immediately and retain no audio after the request completes.
 - Select a peer using trust, task compatibility, measured latency, link cost, queue, power/reserve impact, and route stability with hysteresis. Mission-tape and safety traffic always outrank inference.
-- TTS returns text plus optional compressed audio to the requesting human-interface node. Vessel nodes without a local speaker/microphone keep the capability dormant and do not generate continuous speech traffic.
+- The target architecture permits TTS on any human-interface node, but the interview build sends text to VM 214 Pocket TTS and streams the resulting audio only to the requesting browser. Vessel nodes do not synthesize speech or generate continuous audio traffic in the demo.
 - Local LLM output remains advisory. It may compile intent, explain state, retrieve cached runbooks, or propose a typed plan; it cannot sign leases, alter policy, authorize itself, or command actuators directly.
 - Distribute model artifacts before missions through signed manifests, immutable hashes, resumable chunks, and storage quotas. Do not transfer multi-hundred-megabyte models over a degraded operational mesh unless an explicit maintenance policy permits it.
 - The interview build may host several logical node providers on VM 214 for routing/failure demonstrations, but must label them simulated node isolation rather than claiming separate physical GPUs.
@@ -277,10 +277,12 @@ Serve the operator UI over HTTPS. Microphone capture and WebGPU require a secure
 - Import all twelve built-in voice assets with their existing provenance metadata.
 - Make Morgan the default and expose the complete voice list in settings.
 - Do not include voice training or cloning UI.
+- Do not port Pocket TTS to WebGPU, WASM, ONNX Runtime Web, or another browser runtime for the interview build.
 - Keep the worker warm, synthesize sentence-sized chunks, stream PCM/WAV audio to the browser, and support immediate cancel/barge-in.
 - Preserve the applicable Pocket TTS and voice-source license/attribution files in the image and UI.
-- Benchmark Pocket TTS first on VM 214 and later on each supported node hardware profile rather than relying on results from PPTtoVoice hardware. Record cold start, warm first-audio latency, total synthesis latency, real-time factor, CPU/GPU, and RSS for Morgan and at least two other voices.
+- Benchmark Pocket TTS on VM 214 rather than relying on results from PPTtoVoice hardware. Record cold start, warm first-audio latency, total synthesis latency, real-time factor, CPU, and RSS for Morgan and at least two other voices.
 - Initial TTS gate on VM 214: warm p95 first-audio below 300 ms and p95 real-time factor below 0.5 for short operator responses. If it misses, shorten speech chunks and prioritize first-audio latency before changing the voice engine.
+- If TTS or VM 214 is unavailable, keep the response visible as text. The interview build does not attempt browser or peer TTS failover.
 
 ### STT
 
@@ -428,7 +430,7 @@ All persistent mutations use request ID, idempotency key, and the relevant fleet
 
 - Typed/chat `CommandDraftV2` first.
 - Integrate the measured browser WebGPU/WASM winner, colocated VM 214 node runtime, signed capability advertisements, route selection, and one simulated trusted peer fallback behind the same STT adapter.
-- Pocket TTS with Morgan default, all voices, cancel, and barge-in.
+- One VM-hosted Pocket TTS service with Morgan default, all voices, streaming playback, cancel, and barge-in; browser and peer TTS execution remain explicitly deferred.
 - Demonstrate loss of browser inference, loss of the colocated provider, trusted peer selection, deduplication of a late result, and recovery to local-first routing.
 - AI formation/maneuver options using the same deterministic planning tools.
 
@@ -452,6 +454,7 @@ All persistent mutations use request ID, idempotency key, and the relevant fleet
 - The map remains interactive at 1,000 visible features; low zoom clusters instead of rendering 1,000 labels.
 - The application starts and performs map, selection, grouping, M1/M2/M5, TTS, and selected STT operations offline.
 - Voice interruption stops playback immediately; partial/final transcript timing is visible and measured.
+- Pocket TTS executes only on VM 214 in the interview build; the browser receives bounded streamed audio and falls back to visible text if synthesis is unavailable.
 - The near-term demo uses the free Cloudflare Quick Tunnel; microphone and WebGPU feature checks pass without browser security overrides. Evidence labels the tunnel URL ephemeral and does not claim voice availability during internet loss.
 - The later offline voice gate remains pending until a locally trusted HTTPS origin exists; a Quick Tunnel alone cannot satisfy it.
 - Browser-local STT keeps audio on the operator device; fallback sends encrypted bounded audio only to one selected colocated or trusted peer node; outbound cloud speech access remains disabled.
