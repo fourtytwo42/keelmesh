@@ -1,0 +1,12 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"kind":"land","name":"Rhode Island mainland"},"geometry":{"type":"Polygon","coordinates":[[[-71.62,41.64],[-71.05,41.64],[-71.05,41.42],[-71.16,41.42],[-71.19,41.49],[-71.25,41.52],[-71.30,41.58],[-71.36,41.55],[-71.39,41.48],[-71.42,41.48],[-71.45,41.54],[-71.50,41.58],[-71.62,41.56],[-71.62,41.64]]]}},
+{"type":"Feature","properties":{"kind":"land","name":"Aquidneck Island"},"geometry":{"type":"Polygon","coordinates":[[[-71.27,41.64],[-71.20,41.62],[-71.19,41.54],[-71.23,41.48],[-71.29,41.47],[-71.31,41.53],[-71.29,41.59],[-71.27,41.64]]]}},
+{"type":"Feature","properties":{"kind":"land","name":"Conanicut Island"},"geometry":{"type":"Polygon","coordinates":[[[-71.39,41.58],[-71.34,41.57],[-71.34,41.49],[-71.36,41.43],[-71.41,41.44],[-71.42,41.50],[-71.39,41.58]]]}},
+{"type":"Feature","properties":{"kind":"land","name":"Prudence Island"},"geometry":{"type":"Polygon","coordinates":[[[-71.34,41.67],[-71.30,41.65],[-71.30,41.59],[-71.33,41.57],[-71.36,41.61],[-71.34,41.67]]]}},
+{"type":"Feature","properties":{"kind":"land","name":"Block Island"},"geometry":{"type":"Polygon","coordinates":[[[-71.63,41.24],[-71.55,41.23],[-71.53,41.18],[-71.56,41.14],[-71.62,41.15],[-71.65,41.19],[-71.63,41.24]]]}},
+{"type":"Feature","properties":{"kind":"shipping","name":"Narragansett approach"},"geometry":{"type":"LineString","coordinates":[[-71.38,41.12],[-71.38,41.30],[-71.37,41.43],[-71.36,41.56]]}},
+{"type":"Feature","properties":{"kind":"label","name":"Narragansett Bay"},"geometry":{"type":"Point","coordinates":[-71.36,41.53]}},
+{"type":"Feature","properties":{"kind":"label","name":"Rhode Island Sound"},"geometry":{"type":"Point","coordinates":[-71.31,41.20]}},
+{"type":"Feature","properties":{"kind":"label","name":"Block Island"},"geometry":{"type":"Point","coordinates":[-71.59,41.19]}},
+{"type":"Feature","properties":{"kind":"label","name":"Newport"},"geometry":{"type":"Point","coordinates":[-71.31,41.49]}}
+]}

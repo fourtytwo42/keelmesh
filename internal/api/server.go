@@ -15,6 +15,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/fourtytwo42/keelmesh/internal/agent"
+	"github.com/fourtytwo42/keelmesh/internal/arena"
 	"github.com/fourtytwo42/keelmesh/internal/core"
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 	"github.com/fourtytwo42/keelmesh/internal/fleetops"
@@ -31,6 +32,7 @@ type Server struct {
 	platform       *platform.Manager
 	agent          *agent.Manager
 	fleetops       *fleetops.Manager
+	arena          *arena.Manager
 	speechURL      string
 	metricsHandler http.Handler
 }
@@ -39,6 +41,7 @@ func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...any) *
 	var manager *platform.Manager
 	var agentManager *agent.Manager
 	var fleetManager *fleetops.Manager
+	var arenaManager *arena.Manager
 	for _, value := range managers {
 		switch typed := value.(type) {
 		case *platform.Manager:
@@ -47,9 +50,11 @@ func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...any) *
 			agentManager = typed
 		case *fleetops.Manager:
 			fleetManager = typed
+		case *arena.Manager:
+			arenaManager = typed
 		}
 	}
-	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager, agent: agentManager, fleetops: fleetManager, speechURL: strings.TrimRight(os.Getenv("KEELMESH_SPEECH_URL"), "/")}
+	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager, agent: agentManager, fleetops: fleetManager, arena: arenaManager, speechURL: strings.TrimRight(os.Getenv("KEELMESH_SPEECH_URL"), "/")}
 	if manager != nil {
 		registry := prometheus.NewRegistry()
 		gauges := []struct {
@@ -136,12 +141,31 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v2/inference/routes", s.inferenceRoutesV2)
 	mux.HandleFunc("POST /api/v2/inference/faults", s.aiFault)
 	mux.HandleFunc("POST /api/v2/scenarios/fleet-operations:reset", s.resetFleetOperationsV2)
+	mux.HandleFunc("GET /api/v3/arena", s.arenaSnapshotV3)
+	mux.HandleFunc("GET /api/v3/infrastructure", s.arenaInfrastructureV3)
+	mux.HandleFunc("POST /api/v3/matches", s.createMatchV3)
+	mux.HandleFunc("POST /api/v3/matches/{action}", s.matchActionV3)
+	mux.HandleFunc("GET /api/v3/matches/{id}/player-state", s.playerStateV3)
+	mux.HandleFunc("POST /api/v3/matches/{id}/faults", s.arenaFaultV3)
+	mux.HandleFunc("POST /api/v3/matches/{id}/advance", s.arenaAdvanceV3)
+	mux.HandleFunc("POST /api/v3/matches/{id}/engagements:plan", s.planEngagementV3)
+	mux.HandleFunc("POST /api/v3/matches/{id}/engagements/{action}", s.engagementActionV3)
+	mux.HandleFunc("POST /api/v3/matches/{id}/effects", s.effectV3)
+	mux.HandleFunc("GET /api/v3/nodes", s.arenaInfrastructureV3)
+	mux.HandleFunc("GET /api/v3/network/topology", s.arenaInfrastructureV3)
+	mux.HandleFunc("POST /api/v3/network/faults", s.arenaFaultV3)
+	mux.HandleFunc("GET /api/v3/factions/{id}/coordination", s.coordinationV3)
+	mux.HandleFunc("GET /api/v3/ingress/{faction_id}/coordinator", s.ingressCoordinatorV3)
+	mux.HandleFunc("POST /api/v3/agent/sessions", s.createAgentSessionV3)
+	mux.HandleFunc("POST /api/v3/agent/sessions/{id}/messages", s.agentMessageV3)
+	mux.HandleFunc("POST /api/v3/workspaces/{session_id}/actions", s.workspaceActionV3)
+	mux.HandleFunc("POST /api/v3/scenarios/fleet-arena:reset", s.resetArenaV3)
 	mux.Handle("GET /", spaHandler(s.web))
 	return requestLog(s.logger, mux)
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m6", "started_at": s.startedAt.Format(time.RFC3339)})
+	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m7", "started_at": s.startedAt.Format(time.RFC3339)})
 }
 func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})

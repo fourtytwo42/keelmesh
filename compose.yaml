@@ -45,7 +45,7 @@ services:
     build: &app-build
       context: .
       dockerfile: Dockerfile
-    image: keelmesh/core:m6
+    image: keelmesh/core:m7
     command: ["--role", "migrate"]
     environment: &app-env
       KEELMESH_DATABASE_URL: postgres://keelmesh:keelmesh@postgres:5432/keelmesh?sslmode=disable
@@ -62,7 +62,7 @@ services:
     restart: "no"
 
   topic-init:
-    image: keelmesh/core:m6
+    image: keelmesh/core:m7
     command: ["--role", "topic-init"]
     environment: *app-env
     depends_on:
@@ -104,7 +104,7 @@ services:
 
   core:
     build: *app-build
-    image: keelmesh/core:m6
+    image: keelmesh/core:m7
     restart: unless-stopped
     environment: *app-env
     depends_on:
@@ -127,8 +127,21 @@ services:
       retries: 5
       start_period: 5s
 
+  player-b-ingress:
+    image: keelmesh/core:m7
+    entrypoint: ["/usr/local/bin/keelmesh-ingress"]
+    environment:
+      KEELMESH_CORE_URL: http://core:8080
+      KEELMESH_INGRESS_FACTION: B
+    depends_on:
+      core:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8082:8082"
+    restart: unless-stopped
+
   loadgen:
-    image: keelmesh/core:m6
+    image: keelmesh/core:m7
     command: ["--role", "loadgen"]
     environment: *app-env
     volumes:
@@ -141,7 +154,7 @@ services:
     restart: unless-stopped
 
   worker-1: &worker
-    image: keelmesh/core:m6
+    image: keelmesh/core:m7
     command: ["--role", "worker-supervisor"]
     environment:
       <<: *app-env

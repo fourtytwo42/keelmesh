@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# M7 fault injection is intentionally limited to the simulated-radio NIC.
+# The management/default-route interface must remain reachable at all times.
+readonly RADIO_INTERFACE="eth1"
+readonly ROLLBACK_UNIT="keelmesh-radio-rollback"
+
+usage() {
+  echo "usage: m7-radio-fault <restore|partition|degrade> [eth1]" >&2
+  exit 2
+}
+
+action="${1:-}"
+requested_interface="${2:-$RADIO_INTERFACE}"
+[[ -n "$action" ]] || usage
+
+if [[ "$requested_interface" != "$RADIO_INTERFACE" ]]; then
+  echo "refusing fault: only $RADIO_INTERFACE (simulated radio) may be impaired" >&2
+  exit 3
+fi
+
+default_interface="$(ip route show default | awk 'NR==1 {print $5}')"
+if [[ -z "$default_interface" || "$default_interface" == "$RADIO_INTERFACE" ]]; then
+  echo "refusing fault: radio interface is missing or carries the default route" >&2
+  exit 4
+fi
+
+restore() {
+  tc qdisc del dev "$RADIO_INTERFACE" root 2>/dev/null || true
+}
+
+arm_rollback() {
+  local rollback_instance="${ROLLBACK_UNIT}-$(date +%s)-$$"
+  systemd-run --quiet --unit "$rollback_instance" --on-active=60s \
+    /usr/local/sbin/m7-radio-fault restore "$RADIO_INTERFACE"
+}
+
+case "$action" in
+  restore)
+    restore
+    ;;
+  partition)
+    arm_rollback
+    tc qdisc replace dev "$RADIO_INTERFACE" root netem loss 100%
+    ;;
+  degrade)
+    arm_rollback
+    tc qdisc replace dev "$RADIO_INTERFACE" root netem delay 180ms 40ms loss 18% rate 2mbit
+    ;;
+  *)
+    usage
+    ;;
+esac
+
+echo "radio_fault=$action interface=$RADIO_INTERFACE management_interface=$default_interface rollback_seconds=60"

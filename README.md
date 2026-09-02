@@ -129,6 +129,34 @@ The deterministic VM-local STT smoke measurement is recorded in the M6 plan.
 Browser WebGPU/WASM and trusted-peer speech routes remain measured follow-up
 work and are not represented as completed physical-node redundancy.
 
+## M7 symmetric fleet arena
+
+M7 adds a knowledge-limited two-faction Arena and a real twelve-VM node fabric.
+Each faction has six symmetric vessel nodes, a quorum-backed coordinator view,
+protected management/inference and simulated-radio planes, semantic workspace
+actions, deterministic energy progression, and exact-hash authorization for
+fictional engagement effects. VM 214 remains the neutral authority and Player B
+ingress router.
+
+The current physical allocation is five nodes on `fourtyfour`, four on `mini42`,
+and three on `mini43`. Each linked clone has 2 vCPU, 2 GiB RAM, a 12 GiB disk,
+`eth0` management at `192.168.50.<VMID>`, and `eth1` simulated radio at
+`10.77.0.<VMID>`. The tracked radio-fault helper rejects every interface except
+`eth1` and arms a 60-second automatic rollback before applying impairment.
+
+```bash
+python3 scripts/verify_m7.py --base-url http://localhost:8080
+# Player B's Quick Tunnel opens directly into Arena:
+# https://<ephemeral-host>.trycloudflare.com/?arena=1
+```
+
+The Quick Tunnel hostname is deliberately ephemeral. The current release proves
+the public faction boundary, coordinator-aware ingress, deterministic Arena
+authority, physical dual-plane VMs, and radio-only failure safety. It does not
+claim that the current central deterministic coordinator model is production
+Raft, that physical HaLow radios are attached, or that twelve independent GPU
+inference services are running.
+
 See `infrastructure/README.md` for the reproducible VM and host setup. Never
 commit passwords, private keys, provider tokens, GitHub credentials, Cloudflare
 credentials, or model secrets.

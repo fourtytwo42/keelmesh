@@ -15,6 +15,7 @@ import (
 
 	"github.com/fourtytwo42/keelmesh/internal/agent"
 	"github.com/fourtytwo42/keelmesh/internal/api"
+	"github.com/fourtytwo42/keelmesh/internal/arena"
 	"github.com/fourtytwo42/keelmesh/internal/core"
 	"github.com/fourtytwo42/keelmesh/internal/fleetops"
 	"github.com/fourtytwo42/keelmesh/internal/platform"
@@ -77,7 +78,8 @@ func main() {
 	platformManager := platform.NewManager(cfg, logger)
 	agentManager := agent.NewManager(agent.ConfigFromEnv(), logger)
 	fleetManager := fleetops.New(cfg.DatabaseURL, logger)
-	serverAPI := api.New(engine, logger, webRoot, platformManager, agentManager, fleetManager)
+	arenaManager := arena.NewFromEnv()
+	serverAPI := api.New(engine, logger, webRoot, platformManager, agentManager, fleetManager, arenaManager)
 
 	server := &http.Server{
 		Addr:              ":8080",

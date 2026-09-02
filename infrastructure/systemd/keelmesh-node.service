@@ -1,0 +1,24 @@
+[Unit]
+Description=KeelMesh symmetric vessel node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=keelmesh
+Group=keelmesh
+EnvironmentFile=/etc/keelmesh/node.env
+ExecStart=/usr/local/bin/keelmesh-node
+Restart=always
+RestartSec=2
+StateDirectory=keelmesh-node
+WorkingDirectory=/var/lib/keelmesh-node
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/keelmesh-node
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

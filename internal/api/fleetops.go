@@ -9,9 +9,9 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/coder/websocket"
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 	"github.com/fourtytwo42/keelmesh/internal/fleetops"
-	"github.com/coder/websocket"
 )
 
 func (s *Server) fleetV2(w http.ResponseWriter, _ *http.Request) {

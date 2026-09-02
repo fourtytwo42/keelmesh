@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "allocation": {"vcpus": 2, "memory_mib": 2048, "disk_gib": 12},
+  "planes": {
+    "management_inference": "eth0 / 192.168.50.0/24",
+    "simulated_radio": "eth1 / 10.77.0.0/24",
+    "fault_rule": "Radio faults may target eth1 only; eth0 is protected."
+  },
+  "nodes": [
+    {"id":"node-a-01","faction":"A","vmid":220,"host":"fourtyfour"},
+    {"id":"node-a-02","faction":"A","vmid":221,"host":"fourtyfour"},
+    {"id":"node-a-03","faction":"A","vmid":222,"host":"fourtyfour"},
+    {"id":"node-a-04","faction":"A","vmid":223,"host":"fourtyfour"},
+    {"id":"node-a-05","faction":"A","vmid":224,"host":"fourtyfour"},
+    {"id":"node-a-06","faction":"A","vmid":225,"host":"mini42"},
+    {"id":"node-b-01","faction":"B","vmid":229,"host":"mini42"},
+    {"id":"node-b-02","faction":"B","vmid":231,"host":"mini42"},
+    {"id":"node-b-03","faction":"B","vmid":232,"host":"mini42"},
+    {"id":"node-b-04","faction":"B","vmid":233,"host":"mini43"},
+    {"id":"node-b-05","faction":"B","vmid":234,"host":"mini43"},
+    {"id":"node-b-06","faction":"B","vmid":236,"host":"mini43"}
+  ]
+}

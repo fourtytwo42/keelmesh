@@ -28,3 +28,28 @@ and adds the current user to the `docker` group.
 The intended live deployment is a single Compose application with only the
 core HTTP port published. Cloudflare Tunnel connects outbound to that origin;
 no router port-forward is required.
+
+## M7 vessel-node fabric
+
+The M7 lab uses twelve linked clones across the three active Proxmox hosts. The
+authoritative allocation is committed in `infrastructure/m7-node-topology.json`.
+Each node has 2 vCPU, 2 GiB RAM, a 12 GiB sparse disk, QEMU guest agent, and two
+planes:
+
+- `eth0`: management, browser ingress, metrics, and provider HTTPS on
+  `192.168.50.0/24`; this is the default route and is never faulted.
+- `eth1`: simulated mission radio on `10.77.0.0/24`, with no default route.
+
+`infrastructure/m7-radio-fault` may be installed as
+`/usr/local/sbin/m7-radio-fault`. It accepts `degrade`, `partition`, or
+`restore`, rejects a requested interface other than `eth1`, refuses to run if
+`eth1` is the default route, and schedules rollback before applying a fault.
+
+Player B traffic enters VM 214 on the private `player-b-ingress` Compose service.
+The ingress pins all `/api/v3` requests to faction B and follows the currently
+advertised B coordinator. The Cloudflare systemd unit publishes that ingress;
+its generated URL is temporary and must not be treated as a release hostname.
+
+No M7 VM snapshots were created. Thin-pool allocation remains over-provisioned;
+all future snapshots still require a fresh storage inspection and explicit user
+authorization.
