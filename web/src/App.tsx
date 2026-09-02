@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, KeelMeshError, requestID, streamURL } from "./api";
 import { MissionMap } from "./MissionMap";
+import { PlatformCutaway } from "./PlatformCutaway";
 import { ResilienceDrill } from "./ResilienceDrill";
-import type { AuditEvent, Bootstrap, FleetSnapshot, Lease, MissionIntent, PlanCandidate, Point, Polygon, Preview, StreamMessage } from "./types";
+import type { AuditEvent, Bootstrap, FleetSnapshot, Lease, MissionIntent, PlanCandidate, PlatformSnapshot, Point, Polygon, Preview, StreamMessage } from "./types";
 import "./app.css";
 
 const defaultCommand = "Search this area with six vessels. Maintain 30% reserve and avoid the exclusion zone.";
@@ -23,6 +24,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [connected, setConnected] = useState(false);
+  const [view, setView] = useState<"operator" | "cutaway">("operator");
+  const [platform, setPlatform] = useState<PlatformSnapshot | null>(null);
 
   const refresh = useCallback(async () => {
     const value = await api<Bootstrap>("/api/v1/bootstrap");
@@ -30,12 +33,13 @@ export default function App() {
   }, []);
 
   useEffect(() => { refresh().catch((e) => setError(e.message)); }, [refresh]);
+  useEffect(() => { api<PlatformSnapshot>("/api/v1/platform").then(setPlatform).catch(() => undefined); }, []);
   useEffect(() => {
     let socket: WebSocket | null = null; let stopped = false; let retry = 500;
     const connect = () => {
       if (stopped) return; socket = new WebSocket(streamURL());
       socket.onopen = () => { setConnected(true); retry = 500; refresh().catch(() => undefined); };
-      socket.onmessage = (event) => { const message = JSON.parse(event.data) as StreamMessage; if (message.snapshot) setSnapshot(message.snapshot); if (message.resilience) setSnapshot((current) => current ? { ...current, state_version: message.resilience!.state_version, resilience: message.resilience } : current); if (message.audit) setAudit((current) => [...current.slice(-19), message.audit!]); };
+      socket.onmessage = (event) => { const message = JSON.parse(event.data) as StreamMessage; if (message.snapshot) setSnapshot(message.snapshot); if (message.resilience) setSnapshot((current) => current ? { ...current, state_version: message.resilience!.state_version, resilience: message.resilience } : current); if (message.platform) setPlatform(message.platform); if (message.audit) setAudit((current) => [...current.slice(-19), message.audit!]); };
       socket.onclose = () => { setConnected(false); if (!stopped) window.setTimeout(connect, retry); retry = Math.min(5000, retry * 2); };
     };
     connect(); return () => { stopped = true; socket?.close(); };
@@ -83,10 +87,13 @@ export default function App() {
     <header className="topbar">
       <div className="brand"><span className="brand-mark">KM</span><span><strong>KeelMesh</strong><small>Fleet Intent Control</small></span></div>
       <div className="scenario"><span className="sim-label">SIMULATION</span><span>{snapshot.scenario_name}</span><span>×{snapshot.simulation_rate}</span></div>
+      <div className="view-switch" role="group" aria-label="Application view"><button className={view === "operator" ? "active" : ""} onClick={() => setView("operator")}>Operator</button><button className={view === "cutaway" ? "active" : ""} onClick={() => setView("cutaway")}>Cutaway</button></div>
       <div className={`connection ${connected ? "online" : "offline"}`}><span />{connected ? "Live" : "Reconnecting"}</div>
     </header>
 
     <section className="workspace">
+      {view === "cutaway" && platform && <PlatformCutaway value={platform} fleet={snapshot} onError={setError} />}
+      <div className={view === "cutaway" ? "operator-hidden" : "operator-layer"}>
       <MissionMap snapshot={snapshot} boundary={bootstrap.boundary} exclusion={bootstrap.exclusion_zone} holding={bootstrap.holding_area} area={area} plan={selectedPlan} previewPositions={phase === "previewing" ? previewPositions : null} drawNonce={drawNonce} onAreaDrawn={(polygon) => { setArea(polygon); setError(""); setPlans([]); setPreview(null); }} />
 
       {snapshot.resilience && <ResilienceDrill value={snapshot.resilience} onChange={(resilience) => setSnapshot((current) => current ? { ...current, state_version: resilience.state_version, resilience } : current)} onError={setError} />}
@@ -119,6 +126,7 @@ export default function App() {
       </section>
 
       <aside className="audit-strip" aria-label="Audit timeline"><header><span>LIVE AUDIT</span><strong>{audit.length}</strong></header>{audit.slice(-5).reverse().map((event) => <div key={event.id}><time>{new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><span>{event.summary}</span></div>)}</aside>
+      </div>
     </section>
     <div className="sr-live" aria-live="polite">Mission phase: {phase}. {error}</div>
   </main>;

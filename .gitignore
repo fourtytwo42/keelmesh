@@ -11,9 +11,18 @@ node_modules/
 coverage/
 dist/
 build/
+*.tsbuildinfo
+web/*.config.js
+web/*.config.d.ts
+__pycache__/
+*.pyc
 
 .keelmesh-data/
 evidence/
+!evidence/
+evidence/*
+!evidence/m3.json
+!evidence/m3.md
 models/
 secrets/
 *.pem

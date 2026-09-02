@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: keelmesh-loadgen, labels: {app.kubernetes.io/name: keelmesh, app.kubernetes.io/component: loadgen}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/component: loadgen}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: keelmesh, app.kubernetes.io/component: loadgen}}
+    spec:
+      serviceAccountName: keelmesh
+      containers:
+      - name: loadgen
+        image: ghcr.io/fourtytwo42/keelmesh:latest
+        args: ["--role", "loadgen"]
+        envFrom: [{configMapRef: {name: keelmesh-platform}}, {secretRef: {name: keelmesh-control}}]
+        volumeMounts: [{name: outbox, mountPath: /data}]
+        resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "2", memory: 1Gi}}
+        securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+      volumes: [{name: outbox, emptyDir: {sizeLimit: 64Mi}}]

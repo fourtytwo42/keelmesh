@@ -1,0 +1,171 @@
+{
+  "run": {
+    "id": "run-1788313224409",
+    "profile": "interview",
+    "seed": 424242,
+    "vessel_count": 1000,
+    "rate_hz": 2,
+    "state": "stopped",
+    "started_at": "2026-09-02T01:40:24.409134Z",
+    "stopped_at": "2026-09-02T01:41:25.538337Z"
+  },
+  "attempted": 123416,
+  "accounted": 123416,
+  "accounting_matches": true,
+  "events_per_second": 2216.106983711589,
+  "latency_p50_ms": 12.474,
+  "latency_p95_ms": 13.409,
+  "latency_p99_ms": 228.64,
+  "mission_api_p95_ms": 4.319240596123564,
+  "lag_baseline": 0,
+  "lag_peak": 202,
+  "worker_2_old_pid": 15,
+  "worker_2_down_workers": 2,
+  "worker_2_new_pid": 29,
+  "rebalance_count": 19,
+  "recovery_seconds": 20.563167518,
+  "duplicates_suppressed": 978,
+  "out_of_order": 242,
+  "quarantined": 485,
+  "redrive": {
+    "id": "q-telemetry.raw.v1-10-119713",
+    "event_id": "run-1788313224409-sim-0120-000000121",
+    "reason": "INVALID_CHECKSUM",
+    "original_topic": "telemetry.raw.v1",
+    "original_partition": 10,
+    "original_offset": 119713,
+    "checksum": "sha256:invalid",
+    "repair_state": "redriven",
+    "created_at": "2026-09-02T01:41:25.400461Z"
+  },
+  "replay": {
+    "id": "replay-1788313288563",
+    "source_run_id": "run-1788313224409",
+    "state": "completed",
+    "live_count": 1000,
+    "shadow_count": 1000,
+    "live_checksum": "0f415361928bf277d2c2a020248b23d065045fade1af3ffd45ee77514771ece5",
+    "shadow_checksum": "0f415361928bf277d2c2a020248b23d065045fade1af3ffd45ee77514771ece5",
+    "matches": true,
+    "started_at": "2026-09-02T01:41:28.563122218Z",
+    "completed_at": "2026-09-02T01:41:31.820911622Z"
+  },
+  "retrieval_top_hit": {
+    "id": "fixture-worker-rebalance",
+    "title": "Consumer worker loss and cooperative recovery",
+    "summary": "A consumer child exited; partitions were reassigned and lag recovered after supervised restart.",
+    "similarity": 1,
+    "provenance": "deterministic M3 fixture",
+    "fixture": true
+  },
+  "dropped": 0,
+  "workers": [
+    {
+      "id": "worker-1",
+      "pid": 16,
+      "state": "running",
+      "assigned_partitions": [
+        0,
+        1,
+        2
+      ],
+      "cpu_percent": 0,
+      "rss_bytes": 21561344,
+      "batch_rate": 0,
+      "rebalance_epoch": 13,
+      "last_heartbeat": "2026-09-02T01:41:30.283795Z"
+    },
+    {
+      "id": "worker-2",
+      "pid": 29,
+      "state": "running",
+      "assigned_partitions": [
+        3,
+        8,
+        9,
+        10,
+        11
+      ],
+      "cpu_percent": 0,
+      "rss_bytes": 21045248,
+      "batch_rate": 0,
+      "rebalance_epoch": 3,
+      "last_heartbeat": "2026-09-02T01:41:30.817553Z"
+    },
+    {
+      "id": "worker-3",
+      "pid": 16,
+      "state": "running",
+      "assigned_partitions": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "cpu_percent": 0,
+      "rss_bytes": 21282816,
+      "batch_rate": 0,
+      "rebalance_epoch": 10,
+      "last_heartbeat": "2026-09-02T01:41:30.352248Z"
+    }
+  ],
+  "hardware": "VM 214 \u00b7 8 vCPU \u00b7 16 GiB RAM",
+  "container_resources": [
+    {
+      "name": "keelmesh-core-1",
+      "cpu": "0.41%",
+      "memory": "8.105MiB / 15.62GiB",
+      "memory_percent": "0.05%",
+      "network_io": "604kB / 1.38MB",
+      "block_io": "0B / 0B"
+    },
+    {
+      "name": "keelmesh-kafka-1",
+      "cpu": "1.21%",
+      "memory": "975.7MiB / 15.62GiB",
+      "memory_percent": "6.10%",
+      "network_io": "238MB / 1GB",
+      "block_io": "0B / 281MB"
+    },
+    {
+      "name": "keelmesh-loadgen-1",
+      "cpu": "0.15%",
+      "memory": "3.285MiB / 15.62GiB",
+      "memory_percent": "0.02%",
+      "network_io": "8.71kB / 5.84kB",
+      "block_io": "0B / 0B"
+    },
+    {
+      "name": "keelmesh-postgres-1",
+      "cpu": "3.37%",
+      "memory": "189.8MiB / 15.62GiB",
+      "memory_percent": "1.19%",
+      "network_io": "688MB / 66.5MB",
+      "block_io": "0B / 6.81GB"
+    },
+    {
+      "name": "keelmesh-worker-1-1",
+      "cpu": "0.13%",
+      "memory": "7.422MiB / 15.62GiB",
+      "memory_percent": "0.05%",
+      "network_io": "24.6kB / 33.9kB",
+      "block_io": "0B / 0B"
+    },
+    {
+      "name": "keelmesh-worker-2-1",
+      "cpu": "0.12%",
+      "memory": "6.922MiB / 15.62GiB",
+      "memory_percent": "0.04%",
+      "network_io": "24.1kB / 32.7kB",
+      "block_io": "0B / 0B"
+    },
+    {
+      "name": "keelmesh-worker-3-1",
+      "cpu": "0.18%",
+      "memory": "7.508MiB / 15.62GiB",
+      "memory_percent": "0.05%",
+      "network_io": "29.4kB / 37.2kB",
+      "block_io": "0B / 0B"
+    }
+  ]
+}

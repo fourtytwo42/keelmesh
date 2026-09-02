@@ -15,17 +15,39 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/fourtytwo42/keelmesh/internal/core"
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/platform"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Server struct {
-	engine    *core.Engine
-	logger    *slog.Logger
-	web       fs.FS
-	startedAt time.Time
+	engine         *core.Engine
+	logger         *slog.Logger
+	web            fs.FS
+	startedAt      time.Time
+	platform       *platform.Manager
+	metricsHandler http.Handler
 }
 
-func New(engine *core.Engine, logger *slog.Logger, web fs.FS) *Server {
-	return &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC()}
+func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...*platform.Manager) *Server {
+	var manager *platform.Manager
+	if len(managers) > 0 {
+		manager = managers[0]
+	}
+	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager}
+	if manager != nil {
+		registry := prometheus.NewRegistry()
+		gauges := []struct {
+			name, help string
+			value      func(domain.PipelineMetricsV1) float64
+		}{{"keelmesh_events_attempted_total", "Synthetic event delivery attempts.", func(m domain.PipelineMetricsV1) float64 { return float64(m.Attempted) }}, {"keelmesh_events_persisted_total", "Unique events persisted.", func(m domain.PipelineMetricsV1) float64 { return float64(m.UniqueInserted) }}, {"keelmesh_consumer_lag", "Current Kafka consumer-group lag.", func(m domain.PipelineMetricsV1) float64 { return float64(m.CurrentLag) }}, {"keelmesh_ingest_latency_p95_ms", "Rolling ingest p95 in milliseconds.", func(m domain.PipelineMetricsV1) float64 { return m.LatencyP95MS }}, {"keelmesh_worker_rebalances_total", "Observed worker rebalance events.", func(m domain.PipelineMetricsV1) float64 { return float64(m.RebalanceCount) }}, {"keelmesh_events_dropped_total", "Synthetic events intentionally dropped after bounded buffers fill.", func(m domain.PipelineMetricsV1) float64 { return float64(m.Dropped) }}}
+		for _, g := range gauges {
+			g := g
+			registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: g.name, Help: g.help}, func() float64 { return g.value(manager.Snapshot().Metrics) }))
+		}
+		server.metricsHandler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+	}
+	return server
 }
 
 func (s *Server) Handler() http.Handler {
@@ -43,12 +65,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/scenarios/resilient-edge:reset", s.resetResilience)
 	mux.HandleFunc("POST /api/v1/scenarios/resilient-edge:advance", s.advanceResilience)
 	mux.HandleFunc("GET /api/v1/stream", s.stream)
+	mux.HandleFunc("GET /api/v1/platform", s.platformSnapshot)
+	mux.HandleFunc("GET /api/v1/metrics/snapshot", s.platformSnapshot)
+	mux.HandleFunc("GET /metrics", s.metrics)
+	mux.HandleFunc("POST /api/v1/load/runs", s.startLoadRun)
+	mux.HandleFunc("POST /api/v1/load/runs/{action}", s.loadRunAction)
+	mux.HandleFunc("POST /api/v1/platform/faults", s.platformFault)
+	mux.HandleFunc("POST /api/v1/quarantine/{action}", s.quarantineAction)
+	mux.HandleFunc("POST /api/v1/platform/replays", s.startReplay)
+	mux.HandleFunc("GET /api/v1/platform/replays/{id}", s.getReplay)
+	mux.HandleFunc("GET /api/v1/retrieval/similar", s.retrieval)
+	mux.HandleFunc("GET /api/v1/evidence/{run_id}", s.evidence)
+	mux.HandleFunc("POST /api/v1/scenarios/scale-lab:reset", s.resetPlatform)
 	mux.Handle("GET /", spaHandler(s.web))
 	return requestLog(s.logger, mux)
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m2", "started_at": s.startedAt.Format(time.RFC3339)})
+	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m3", "started_at": s.startedAt.Format(time.RFC3339)})
 }
 func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
@@ -158,6 +192,12 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	ch, unsubscribe := s.engine.Subscribe()
 	defer unsubscribe()
+	var platformCh <-chan domain.PlatformSnapshotV1
+	var unsubscribePlatform func()
+	if s.platform != nil {
+		platformCh, unsubscribePlatform = s.platform.Subscribe()
+		defer unsubscribePlatform()
+	}
 	initial := domain.StreamMessageV1{SchemaVersion: domain.SchemaVersion, Kind: "fleet.snapshot", Snapshot: ptr(s.engine.Snapshot())}
 	if err := wsjson.Write(ctx, c, initial); err != nil {
 		return
@@ -176,8 +216,126 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 			}
 		case <-ctx.Done():
 			return
+		case snapshot, ok := <-platformCh:
+			if !ok {
+				platformCh = nil
+				continue
+			}
+			writeCtx, stop := context.WithTimeout(ctx, 2*time.Second)
+			err := wsjson.Write(writeCtx, c, domain.StreamMessageV1{SchemaVersion: 1, Kind: "platform.sample", Platform: &snapshot})
+			stop()
+			if err != nil {
+				return
+			}
 		}
 	}
+}
+
+func (s *Server) platformSnapshot(w http.ResponseWriter, _ *http.Request) {
+	if s.platform == nil {
+		writeJSON(w, http.StatusServiceUnavailable, domain.APIError{Code: "PLATFORM_UNAVAILABLE", Message: "Scale platform is disabled."})
+		return
+	}
+	value := s.platform.Snapshot()
+	value.Quarantine = s.platform.Quarantine(context.Background())
+	writeJSON(w, http.StatusOK, value)
+}
+func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
+	if s.metricsHandler == nil {
+		http.Error(w, "platform unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	s.metricsHandler.ServeHTTP(w, r)
+}
+func (s *Server) startLoadRun(w http.ResponseWriter, r *http.Request) {
+	var req domain.LoadRunRequestV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.platform.StartRun(r.Context(), req)
+	respondPlatform(w, v, err, http.StatusCreated)
+}
+func (s *Server) loadRunAction(w http.ResponseWriter, r *http.Request) {
+	id, ok := strings.CutSuffix(r.PathValue("action"), ":stop")
+	if !ok {
+		writeJSON(w, http.StatusNotFound, domain.APIError{Code: "NOT_FOUND", Message: "Unknown load action."})
+		return
+	}
+	var req domain.PlatformMutationV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.platform.StopRun(r.Context(), id, req)
+	respondPlatform(w, v, err, http.StatusOK)
+}
+func (s *Server) platformFault(w http.ResponseWriter, r *http.Request) {
+	var req domain.PlatformFaultCommandV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.platform.Fault(r.Context(), req)
+	respondPlatform(w, v, err, http.StatusAccepted)
+}
+func (s *Server) quarantineAction(w http.ResponseWriter, r *http.Request) {
+	id, ok := strings.CutSuffix(r.PathValue("action"), ":redrive")
+	if !ok {
+		writeJSON(w, http.StatusNotFound, domain.APIError{Code: "NOT_FOUND", Message: "Unknown quarantine action."})
+		return
+	}
+	var req domain.PlatformMutationV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.platform.Redrive(r.Context(), id, req)
+	respondPlatform(w, v, err, http.StatusAccepted)
+}
+func (s *Server) startReplay(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		domain.PlatformMutationV1
+		SourceRunID string `json:"source_run_id"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.platform.Replay(r.Context(), req.SourceRunID, req.PlatformMutationV1)
+	respondPlatform(w, v, err, http.StatusCreated)
+}
+func (s *Server) getReplay(w http.ResponseWriter, r *http.Request) {
+	v, err := s.platform.ReplayByID(r.Context(), r.PathValue("id"))
+	respondPlatform(w, v, err, http.StatusOK)
+}
+func (s *Server) retrieval(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"hits": s.platform.Retrieval(r.Context(), r.URL.Query().Get("q"))})
+}
+func (s *Server) evidence(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.platform.Evidence(r.Context(), r.PathValue("run_id")))
+}
+func (s *Server) resetPlatform(w http.ResponseWriter, r *http.Request) {
+	var req domain.PlatformMutationV1
+	if !decode(w, r, &req) {
+		return
+	}
+	err := s.platform.Reset(r.Context(), req)
+	respondPlatform(w, map[string]string{"status": "reset"}, err, http.StatusOK)
+}
+func respondPlatform(w http.ResponseWriter, v any, err error, success int) {
+	if err == nil {
+		writeJSON(w, success, v)
+		return
+	}
+	var pe *platform.Error
+	if errors.As(err, &pe) {
+		status := http.StatusUnprocessableEntity
+		if pe.Code == "PLATFORM_STALE_STATE" || pe.Code == "FAULT_CONFLICT" {
+			status = http.StatusConflict
+		}
+		if pe.Code == "PLATFORM_UNAVAILABLE" {
+			status = http.StatusServiceUnavailable
+		}
+		writeJSON(w, status, domain.APIError{Code: pe.Code, Message: pe.Message})
+		return
+	}
+	writeJSON(w, http.StatusInternalServerError, domain.APIError{Code: "INTERNAL", Message: err.Error()})
 }
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {

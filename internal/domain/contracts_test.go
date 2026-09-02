@@ -33,3 +33,17 @@ func TestResilienceSnapshotV1Fixture(t *testing.T) {
 		t.Fatalf("fixture does not satisfy ResilienceSnapshotV1: %+v", snapshot)
 	}
 }
+
+func TestPlatformSnapshotV1Fixture(t *testing.T) {
+	data, err := os.ReadFile("../../contracts/fixtures/platform-snapshot-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot PlatformSnapshotV1
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.SchemaVersion != SchemaVersion || snapshot.ActiveRun == nil || snapshot.ActiveRun.VesselCount != 1000 || len(snapshot.Workers) != 1 || snapshot.Topics[0].Partitions != 12 {
+		t.Fatalf("fixture does not satisfy PlatformSnapshotV1: %+v", snapshot)
+	}
+}

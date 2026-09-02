@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "state_version": 12,
+  "available": true,
+  "phase": "load_running",
+  "sampled_at": "2026-09-01T12:00:00Z",
+  "services": [{"id":"kafka","kind":"broker","state":"ready"}],
+  "topics": [{"name":"telemetry.raw.v1","partitions":12,"events_per_second":2000,"bytes_per_second":640000,"current_lag":0,"peak_lag":202}],
+  "workers": [{"id":"worker-1","pid":15,"state":"running","assigned_partitions":[0,1,2,3],"cpu_percent":12.5,"rss_bytes":20971520,"batch_rate":670,"rebalance_epoch":3,"last_heartbeat":"2026-09-01T12:00:00Z"}],
+  "assignments": [{"topic":"telemetry.raw.v1","partition":0,"worker_id":"worker-1","lag":0}],
+  "metrics": {"attempted":123416,"produced":123416,"unique_inserted":121953,"duplicates_suppressed":978,"out_of_order":242,"quarantined":485,"replayed":1,"throttled":0,"dropped":0,"events_per_second":2216,"bytes_per_second":1400000,"latency_p50_ms":12.4,"latency_p95_ms":13.4,"latency_p99_ms":228.6,"db_write_p95_ms":21,"current_lag":0,"peak_lag":202,"rebalance_count":19,"recovery_seconds":20.6},
+  "active_run": {"id":"run-fixture","profile":"interview","seed":424242,"vessel_count":1000,"rate_hz":2,"state":"running","started_at":"2026-09-01T11:59:00Z"},
+  "quarantine": [],
+  "selected_trace": [],
+  "retrieval": [],
+  "summary": "1000 vessels · 2000 events/s · 3 workers · lag 0"
+}

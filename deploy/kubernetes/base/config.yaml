@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: keelmesh-platform}
+data:
+  KEELMESH_KAFKA_BROKERS: kafka.example.internal:9092
+  KEELMESH_DATABASE_URL: postgres://keelmesh@postgres.example.internal:5432/keelmesh?sslmode=require
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: keelmesh-control}
+type: Opaque
+stringData: {KEELMESH_CONTROL_SECRET: replace-through-secret-manager}

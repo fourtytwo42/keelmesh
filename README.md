@@ -46,6 +46,23 @@ python3 scripts/verify_m2.py http://localhost:8080
 The drill is simulation-only. Radio links and PNT evidence are modeled locally;
 it makes no physical range, anti-jam, or certified-navigation claim.
 
+## M3 infrastructure at scale
+
+Switch the live interface from **Operator** to **Cutaway** to inspect the measured
+pipeline: 1,000 deterministic background vessels, Kafka KRaft, three real
+consumer child processes, PostgreSQL projections, pgvector fixture retrieval,
+quarantine/redrive, cooperative rebalance, and Kafka-to-shadow replay.
+
+```bash
+docker compose up -d --build
+python3 scripts/verify_m3.py http://localhost:8080 \
+  --json evidence/m3.json --markdown evidence/m3.md
+```
+
+Only port 8080 is published. Kafka, PostgreSQL, workers, and control traffic stay
+on the private Compose network. M1/M2 continue in degraded mode if M3 services
+are unavailable. Measurements apply only to the recorded VM and workload.
+
 See `infrastructure/README.md` for the reproducible VM and host setup. Never
 commit passwords, private keys, provider tokens, GitHub credentials, Cloudflare
 credentials, or model secrets.

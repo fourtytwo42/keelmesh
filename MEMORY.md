@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: M2 resilient autonomy is implemented, deployed, and verified on VM 214.
-- Last meaningful change: the live appliance now runs the four-step Vessel 4 resilience drill with signed tape/bundles, mesh relay/partition, PNT spoof rejection, safe hold, and bridge-to-future rejoin.
-- Next step: review the live UI and prepare the interview walkthrough; M3 scale/cutaway work remains separate.
+- Current task: M3 Infrastructure at Scale is implemented, deployed, measured, and awaiting final GitHub CI confirmation.
+- Last meaningful change: the release evidence run proved exact event accounting, real worker termination/rebalance/recovery, quarantine redrive, pgvector retrieval, and Kafka earliest-offset shadow replay on VM 214.
+- Next step: rehearse the Operator → Resilience → Cutaway interview walkthrough; M4 AI/voice/tooling remains separate.
 - Blockers: None.
 
 ## Current State
@@ -16,6 +16,7 @@ Durable project context lives here. Update this file whenever information should
 - Core demo thesis: “Program the mission once. Coordinate locally. Adapt together. Degrade safely when the uplink disappears.” The mesh transports signed state and proposals; authenticated edge nodes make bounded decisions under the Group Mission Contract.
 - `PRD.md` is the product source of truth. The M1 React/TypeScript/MapLibre interface and deterministic Go mission authority are embedded in one offline Compose appliance running on VM 214.
 - M2 is live in the same appliance. It adds a mission-relative clock, six signed 10-second tape segments per vessel, authenticated/deduplicated peer bundles, deterministic Starlink/HaLow faults, PNT evidence arbitration, bounded safe hold, and stale-safe bridge rejoin.
+- M3 is live in the same appliance as a degraded-optional scale plane: Apache Kafka KRaft, PostgreSQL/pgvector with eight telemetry hash partitions, deterministic load generation, three supervised real consumer children, bounded bbolt producer outbox, quarantine/redrive, actual Kafka lag, Prometheus metrics, earliest-offset shadow replay, pgvector fixture retrieval, and an Operator/Cutaway UI. Only port 8080 is exposed.
 - `IMPLEMENTATION_PLAN.md` is the Friday delivery plan. It sequences the work as visible vertical slices with acceptance gates, a three-day schedule, contingency cuts, API/contracts, verification evidence, and a six-minute rehearsal.
 - `ROLE_ALIGNMENT_AUDIT.md` is the coverage contract against the recruiter transcript and job posting. It requires both an Operator workflow and a scoped Autonomy Engineer incident-to-eval workflow.
 
@@ -73,8 +74,11 @@ When sources conflict, use this order:
   - `README.md`: repository overview and bootstrap quick start.
   - `infrastructure/bootstrap-vm.sh`: idempotent Ubuntu host bootstrap for Docker, GitHub CLI, cloudflared, and base tooling.
   - `infrastructure/README.md`: non-secret VM specification and operations notes.
-  - `cmd/keelmesh-core/`: first Go bootstrap service and embedded status page.
-  - `Dockerfile` and `compose.yaml`: first one-container mission-appliance bootstrap; the planned four-container application boundary is not yet implemented.
+  - `cmd/keelmesh-core/`: multi-role Go entrypoint for core, migration, topic initialization, load generation, worker supervision, and consumer children.
+  - `internal/platform/`: M3 Kafka/PostgreSQL pipeline, deterministic producer, workers, platform aggregation, replay, retrieval, and evidence APIs.
+  - `M3_IMPLEMENTATION_PLAN.md`: M3 topology, drill, acceptance, and production-shape boundary.
+  - `deploy/kubernetes/`: validated Kustomize base and AWS endpoint overlay; these are production-shape artifacts only.
+  - `Dockerfile` and `compose.yaml`: one-image multi-role appliance with core, loadgen, three workers, Kafka, PostgreSQL/pgvector, and one-shot initializers.
 
 ## Architecture Notes
 
@@ -124,6 +128,10 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+- 2026-09-01: M3 release evidence on VM 214 passed with seed `424242`: 1,000 vessels at 2 Hz, 123,416 attempted and exactly accounted events, 2,216 events/s measured baseline, 13.4 ms ingest p95, 228.6 ms p99, 4.32 ms foreground API p95, peak Kafka lag 202, Worker 2 PID `15 -> 29`, two-worker degraded operation, 20.6 s recovery, 978 duplicates suppressed, 242 out-of-order records, 485 quarantined deliveries, zero drops, successful repair/redrive, and 1,000/1,000 live/shadow projection parity with matching SHA-256 checksum. Evidence files: `evidence/m3.json` and `evidence/m3.md`.
+- 2026-09-01: Latest Go tests and vet passed; frontend strict typecheck, Vitest, and production build passed; Playwright passed four workflows including the live Cutaway; M1 and M2 verifiers remained green; base and AWS Kustomize overlays each rendered four deployments. Prometheus `/metrics`, eight PostgreSQL hash partitions, pgvector nearest-fixture retrieval, Compose health, and private-only Kafka/PostgreSQL networking were inspected directly.
+- 2026-09-01: No M3 Proxmox snapshot was created. The durable thin-pool safety rule remains in force.
 
 - 2026-09-01: Completed and deployed M2 on VM 214. `scripts/verify_m2.py` passed with tape depths `60,60,30,0,60`, one deduplicated delivery, 52 m maximum uncertainty, safe contingency at mission tick 60, three discarded stale segments, bridge target 9, and final `rejoined` state.
 - 2026-09-01: All Go package tests passed for monotonic clock, tape hashes/signatures/lifecycle/expiry, bundle immutability/hop limits/deduplication, mesh partition routing, PNT spoof exclusion, engine stale-state/idempotency behavior, and M1 regressions. Frontend typecheck, Vitest, and production build passed.
@@ -278,6 +286,7 @@ When sources conflict, use this order:
 
 ## Completed Work
 
+- 2026-09-01: Completed M3 contracts, one-image multi-role topology, pinned Kafka/PostgreSQL stack, 1,000+ vessel producer, bounded outbox, three supervised consumers, set-based ingestion, idempotent projections, deterministic duplicate/out-of-order/quarantine faults, actual lag and process metrics, signed worker kill/recovery, redrive, Kafka shadow replay, pgvector fixture retrieval, Prometheus endpoint, live Cutaway UI, verifier/evidence, Kubernetes production shape, and expanded CI.
 - 2026-09-01: Completed M2 contracts, deterministic runtime packages, APIs/WebSocket events, map overlays, operator drill, shared fixtures, verifier, browser coverage, Compose deployment, and documentation. No Proxmox snapshot was created.
 - 2026-09-01: Completed M0 naming, repository, VM/application identity migration, healthy renamed container, initial private GitHub push, baseline CI definition, and Proxmox snapshot.
 - 2026-09-01: Created the initial comprehensive `PRD.md`, including source alignment, traceability, UX, planner, guardrails, cutaway, scale, resilience, stack, MCP contract, data contracts, evaluations, priorities, and acceptance criteria.
@@ -288,7 +297,7 @@ When sources conflict, use this order:
 - Replace the ephemeral Cloudflare Quick Tunnel with a named tunnel and stable hostname after the Cloudflare account/domain choice is available.
 - Validate the available local model/STT/TTS runtimes and benchmark hardware before selecting exact models.
 - Add formal JSON Schema files for M2 peer-bundle, tape, and PNT contracts if needed beyond the shared Go/TypeScript fixture tests.
-- Implement the P0 vertical slice before adding MLflow, Dagster, Kubernetes, or broad eval coverage.
+- Implement M4 bounded AI assistance: Python agents, scoped MCP tools, cited RAG, eval/promotion workflow, provider failover, STT/TTS, and optional local inference. Keep it outside the safety-critical execution boundary.
 
 ## Do Not Forget
 

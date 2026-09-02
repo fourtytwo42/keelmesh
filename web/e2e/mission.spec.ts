@@ -51,3 +51,14 @@ test("resilient edge drill relays, holds, and bridges without stale replay", asy
   await expect(drill.getByText("rejoined", { exact: true })).toBeVisible();
   await expect(drill.getByText(/operator → vessel-03 → vessel-04/)).toBeVisible();
 });
+
+test("live cutaway exposes measured scale-plane state", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Cutaway" }).click();
+  const cutaway = page.getByRole("region", { name: "Live infrastructure cutaway" });
+  await expect(cutaway.getByRole("heading", { name: "The system, peeled open" })).toBeVisible();
+  await expect(cutaway.getByText("Kafka KRaft")).toBeVisible();
+  await expect(cutaway.getByText("PostgreSQL + pgvector")).toBeVisible();
+  await expect(cutaway.getByText("worker-2", { exact: true })).toBeVisible();
+  await expect(cutaway.getByText("ISOLATED FROM SCALE PLANE")).toBeVisible();
+});

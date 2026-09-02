@@ -75,3 +75,46 @@ jobs:
       - name: Show service logs on failure
         if: failure()
         run: docker logs keelmesh-ci || true
+
+  scale-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate Compose
+        run: docker compose config --quiet
+
+      - name: Render production-shape manifests
+        run: |
+          docker run --rm -v "$PWD":/work registry.k8s.io/kustomize/kustomize:v5.7.1 build /work/deploy/kubernetes/base >/tmp/keelmesh-base.yaml
+          docker run --rm -v "$PWD":/work registry.k8s.io/kustomize/kustomize:v5.7.1 build /work/deploy/kubernetes/aws >/tmp/keelmesh-aws.yaml
+          test "$(grep -c 'kind: Deployment' /tmp/keelmesh-base.yaml)" -eq 4
+          test "$(grep -c 'kind: Deployment' /tmp/keelmesh-aws.yaml)" -eq 4
+
+      - name: Start measured scale appliance
+        run: |
+          docker compose up --detach --build
+          for attempt in {1..60}; do
+            workers=$(curl --silent http://127.0.0.1:8080/api/v1/platform | python3 -c 'import json,sys; print(len([w for w in json.load(sys.stdin).get("workers",[]) if w["state"]=="running"]))' 2>/dev/null || echo 0)
+            test "$workers" -eq 3 && break
+            sleep 2
+          done
+          test "$workers" -eq 3
+
+      - name: Verify M3 failure, recovery, quarantine, and replay
+        run: python3 scripts/verify_m3.py http://127.0.0.1:8080 --json m3-evidence.json --markdown m3-evidence.md
+
+      - name: Upload M3 evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: m3-evidence
+          path: |
+            m3-evidence.json
+            m3-evidence.md
+          if-no-files-found: ignore
+
+      - name: Show scale service logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=200
