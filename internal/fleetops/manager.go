@@ -157,7 +157,10 @@ func (m *Manager) seed() {
 			id := fmt.Sprintf("00000000-0000-6000-8000-%012d", idx+1)
 			members = append(members, id)
 			class := classFor(slot)
-			p := domain.GeoPointV2{centers[g][0] + float64(slot%3-1)*.008, centers[g][1] + float64(slot/3)*.007}
+			// Keep all six members legible at the default regional zoom. These are
+			// real simulated positions, not screen-space offsets, so selection,
+			// routing, and distance calculations all agree with the map.
+			p := domain.GeoPointV2{centers[g][0] + float64(slot%3-1)*.022, centers[g][1] + float64(slot/3)*.028}
 			env := environmentAt(p, float64(idx))
 			m.vessels[id] = domain.VesselProfileV2{SchemaVersion: 2, ID: id, Designation: fmt.Sprintf("KM-%03d", 214+idx), Callsign: callsigns[idx], DisplayName: fmt.Sprintf("%s (KM-%03d)", callsigns[idx], 214+idx), Class: class, GroupID: gid, GroupCode: groupCodes[g], GroupColor: groupColors[g], GroupPattern: patterns[g], Available: true, Telemetry: domain.VesselTelemetryV2{Position: p, HeadingDeg: float64((idx * 37) % 360), SpeedMPS: .4 + float64(idx%5)*.11, Reserve: .96 - float64(idx%9)*.025, ProjectedReserve: .89 - float64(idx%9)*.025, Mode: "patrol", Health: "nominal", PNTIntegrity: "trusted", UncertaintyM: 4 + float64(idx%5), TapeDepthSeconds: 60, Environment: env}}
 		}

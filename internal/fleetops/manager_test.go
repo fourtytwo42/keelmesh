@@ -2,6 +2,7 @@ package fleetops
 
 import (
 	"log/slog"
+	"math"
 	"testing"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
@@ -20,6 +21,22 @@ func TestSeededFleetHasStableClassMix(t *testing.T) {
 		}
 		if counts["kestrel"] != 3 || counts["mariner"] != 2 || counts["atlas"] != 1 {
 			t.Fatalf("group %s class mix: %#v", g.ID, counts)
+		}
+	}
+}
+
+func TestSeededGroupsUseReadableRealWorldSpacing(t *testing.T) {
+	m := New("", slog.Default())
+	for _, group := range m.Snapshot().Groups {
+		for i, leftID := range group.MemberIDs {
+			left := m.vessels[leftID].Telemetry.Position
+			for _, rightID := range group.MemberIDs[i+1:] {
+				right := m.vessels[rightID].Telemetry.Position
+				delta := math.Hypot(left[0]-right[0], left[1]-right[1])
+				if delta < .021 {
+					t.Fatalf("group %s vessels %s and %s overlap at regional zoom: %.4f degrees", group.ID, leftID, rightID, delta)
+				}
+			}
 		}
 	}
 }

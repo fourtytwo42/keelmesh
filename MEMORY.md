@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: native environmental layers were added to the restored offline map: animated current and wind vectors driven by the M6 environment fixture plus NOAA ETOPO 2022 depth contours. All three are independently toggleable and no second raster map is overlaid.
+- Last meaningful change: the fleet map now renders every member of each six-vessel group independently. Seeded formations use readable real simulated spacing, MapLibre labels may deconflict without suppressing their corresponding hull icons, and Kestrel/Mariner/Atlas use depth-aware transparent 2.5D sprites.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -322,6 +322,14 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Six-vessel rendering and 2.5D hull sprites
+
+- Context: MapLibre coupled each vessel icon to its colliding callsign label, so only one hull remained visible in dense six-vessel groups; the original sprites also read flat when the map was pitched.
+- Decision: Set `text-optional` so labels can deconflict without hiding icons, widen each seeded two-row formation using real simulated coordinates, reduce the visual dominance of group rings, and use generated transparent depth-aware sprites for Kestrel, Mariner, and Atlas while retaining original source sprites.
+- Files: `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, `web/src/OperationsMap.tsx`, and `web/public/assets/vessels/*-2p5d.png`.
+- Commands/tests: local TypeScript typecheck, seven Vitest assertions, Vite production build; VM 214 full Go suite; seven Playwright workflows; deployed browser visual inspection at overview and pitched zoom with zero console errors.
+- Result: Six distinct hulls render per operational group, all 48 vessels remain selectable, and all twelve vessel VMs run healthy binary SHA-256 `6f840d47f9a706378a9571fa2d8844bae56ba409d72b67744282c9eecdecbb0b`. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - Native environmental map layers
 
