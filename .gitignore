@@ -16,6 +16,10 @@ web/*.config.js
 web/*.config.d.ts
 __pycache__/
 *.pyc
+ai/.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
 
 .keelmesh-data/
 evidence/

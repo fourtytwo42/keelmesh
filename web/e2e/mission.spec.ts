@@ -62,3 +62,31 @@ test("live cutaway exposes measured scale-plane state", async ({ page }) => {
   await expect(cutaway.getByText("worker-2", { exact: true })).toBeVisible();
   await expect(cutaway.getByText("ISOLATED FROM SCALE PLANE")).toBeVisible();
 });
+
+test("autonomy engineer promotes an incident through exact-hash evaluation", async ({ page }) => {
+  test.setTimeout(60_000);
+  const before = await (await page.request.get("/api/v1/ai")).json();
+  const resetID = `e2e-ai-reset-${Date.now()}`;
+  await page.request.post("/api/v1/scenarios/ai-tooling:reset", { data: { request_id: resetID, idempotency_key: resetID, expected_ai_state_version: before.state_version } });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Engineer" }).click();
+  const workspace = page.getByRole("region", { name: "Autonomy engineer workspace" });
+  await expect(workspace.getByText("INCIDENT → EVALUATION")).toBeVisible();
+  await expect(workspace.getByText(/ranked free models/)).toBeVisible();
+  const primary = workspace.locator(".engineer-action button");
+  await expect(primary).toHaveText("Investigate incident");
+  await primary.click();
+  await expect(primary).toHaveText("Run isolated replay", { timeout: 35_000 });
+  await expect(workspace.locator(".tool-grid > div")).toHaveCount(8);
+  await primary.click();
+  await expect(primary).toHaveText("Approve exact candidate hash");
+  await primary.click();
+  await expect(workspace.locator(".candidate > b")).toHaveText("approved");
+  await expect(primary).toHaveText("Run versioned regression");
+  await primary.click();
+  const results = workspace.locator(".eval-results > div");
+  await expect(results.filter({ hasText: "mock" })).toContainText("11 pass · 0 skip · 0 fail", { timeout: 30_000 });
+  await expect(results.filter({ hasText: "openrouter" })).toContainText(/(passed|skipped|failed)/);
+  await expect(results.filter({ hasText: "openrouter" })).toContainText(/\d+ pass · \d+ skip · \d+ fail/);
+  await expect(workspace.getByText("incident.investigate")).toBeVisible();
+});

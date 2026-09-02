@@ -20,6 +20,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Configure secretless CI fallback
+        run: |
+          install -m 600 /dev/null /tmp/keelmesh-openrouter-key
+          echo "OPENROUTER_API_KEY_FILE=/tmp/keelmesh-openrouter-key" >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -82,6 +87,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Configure secretless CI fallback
+        run: |
+          install -m 600 /dev/null /tmp/keelmesh-openrouter-key
+          echo "OPENROUTER_API_KEY_FILE=/tmp/keelmesh-openrouter-key" >> "$GITHUB_ENV"
+
       - name: Validate Compose
         run: docker compose config --quiet
 
@@ -89,8 +99,8 @@ jobs:
         run: |
           docker run --rm -v "$PWD":/work registry.k8s.io/kustomize/kustomize:v5.7.1 build /work/deploy/kubernetes/base >/tmp/keelmesh-base.yaml
           docker run --rm -v "$PWD":/work registry.k8s.io/kustomize/kustomize:v5.7.1 build /work/deploy/kubernetes/aws >/tmp/keelmesh-aws.yaml
-          test "$(grep -c 'kind: Deployment' /tmp/keelmesh-base.yaml)" -eq 4
-          test "$(grep -c 'kind: Deployment' /tmp/keelmesh-aws.yaml)" -eq 4
+          test "$(grep -c 'kind: Deployment' /tmp/keelmesh-base.yaml)" -eq 5
+          test "$(grep -c 'kind: Deployment' /tmp/keelmesh-aws.yaml)" -eq 5
 
       - name: Start measured scale appliance
         run: |
@@ -116,7 +126,22 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
-          npm run test:e2e -- --grep "live cutaway"
+          npm run test:e2e -- --grep "live cutaway|autonomy engineer"
+
+      - name: Verify Python AI package
+        uses: astral-sh/setup-uv@v7
+
+      - name: Run Python AI gates
+        working-directory: ai
+        run: |
+          uv sync --frozen
+          uv run ruff check .
+          uv run mypy keelmesh_ai
+          uv run pytest
+          uv run bandit -q -r keelmesh_ai
+
+      - name: Verify M4 MCP, replay, approval, eval, and trace workflow
+        run: python3 scripts/verify_m4.py http://127.0.0.1:8080 --json m4-evidence.json --markdown m4-evidence.md
 
       - name: Upload M3 evidence
         if: always()
@@ -126,6 +151,8 @@ jobs:
           path: |
             m3-evidence.json
             m3-evidence.md
+            m4-evidence.json
+            m4-evidence.md
           if-no-files-found: ignore
 
       - name: Show scale service logs on failure

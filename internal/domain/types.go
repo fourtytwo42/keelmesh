@@ -162,6 +162,7 @@ type StreamMessageV1 struct {
 	Audit         *AuditEventV1         `json:"audit,omitempty"`
 	Resilience    *ResilienceSnapshotV1 `json:"resilience,omitempty"`
 	Platform      *PlatformSnapshotV1   `json:"platform,omitempty"`
+	AI            *AgentSnapshotV1      `json:"ai,omitempty"`
 }
 
 type BootstrapV1 struct {

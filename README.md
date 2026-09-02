@@ -63,6 +63,30 @@ Only port 8080 is published. Kafka, PostgreSQL, workers, and control traffic sta
 on the private Compose network. M1/M2 continue in degraded mode if M3 services
 are unavailable. Measurements apply only to the recorded VM and workload.
 
+## M4 AI infrastructure and autonomy tooling
+
+Switch to **Engineer** to turn the deterministic Vessel 4 incident into a
+human-approved evaluation. A separate non-root Python service collects bounded
+evidence through the official MCP Streamable HTTP boundary, retrieves cited
+runbooks and historical fixtures, verifies an isolated replay, and drafts an
+immutable candidate. Only `demo-engineer` can approve the exact candidate hash.
+
+Cloud inference uses an adaptive OpenRouter free-model pool with per-model
+cooldowns, followed by an optional local OpenAI-compatible endpoint and the
+mandatory deterministic mock. Provider failure never affects mission authority.
+
+```bash
+sudo install -m 600 /dev/null /etc/keelmesh/secrets/openrouter_api_key
+# Put the runtime-only OpenRouter key in that file, then:
+docker compose up -d --build
+python3 scripts/verify_m4.py http://localhost:8080 \
+  --json evidence/m4.json --markdown evidence/m4.md
+```
+
+Only port 8080 remains published. The Python API, MCP server, generated
+capability tokens, provider credential, Kafka, and PostgreSQL stay private.
+CI uses an empty provider secret and proves the same workflow through mock.
+
 See `infrastructure/README.md` for the reproducible VM and host setup. Never
 commit passwords, private keys, provider tokens, GitHub credentials, Cloudflare
 credentials, or model secrets.

@@ -41,6 +41,24 @@ CREATE TABLE IF NOT EXISTS trace_stages (event_id text NOT NULL, stage text NOT 
 CREATE TABLE IF NOT EXISTS replay_runs (id text PRIMARY KEY, source_run_id text NOT NULL, state text NOT NULL, live_count bigint NOT NULL DEFAULT 0, shadow_count bigint NOT NULL DEFAULT 0, live_checksum text NOT NULL DEFAULT '', shadow_checksum text NOT NULL DEFAULT '', matches boolean NOT NULL DEFAULT false, started_at timestamptz NOT NULL DEFAULT now(), completed_at timestamptz);
 CREATE TABLE IF NOT EXISTS vessel_latest_shadow (replay_id text NOT NULL, vessel_id text NOT NULL, sequence bigint NOT NULL, event_id text NOT NULL, payload jsonb NOT NULL, PRIMARY KEY(replay_id,vessel_id));
 CREATE TABLE IF NOT EXISTS incidents (id text PRIMARY KEY, title text NOT NULL, summary text NOT NULL, provenance text NOT NULL, fixture boolean NOT NULL DEFAULT true, embedding vector(384) NOT NULL);
+
+-- M4 bounded AI infrastructure. Mission authority has no dependency on these tables.
+CREATE TABLE IF NOT EXISTS ai_state (singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton), state_version bigint NOT NULL DEFAULT 1, updated_at timestamptz NOT NULL DEFAULT now());
+INSERT INTO ai_state(singleton) VALUES(true) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS incident_manifests (id text PRIMARY KEY, manifest jsonb NOT NULL, state_checksum text NOT NULL, build_commit text NOT NULL, fixture boolean NOT NULL, captured_at timestamptz NOT NULL);
+CREATE TABLE IF NOT EXISTS retrieval_documents (id text PRIMARY KEY, revision int NOT NULL, title text NOT NULL, body text NOT NULL, trust_label text NOT NULL, checksum text NOT NULL, provenance text NOT NULL, approved boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS retrieval_chunks (id text PRIMARY KEY, document_id text NOT NULL REFERENCES retrieval_documents(id), section text NOT NULL, content text NOT NULL, token_count int NOT NULL, embedding vector(384) NOT NULL, search tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED);
+CREATE INDEX IF NOT EXISTS retrieval_chunks_embedding_idx ON retrieval_chunks USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS retrieval_chunks_search_idx ON retrieval_chunks USING gin(search);
+CREATE TABLE IF NOT EXISTS investigations (id text PRIMARY KEY, incident_id text NOT NULL, state text NOT NULL, trace_id text NOT NULL, payload jsonb NOT NULL, started_at timestamptz NOT NULL, completed_at timestamptz);
+CREATE TABLE IF NOT EXISTS tool_receipts (id text PRIMARY KEY, investigation_id text NOT NULL, tool_name text NOT NULL, result_hash text NOT NULL, receipt jsonb NOT NULL, created_at timestamptz NOT NULL);
+CREATE TABLE IF NOT EXISTS provider_attempts (id bigserial PRIMARY KEY, investigation_id text NOT NULL, provider text NOT NULL, model text NOT NULL, state text NOT NULL, latency_ms bigint NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS replay_results (investigation_id text PRIMARY KEY, result jsonb NOT NULL, expected_checksum text NOT NULL, actual_checksum text NOT NULL, matches boolean NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS eval_candidates (id text PRIMARY KEY, investigation_id text NOT NULL, version int NOT NULL, candidate_hash text NOT NULL UNIQUE, state text NOT NULL, payload jsonb NOT NULL, approved_by text, approved_at timestamptz);
+CREATE TABLE IF NOT EXISTS eval_runs (id text PRIMARY KEY, candidate_id text NOT NULL, suite_version text NOT NULL, state text NOT NULL, payload jsonb NOT NULL, started_at timestamptz NOT NULL, completed_at timestamptz);
+CREATE TABLE IF NOT EXISTS otel_spans (trace_id text NOT NULL, span_id text NOT NULL, parent_span_id text NOT NULL DEFAULT '', service text NOT NULL, name text NOT NULL, state text NOT NULL, started_at timestamptz NOT NULL, duration_ms double precision NOT NULL, attributes jsonb NOT NULL DEFAULT '{}', PRIMARY KEY(trace_id,span_id));
+CREATE INDEX IF NOT EXISTS otel_spans_started_idx ON otel_spans(started_at);
+CREATE TABLE IF NOT EXISTS ai_security_events (id bigserial PRIMARY KEY, kind text NOT NULL, reason text NOT NULL, trace_id text NOT NULL DEFAULT '', created_at timestamptz NOT NULL DEFAULT now());
 INSERT INTO incidents(id,title,summary,provenance,fixture,embedding) VALUES
 ('fixture-worker-rebalance','Consumer worker loss and cooperative recovery','A consumer child exited; partitions were reassigned and lag recovered after supervised restart.','deterministic M3 fixture',true,array_prepend(1::real,array_fill(0::real,ARRAY[383]))::vector),
 ('fixture-pnt-spoof','GNSS spoof rejected at the edge','A large GNSS jump was excluded while fused uncertainty increased and the vessel entered safe hold.','deterministic M2 fixture',true,array_prepend(0::real,array_prepend(1::real,array_fill(0::real,ARRAY[382])))::vector)

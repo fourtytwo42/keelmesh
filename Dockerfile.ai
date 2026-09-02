@@ -1,0 +1,15 @@
+FROM python:3.13.7-slim AS build
+RUN pip install --no-cache-dir uv==0.8.22
+WORKDIR /app
+COPY ai/pyproject.toml ai/uv.lock ./
+RUN uv sync --frozen --no-dev
+COPY ai/keelmesh_ai ./keelmesh_ai
+
+FROM python:3.13.7-slim
+RUN useradd --system --uid 10001 --create-home keelmesh
+WORKDIR /app
+COPY --from=build /app /app
+ENV PATH="/app/.venv/bin:$PATH" PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+USER 10001
+EXPOSE 8090
+CMD ["uvicorn", "keelmesh_ai.service:app", "--host", "0.0.0.0", "--port", "8090", "--no-access-log"]

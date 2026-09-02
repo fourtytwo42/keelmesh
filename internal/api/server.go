@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/fourtytwo42/keelmesh/internal/agent"
 	"github.com/fourtytwo42/keelmesh/internal/core"
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 	"github.com/fourtytwo42/keelmesh/internal/platform"
@@ -26,15 +27,22 @@ type Server struct {
 	web            fs.FS
 	startedAt      time.Time
 	platform       *platform.Manager
+	agent          *agent.Manager
 	metricsHandler http.Handler
 }
 
-func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...*platform.Manager) *Server {
+func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...any) *Server {
 	var manager *platform.Manager
-	if len(managers) > 0 {
-		manager = managers[0]
+	var agentManager *agent.Manager
+	for _, value := range managers {
+		switch typed := value.(type) {
+		case *platform.Manager:
+			manager = typed
+		case *agent.Manager:
+			agentManager = typed
+		}
 	}
-	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager}
+	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager, agent: agentManager}
 	if manager != nil {
 		registry := prometheus.NewRegistry()
 		gauges := []struct {
@@ -77,12 +85,25 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/retrieval/similar", s.retrieval)
 	mux.HandleFunc("GET /api/v1/evidence/{run_id}", s.evidence)
 	mux.HandleFunc("POST /api/v1/scenarios/scale-lab:reset", s.resetPlatform)
+	mux.HandleFunc("GET /api/v1/ai", s.aiSnapshot)
+	mux.HandleFunc("GET /api/v1/incidents", s.incidents)
+	mux.HandleFunc("GET /api/v1/incidents/{id}", s.incident)
+	mux.HandleFunc("POST /api/v1/incidents/{action}", s.incidentAction)
+	mux.HandleFunc("GET /api/v1/investigations/{id}", s.investigation)
+	mux.HandleFunc("POST /api/v1/investigations/{action}", s.investigationAction)
+	mux.HandleFunc("POST /api/v1/eval-candidates/{action}", s.candidateAction)
+	mux.HandleFunc("POST /api/v1/evaluations/runs", s.startEvaluation)
+	mux.HandleFunc("GET /api/v1/evaluations/runs/{id}", s.evaluation)
+	mux.HandleFunc("POST /api/v1/ai/faults", s.aiFault)
+	mux.HandleFunc("GET /api/v1/traces/{trace_id}", s.trace)
+	mux.HandleFunc("GET /api/v1/evidence/ai/{run_id}", s.aiEvidence)
+	mux.HandleFunc("POST /api/v1/scenarios/ai-tooling:reset", s.resetAI)
 	mux.Handle("GET /", spaHandler(s.web))
 	return requestLog(s.logger, mux)
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m3", "started_at": s.startedAt.Format(time.RFC3339)})
+	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m4", "started_at": s.startedAt.Format(time.RFC3339)})
 }
 func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
@@ -198,6 +219,12 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		platformCh, unsubscribePlatform = s.platform.Subscribe()
 		defer unsubscribePlatform()
 	}
+	var aiCh <-chan domain.AgentSnapshotV1
+	var unsubscribeAI func()
+	if s.agent != nil {
+		aiCh, unsubscribeAI = s.agent.Subscribe()
+		defer unsubscribeAI()
+	}
 	initial := domain.StreamMessageV1{SchemaVersion: domain.SchemaVersion, Kind: "fleet.snapshot", Snapshot: ptr(s.engine.Snapshot())}
 	if err := wsjson.Write(ctx, c, initial); err != nil {
 		return
@@ -227,8 +254,134 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
+		case snapshot, ok := <-aiCh:
+			if !ok {
+				aiCh = nil
+				continue
+			}
+			writeCtx, stop := context.WithTimeout(ctx, 2*time.Second)
+			err := wsjson.Write(writeCtx, c, domain.StreamMessageV1{SchemaVersion: 1, Kind: "ai.snapshot", AI: &snapshot})
+			stop()
+			if err != nil {
+				return
+			}
 		}
 	}
+}
+
+func (s *Server) aiSnapshot(w http.ResponseWriter, _ *http.Request) {
+	if s.agent == nil {
+		writeJSON(w, http.StatusServiceUnavailable, domain.APIError{Code: "AI_UNAVAILABLE", Message: "AI tooling is disabled."})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.agent.Snapshot())
+}
+func (s *Server) incidents(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"incidents": s.agent.Incidents()})
+}
+func (s *Server) incident(w http.ResponseWriter, r *http.Request) {
+	v, err := s.agent.Incident(r.PathValue("id"))
+	respondAgent(w, v, err, http.StatusOK)
+}
+func (s *Server) incidentAction(w http.ResponseWriter, r *http.Request) {
+	id, ok := strings.CutSuffix(r.PathValue("action"), ":investigate")
+	if !ok {
+		writeJSON(w, http.StatusNotFound, domain.APIError{Code: "NOT_FOUND", Message: "Unknown incident action."})
+		return
+	}
+	var req domain.InvestigateRequestV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.agent.Investigate(r.Context(), id, req)
+	respondAgent(w, v, err, http.StatusCreated)
+}
+func (s *Server) investigation(w http.ResponseWriter, r *http.Request) {
+	v, err := s.agent.Investigation(r.PathValue("id"))
+	respondAgent(w, v, err, http.StatusOK)
+}
+func (s *Server) investigationAction(w http.ResponseWriter, r *http.Request) {
+	id, ok := strings.CutSuffix(r.PathValue("action"), ":replay")
+	if !ok {
+		writeJSON(w, http.StatusNotFound, domain.APIError{Code: "NOT_FOUND", Message: "Unknown investigation action."})
+		return
+	}
+	var req domain.ReplayRequestV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.agent.Replay(r.Context(), id, req)
+	respondAgent(w, v, err, http.StatusOK)
+}
+func (s *Server) candidateAction(w http.ResponseWriter, r *http.Request) {
+	id, ok := strings.CutSuffix(r.PathValue("action"), ":approve")
+	if !ok {
+		writeJSON(w, http.StatusNotFound, domain.APIError{Code: "NOT_FOUND", Message: "Unknown candidate action."})
+		return
+	}
+	var req domain.ApproveEvalCandidateRequestV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.agent.Approve(r.Context(), id, req)
+	respondAgent(w, v, err, http.StatusOK)
+}
+func (s *Server) startEvaluation(w http.ResponseWriter, r *http.Request) {
+	var req domain.StartEvalRunRequestV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.agent.StartEvaluation(r.Context(), req)
+	respondAgent(w, v, err, http.StatusCreated)
+}
+func (s *Server) evaluation(w http.ResponseWriter, r *http.Request) {
+	v, err := s.agent.Evaluation(r.PathValue("id"))
+	respondAgent(w, v, err, http.StatusOK)
+}
+func (s *Server) aiFault(w http.ResponseWriter, r *http.Request) {
+	var req domain.AIFaultCommandV1
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.agent.Fault(r.Context(), req)
+	respondAgent(w, v, err, http.StatusAccepted)
+}
+func (s *Server) trace(w http.ResponseWriter, r *http.Request) {
+	v, err := s.agent.Trace(r.PathValue("trace_id"))
+	respondAgent(w, v, err, http.StatusOK)
+}
+func (s *Server) aiEvidence(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.agent.Evidence(r.PathValue("run_id")))
+}
+func (s *Server) resetAI(w http.ResponseWriter, r *http.Request) {
+	var req domain.AIMutationV1
+	if !decode(w, r, &req) {
+		return
+	}
+	err := s.agent.Reset(req)
+	respondAgent(w, map[string]string{"status": "reset"}, err, http.StatusOK)
+}
+func respondAgent(w http.ResponseWriter, v any, err error, success int) {
+	if err == nil {
+		writeJSON(w, success, v)
+		return
+	}
+	var ae *agent.Error
+	if errors.As(err, &ae) {
+		status := http.StatusUnprocessableEntity
+		if ae.Code == "AI_STALE_STATE" || ae.Code == "FAULT_CONFLICT" || ae.Code == "EVAL_HASH_MISMATCH" {
+			status = http.StatusConflict
+		}
+		if ae.Code == "AI_UNAVAILABLE" {
+			status = http.StatusServiceUnavailable
+		}
+		if ae.Code == "INCIDENT_NOT_FOUND" {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, domain.APIError{Code: ae.Code, Message: ae.Message})
+		return
+	}
+	writeJSON(w, http.StatusInternalServerError, domain.APIError{Code: "INTERNAL", Message: "AI workflow failed."})
 }
 
 func (s *Server) platformSnapshot(w http.ResponseWriter, _ *http.Request) {

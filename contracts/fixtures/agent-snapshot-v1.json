@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "state_version": 4,
+  "available": true,
+  "phase": "awaiting_review",
+  "provider": {
+    "mode": "connected",
+    "selected": "mock:keelmesh-deterministic-v1",
+    "models": ["minimax/minimax-m3:free", "openrouter/free"],
+    "attempts": [],
+    "circuit_open": [],
+    "local_enabled": false,
+    "cloud_enabled": false
+  },
+  "incidents": [{
+    "schema_version": 1,
+    "id": "incident-vessel4-resilient-edge",
+    "title": "Vessel 4 degraded-link and GNSS anomaly",
+    "summary": "Fixture incident",
+    "scenario_seed": 42042,
+    "fault_schedule": ["partition@35", "gnss_spoof@52"],
+    "evidence": [{"id":"ev-spoof","kind":"pnt","source_id":"m2-pnt-650m","summary":"GNSS excluded","trust":"sensor_fused","tick":52}],
+    "state_checksum": "sha256:fixture",
+    "build_commit": "fixture",
+    "fixture": true,
+    "classification": "simulation_non_sensitive",
+    "captured_at": "2026-09-01T15:00:00Z"
+  }],
+  "security_denials": 1,
+  "summary": "Exact evaluation candidate awaits human approval."
+}

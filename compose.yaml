@@ -45,19 +45,23 @@ services:
     build: &app-build
       context: .
       dockerfile: Dockerfile
-    image: keelmesh/core:m3
+    image: keelmesh/core:m4
     command: ["--role", "migrate"]
     environment: &app-env
       KEELMESH_DATABASE_URL: postgres://keelmesh:keelmesh@postgres:5432/keelmesh?sslmode=disable
       KEELMESH_KAFKA_BROKERS: kafka:9092
       KEELMESH_CONTROL_SECRET: local-m3-signed-control
+      KEELMESH_AI_URL: http://ai:8090
+      KEELMESH_CORE_AI_TOKEN_FILE: /run/keelmesh-auth/core-ai/token
+      KEELMESH_MCP_INVESTIGATOR_TOKEN_FILE: /run/keelmesh-auth/investigator/token
+      KEELMESH_MCP_SEEDER_TOKEN_FILE: /run/keelmesh-auth/seeder/token
     depends_on:
       postgres:
         condition: service_healthy
     restart: "no"
 
   topic-init:
-    image: keelmesh/core:m3
+    image: keelmesh/core:m4
     command: ["--role", "topic-init"]
     environment: *app-env
     depends_on:
@@ -74,9 +78,32 @@ services:
       - loadgen-data:/data
     restart: "no"
 
+  ai-auth-init:
+    image: alpine:3.22
+    command:
+      - sh
+      - -euc
+      - |
+        umask 077
+        test -s /investigator/token || head -c 32 /dev/urandom | base64 > /investigator/token
+        test -s /seeder/token || head -c 32 /dev/urandom | base64 > /seeder/token
+        test -s /core-ai/token || head -c 32 /dev/urandom | base64 > /core-ai/token
+        cp /run/secrets/openrouter_api_key /openrouter/token
+        chmod 0444 /investigator/token /seeder/token /core-ai/token
+        chown 10001:10001 /openrouter/token
+        chmod 0400 /openrouter/token
+    volumes:
+      - mcp-investigator-token:/investigator
+      - mcp-seeder-token:/seeder
+      - core-ai-token:/core-ai
+      - openrouter-runtime:/openrouter
+    secrets:
+      - openrouter_api_key
+    restart: "no"
+
   core:
     build: *app-build
-    image: keelmesh/core:m3
+    image: keelmesh/core:m4
     restart: unless-stopped
     environment: *app-env
     depends_on:
@@ -84,6 +111,12 @@ services:
         condition: service_completed_successfully
       topic-init:
         condition: service_completed_successfully
+      ai-auth-init:
+        condition: service_completed_successfully
+    volumes:
+      - core-ai-token:/run/keelmesh-auth/core-ai:ro
+      - mcp-investigator-token:/run/keelmesh-auth/investigator:ro
+      - mcp-seeder-token:/run/keelmesh-auth/seeder:ro
     ports:
       - "${KEELMESH_PORT:-8080}:8080"
     healthcheck:
@@ -94,7 +127,7 @@ services:
       start_period: 5s
 
   loadgen:
-    image: keelmesh/core:m3
+    image: keelmesh/core:m4
     command: ["--role", "loadgen"]
     environment: *app-env
     volumes:
@@ -107,7 +140,7 @@ services:
     restart: unless-stopped
 
   worker-1: &worker
-    image: keelmesh/core:m3
+    image: keelmesh/core:m4
     command: ["--role", "worker-supervisor"]
     environment:
       <<: *app-env
@@ -129,7 +162,60 @@ services:
       <<: *app-env
       KEELMESH_WORKER_ID: worker-3
 
+  ai-index:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai
+    image: keelmesh/ai:m4
+    command: ["python", "-m", "keelmesh_ai.index"]
+    depends_on:
+      ai-auth-init:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+    restart: "no"
+
+  ai:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai
+    image: keelmesh/ai:m4
+    restart: unless-stopped
+    environment:
+      OPENROUTER_API_KEY_FILE: /run/keelmesh-auth/openrouter/token
+      KEELMESH_CORE_AI_TOKEN_FILE: /run/keelmesh-auth/core-ai/token
+      KEELMESH_MCP_INVESTIGATOR_TOKEN_FILE: /run/keelmesh-auth/investigator/token
+      KEELMESH_MCP_URL: http://core:8081/mcp
+      KEELMESH_LOCAL_BASE_URL: ${KEELMESH_LOCAL_BASE_URL:-}
+      KEELMESH_LOCAL_MODEL: ${KEELMESH_LOCAL_MODEL:-}
+    volumes:
+      - core-ai-token:/run/keelmesh-auth/core-ai:ro
+      - mcp-investigator-token:/run/keelmesh-auth/investigator:ro
+      - openrouter-runtime:/run/keelmesh-auth/openrouter:ro
+    depends_on:
+      core:
+        condition: service_healthy
+      ai-index:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 volumes:
   postgres-data:
   kafka-data:
   loadgen-data:
+  mcp-investigator-token:
+  mcp-seeder-token:
+  core-ai-token:
+  openrouter-runtime:
+
+secrets:
+  openrouter_api_key:
+    file: ${OPENROUTER_API_KEY_FILE:-/etc/keelmesh/secrets/openrouter_api_key}

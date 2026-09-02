@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: M3 Infrastructure at Scale is implemented, deployed, measured, and verified by clean GitHub CI.
-- Last meaningful change: the release evidence run proved exact event accounting, real worker termination/rebalance/recovery, quarantine redrive, pgvector retrieval, and Kafka earliest-offset shadow replay on VM 214.
-- Next step: rehearse the Operator → Resilience → Cutaway interview walkthrough; M4 AI/voice/tooling remains separate.
+- Current task: Finalize and deliver the implemented M4 AI Infrastructure and Autonomy Tooling slice on VM 214.
+- Last meaningful change: The full Engineer workflow passed in the browser with a private real MCP boundary, Python agent, adaptive OpenRouter/local/mock routing, deterministic replay, exact-hash human approval, and observed provider regression outcomes.
+- Next step: commit and push M4, confirm GitHub Actions, then rehearse the live three-view demo.
 - Blockers: None.
 
 ## Current State
@@ -17,6 +17,7 @@ Durable project context lives here. Update this file whenever information should
 - `PRD.md` is the product source of truth. The M1 React/TypeScript/MapLibre interface and deterministic Go mission authority are embedded in one offline Compose appliance running on VM 214.
 - M2 is live in the same appliance. It adds a mission-relative clock, six signed 10-second tape segments per vessel, authenticated/deduplicated peer bundles, deterministic Starlink/HaLow faults, PNT evidence arbitration, bounded safe hold, and stale-safe bridge rejoin.
 - M3 is live in the same appliance as a degraded-optional scale plane: Apache Kafka KRaft, PostgreSQL/pgvector with eight telemetry hash partitions, deterministic load generation, three supervised real consumer children, bounded bbolt producer outbox, quarantine/redrive, actual Kafka lag, Prometheus metrics, earliest-offset shadow replay, pgvector fixture retrieval, and an Operator/Cutaway UI. Only port 8080 is exposed.
+- M4 is live as a degraded-optional AI plane. A private Go Streamable HTTP MCP server exposes ten allow-listed evidence/replay/draft tools to a non-root Python agent; the Engineer UI shows actual tool receipts, citations, provider attempts, isolated replay, immutable candidate hash, human approval, provider regression results, and trace timing. OpenRouter uses a rotating ranked pool of free models, then optional local and deterministic mock fallbacks. Mission authority and M1–M3 remain independent of AI health.
 - `IMPLEMENTATION_PLAN.md` is the Friday delivery plan. It sequences the work as visible vertical slices with acceptance gates, a three-day schedule, contingency cuts, API/contracts, verification evidence, and a six-minute rehearsal.
 - `ROLE_ALIGNMENT_AUDIT.md` is the coverage contract against the recruiter transcript and job posting. It requires both an Operator workflow and a scoped Autonomy Engineer incident-to-eval workflow.
 
@@ -129,6 +130,11 @@ When sources conflict, use this order:
 
 ## Verification Ledger
 
+- 2026-09-01: M4 verification passed on VM 214. `scripts/verify_m4.py` observed eight scoped MCP receipts, four validated citations, a matching deterministic replay checksum with `live_state_changed=false`, tampered-hash rejection, exact-hash approval by `demo-engineer`, mandatory mock regression, explicit real OpenRouter pass/fail/skip accounting, nine trace spans, unauthorized MCP denial, healthy core, and available M3 platform state.
+- 2026-09-01: The M4 Playwright Engineer workflow passed end to end in 35.4 seconds. Go tests/vet passed across all packages; frontend strict typecheck, six Vitest tests, and production build passed; Python Ruff, strict mypy, five pytest tests, and Bandit passed; Compose validation and image builds passed. Stopping the Python AI container left M1 bootstrap, M2 resilience, M3 platform, and core health operational; AI reported degraded and recovered after restart.
+- 2026-09-01: OpenRouter investigation routing visibly failed over across the ranked free pool. Provider regression was changed to make a separate schema-validated model call; a model may pass or fail individual assertions, or be explicitly skipped when no free model returns a complete result. No canned cloud success is displayed.
+- 2026-09-01: No M4 Proxmox snapshot was created. The durable thin-pool inspection and explicit-authorization rule remains in force.
+
 - 2026-09-01: Pushed M3 implementation `8416ccb`, Cutaway reconnect fix `975584a`, and CI topology correction `b3c8f1f`. GitHub Actions run `33581609728` passed in 3m53s: the degraded core job passed M1/M2 tests and three browser flows without Kafka/PostgreSQL, while the full scale job passed Compose/Kustomize validation, the real M3 fault/recovery/replay verifier, and the Cutaway browser workflow against all scale services.
 - 2026-09-01: M3 release evidence on VM 214 passed with seed `424242`: 1,000 vessels at 2 Hz, 123,416 attempted and exactly accounted events, 2,216 events/s measured baseline, 13.4 ms ingest p95, 228.6 ms p99, 4.32 ms foreground API p95, peak Kafka lag 202, Worker 2 PID `15 -> 29`, two-worker degraded operation, 20.6 s recovery, 978 duplicates suppressed, 242 out-of-order records, 485 quarantined deliveries, zero drops, successful repair/redrive, and 1,000/1,000 live/shadow projection parity with matching SHA-256 checksum. Evidence files: `evidence/m3.json` and `evidence/m3.md`.
 - 2026-09-01: Latest Go tests and vet passed; frontend strict typecheck, Vitest, and production build passed; Playwright passed four workflows including the live Cutaway; M1 and M2 verifiers remained green; base and AWS Kustomize overlays each rendered four deployments. Prometheus `/metrics`, eight PostgreSQL hash partitions, pgvector nearest-fixture retrieval, Compose health, and private-only Kafka/PostgreSQL networking were inspected directly.
@@ -164,6 +170,13 @@ When sources conflict, use this order:
 - 2026-07-12: Checked the workspace root; confirmed `AGENTS.md` and `MEMORY.md` are present and no `.git` directory is present at this level.
 
 ## Decisions
+
+### 2026-09-01 - OpenRouter Adaptive Free-Model Pool for M4
+
+- Context: The user supplied an OpenRouter credential and requested a broad free-model failover set rather than a single cloud model.
+- Decision: Use an explicitly ranked OpenRouter free-model pool with per-model health, rate-limit/error cooldown, sequential failover, and `openrouter/free` as the final cloud router. Preserve local and deterministic mock fallbacks after the cloud pool. Keep the key only in a root-readable VM runtime secret and never in Git, logs, evidence, or memory.
+- Result: Live catalog inspection found multiple tool-capable free models. Probe calls confirmed MiniMax M3, Nemotron Nano Omni, and the free router answered, while some models were transiently rate-limited or harness-restricted; M4 therefore treats catalog membership and health as runtime state rather than a permanent availability claim.
+- Follow-up: Rotate the pasted OpenRouter key after the interview/demo.
 
 ### 2026-09-01 - Name the Project KeelMesh
 
@@ -287,6 +300,7 @@ When sources conflict, use this order:
 
 ## Completed Work
 
+- 2026-09-01: Completed M4 contracts, private MCP security boundary, Python typed incident agent, adaptive OpenRouter/local/mock provider routing, bounded fixture RAG, isolated deterministic replay, human-gated incident-to-evaluation promotion, provider regression execution, AI evidence export, Engineer UI, M4 verifier/browser coverage, Compose/Kubernetes production shape, and expanded CI.
 - 2026-09-01: Completed M3 contracts, one-image multi-role topology, pinned Kafka/PostgreSQL stack, 1,000+ vessel producer, bounded outbox, three supervised consumers, set-based ingestion, idempotent projections, deterministic duplicate/out-of-order/quarantine faults, actual lag and process metrics, signed worker kill/recovery, redrive, Kafka shadow replay, pgvector fixture retrieval, Prometheus endpoint, live Cutaway UI, verifier/evidence, Kubernetes production shape, and expanded CI.
 - 2026-09-01: Completed M2 contracts, deterministic runtime packages, APIs/WebSocket events, map overlays, operator drill, shared fixtures, verifier, browser coverage, Compose deployment, and documentation. No Proxmox snapshot was created.
 - 2026-09-01: Completed M0 naming, repository, VM/application identity migration, healthy renamed container, initial private GitHub push, baseline CI definition, and Proxmox snapshot.
@@ -298,7 +312,9 @@ When sources conflict, use this order:
 - Replace the ephemeral Cloudflare Quick Tunnel with a named tunnel and stable hostname after the Cloudflare account/domain choice is available.
 - Validate the available local model/STT/TTS runtimes and benchmark hardware before selecting exact models.
 - Add formal JSON Schema files for M2 peer-bundle, tape, and PNT contracts if needed beyond the shared Go/TypeScript fixture tests.
-- Implement M4 bounded AI assistance: Python agents, scoped MCP tools, cited RAG, eval/promotion workflow, provider failover, STT/TTS, and optional local inference. Keep it outside the safety-critical execution boundary.
+- Replace M4's fixture-backed MCP retrieval with the planned bundled ONNX embedding model and live pgvector hybrid indexing; the current corpus schema and pgvector infrastructure exist, but runtime M4 retrieval is deterministic fixture-backed.
+- Replace the current state-backed trace projection with a real private OTLP export/receiver/storage path. Python and Go tracing contracts/timing are present, but the full cross-process OTLP pipeline remains a hardening follow-up.
+- Configure and benchmark an optional local OpenAI-compatible provider. OpenRouter and deterministic mock are live; local routing is implemented but intentionally reports standby until endpoint/model values are supplied.
 
 ## Do Not Forget
 

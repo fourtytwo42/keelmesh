@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fourtytwo42/keelmesh/internal/agent"
 	"github.com/fourtytwo42/keelmesh/internal/api"
 	"github.com/fourtytwo42/keelmesh/internal/core"
 	"github.com/fourtytwo42/keelmesh/internal/platform"
@@ -73,7 +74,8 @@ func main() {
 
 	engine := core.New()
 	platformManager := platform.NewManager(cfg, logger)
-	serverAPI := api.New(engine, logger, webRoot, platformManager)
+	agentManager := agent.NewManager(agent.ConfigFromEnv(), logger)
+	serverAPI := api.New(engine, logger, webRoot, platformManager, agentManager)
 
 	server := &http.Server{
 		Addr:              ":8080",
@@ -84,6 +86,14 @@ func main() {
 
 	go engine.Run(ctx)
 	go platformManager.Run(ctx)
+	go agentManager.Run(ctx)
+	privateServer := &http.Server{Addr: ":8081", Handler: privateHandler(agentManager), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
+	go func() {
+		logger.Info("keelmesh private AI boundary listening", "address", privateServer.Addr)
+		if err := privateServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("private AI boundary", "error", err)
+		}
+	}()
 
 	go func() {
 		<-ctx.Done()
@@ -92,6 +102,7 @@ func main() {
 		if shutdownErr := server.Shutdown(contextWithTimeout); shutdownErr != nil {
 			logger.Error("graceful shutdown", "error", shutdownErr)
 		}
+		_ = privateServer.Shutdown(contextWithTimeout)
 	}()
 
 	logger.Info("keelmesh core listening", "address", server.Addr)
@@ -99,4 +110,14 @@ func main() {
 		logger.Error("serve", "error", err)
 		os.Exit(1)
 	}
+}
+
+func privateHandler(manager *agent.Manager) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", manager.MCPHandler())
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ready","boundary":"mcp"}`))
+	})
+	return mux
 }

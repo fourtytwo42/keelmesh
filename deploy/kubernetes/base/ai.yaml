@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: keelmesh-ai, labels: {app.kubernetes.io/name: keelmesh, app.kubernetes.io/component: ai}}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/component: ai}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: keelmesh, app.kubernetes.io/component: ai}}
+    spec:
+      serviceAccountName: keelmesh
+      containers:
+      - name: ai
+        image: ghcr.io/fourtytwo42/keelmesh-ai:latest
+        env:
+        - {name: KEELMESH_MCP_URL, value: http://keelmesh-core:8081/mcp}
+        - {name: OPENROUTER_API_KEY_FILE, value: /run/secrets/openrouter/key}
+        - {name: KEELMESH_CORE_AI_TOKEN_FILE, value: /run/secrets/core-ai/token}
+        - {name: KEELMESH_MCP_INVESTIGATOR_TOKEN_FILE, value: /run/secrets/investigator/token}
+        ports: [{name: ai-http, containerPort: 8090}]
+        readinessProbe: {httpGet: {path: /healthz, port: ai-http}, periodSeconds: 5}
+        livenessProbe: {httpGet: {path: /healthz, port: ai-http}, periodSeconds: 10}
+        resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "2", memory: 1Gi}}
+        securityContext: {runAsNonRoot: true, runAsUser: 10001, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+        volumeMounts:
+        - {name: openrouter, mountPath: /run/secrets/openrouter, readOnly: true}
+        - {name: core-ai, mountPath: /run/secrets/core-ai, readOnly: true}
+        - {name: investigator, mountPath: /run/secrets/investigator, readOnly: true}
+      volumes:
+      - {name: openrouter, secret: {secretName: keelmesh-openrouter}}
+      - {name: core-ai, secret: {secretName: keelmesh-core-ai}}
+      - {name: investigator, secret: {secretName: keelmesh-mcp-investigator}}
+      topologySpreadConstraints:
+      - {maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: ScheduleAnyway, labelSelector: {matchLabels: {app.kubernetes.io/component: ai}}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: keelmesh-ai}
+spec: {selector: {app.kubernetes.io/component: ai}, ports: [{name: ai-http, port: 8090, targetPort: ai-http}]}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: keelmesh-ai}
+spec: {minAvailable: 1, selector: {matchLabels: {app.kubernetes.io/component: ai}}}

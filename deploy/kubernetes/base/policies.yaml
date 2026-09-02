@@ -10,6 +10,6 @@ spec:
   podSelector: {matchLabels: {app.kubernetes.io/name: keelmesh}}
   policyTypes: [Ingress, Egress]
   ingress:
-  - ports: [{protocol: TCP, port: 8080}]
+  - ports: [{protocol: TCP, port: 8080}, {protocol: TCP, port: 8081}, {protocol: TCP, port: 8090}]
   egress:
-  - ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}, {protocol: TCP, port: 9092}, {protocol: TCP, port: 5432}]
+  - ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}, {protocol: TCP, port: 443}, {protocol: TCP, port: 8081}, {protocol: TCP, port: 8090}, {protocol: TCP, port: 9092}, {protocol: TCP, port: 5432}]

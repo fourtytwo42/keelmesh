@@ -1,0 +1,32 @@
+[project]
+name = "keelmesh-ai"
+version = "0.4.0"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "fastapi==0.116.1",
+  "httpx==0.28.1",
+  "mcp==2.1.1",
+  "opentelemetry-api==1.38.0",
+  "opentelemetry-sdk==1.38.0",
+  "pydantic==2.12.5",
+  "uvicorn==0.35.0",
+]
+
+[dependency-groups]
+dev = [
+  "bandit==1.8.6",
+  "mypy==1.18.2",
+  "pytest==8.4.2",
+  "ruff==0.13.1",
+]
+
+[tool.ruff]
+line-length = 110
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -47,3 +47,17 @@ func TestPlatformSnapshotV1Fixture(t *testing.T) {
 		t.Fatalf("fixture does not satisfy PlatformSnapshotV1: %+v", snapshot)
 	}
 }
+
+func TestAgentSnapshotV1Fixture(t *testing.T) {
+	data, err := os.ReadFile("../../contracts/fixtures/agent-snapshot-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot AgentSnapshotV1
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.SchemaVersion != SchemaVersion || len(snapshot.Incidents) != 1 || snapshot.Incidents[0].ScenarioSeed != 42042 || snapshot.Provider.Models[len(snapshot.Provider.Models)-1] != "openrouter/free" {
+		t.Fatalf("fixture does not satisfy AgentSnapshotV1: %+v", snapshot)
+	}
+}

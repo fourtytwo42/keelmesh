@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import fixtureJSON from "../../contracts/fixtures/mission-intent-v1.json";
 import resilienceJSON from "../../contracts/fixtures/resilience-snapshot-v1.json";
 import platformJSON from "../../contracts/fixtures/platform-snapshot-v1.json";
-import type { MissionIntent, PlatformSnapshot, ResilienceSnapshot } from "./types";
+import agentJSON from "../../contracts/fixtures/agent-snapshot-v1.json";
+import type { AgentSnapshot, MissionIntent, PlatformSnapshot, ResilienceSnapshot } from "./types";
 
 describe("shared contract fixtures", () => {
   it("reads MissionIntentV1 using the TypeScript contract", () => {
@@ -25,5 +26,12 @@ describe("shared contract fixtures", () => {
     expect(fixture.active_run?.vessel_count).toBe(1000);
     expect(fixture.topics[0].partitions).toBe(12);
     expect(fixture.metrics.attempted).toBe(fixture.metrics.unique_inserted + fixture.metrics.duplicates_suppressed + fixture.metrics.quarantined);
+  });
+
+  it("reads AgentSnapshotV1 using the TypeScript contract", () => {
+    const fixture = agentJSON as AgentSnapshot;
+    expect(fixture.incidents[0].scenario_seed).toBe(42042);
+    expect(fixture.provider.models.at(-1)).toBe("openrouter/free");
+    expect(fixture.security_denials).toBe(1);
   });
 });

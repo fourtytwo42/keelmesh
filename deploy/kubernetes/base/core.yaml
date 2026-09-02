@@ -13,7 +13,7 @@ spec:
         image: ghcr.io/fourtytwo42/keelmesh:latest
         args: ["--role", "core"]
         envFrom: [{configMapRef: {name: keelmesh-platform}}, {secretRef: {name: keelmesh-control}}]
-        ports: [{name: http, containerPort: 8080}]
+        ports: [{name: http, containerPort: 8080}, {name: mcp, containerPort: 8081}]
         readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 5}
         livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 10}
         resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "2", memory: 1Gi}}
@@ -24,7 +24,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata: {name: keelmesh-core}
-spec: {selector: {app.kubernetes.io/component: core}, ports: [{name: http, port: 80, targetPort: http}]}
+spec: {selector: {app.kubernetes.io/component: core}, ports: [{name: http, port: 80, targetPort: http}, {name: mcp, port: 8081, targetPort: mcp}]}
 ---
 apiVersion: v1
 kind: ServiceAccount
