@@ -308,17 +308,56 @@ test("dragged geometry follows the exact preview, authorization, and execution p
   await expect(planner.getByText("Movement lease ready")).toBeVisible();
   await planner.getByRole("button", { name: "Start authorized mission" }).click();
   await expect(planner.getByText("executing", { exact: true })).toBeVisible();
-  const missionTab = page.locator(".mission-tabs button.active");
-  await missionTab.click({ button: "right" });
-  await page.getByRole("menu", { name: "Mission actions" }).getByRole("menuitem", { name: "Pause mission" }).click();
+  const missionTab = page.locator(".mission-tabs .mission-tab.active");
+  await missionTab.getByRole("button", { name: /Pause / }).click();
   await expect(missionTab.getByText("paused", { exact: true })).toBeVisible();
-  await missionTab.click({ button: "right" });
-  await page.getByRole("menu", { name: "Mission actions" }).getByRole("menuitem", { name: "Resume mission" }).click();
+  await missionTab.getByRole("button", { name: /Resume / }).click();
   await expect(missionTab.getByText("executing", { exact: true })).toBeVisible();
   page.once("dialog", dialog => dialog.accept());
-  await missionTab.click({ button: "right" });
-  await page.getByRole("menu", { name: "Mission actions" }).getByRole("menuitem", { name: "Delete mission" }).click();
-  await expect(page.locator(".mission-tabs button.active")).toHaveCount(0);
+  await missionTab.getByRole("button", { name: /Delete / }).click();
+  await expect(page.locator(".mission-tabs .mission-tab.active")).toHaveCount(0);
+});
+
+test("mission numbering, direct controls, window restore, and confirmed draft deletion are coherent", async ({ page }) => {
+  const fleet = await (await page.request.get("/api/v2/fleet")).json();
+  const create = async (suffix: string, vessel: string) => {
+    const response = await page.request.post("/api/v2/missions", { data: {
+      request_id: `mission-ui-${suffix}`, idempotency_key: `mission-ui-${suffix}`,
+      expected_version: fleet.fleet_version, name: "Mission 1", objective: "Lifecycle test", target_ids: [vessel],
+    }});
+    expect(response.ok()).toBeTruthy();
+    return response.json();
+  };
+  const firstMission = await create("one", fleet.vessels[0].id);
+  const secondMission = await create("two", fleet.vessels[1].id);
+  expect(firstMission.name).toBe("Mission 1");
+  expect(secondMission.name).toBe("Mission 2");
+
+  await page.goto("/");
+  const first = page.locator(".mission-tab").filter({ hasText: "Mission 1" });
+  const second = page.locator(".mission-tab").filter({ hasText: "Mission 2" });
+  await expect(first).toBeVisible();
+  await expect(second).toBeVisible();
+  await expect(first.getByRole("button", { name: "Pause Mission 1" })).toBeDisabled();
+  await first.locator(".mission-tab-main").click();
+  const planner = page.getByRole("region", { name: "Mission Planner" });
+  await expect(planner).toBeVisible();
+  await expect(planner.getByRole("button", { name: "Delete Mission 1" })).toBeVisible();
+  await planner.getByTitle("Minimize").click();
+  await expect(planner).toBeHidden();
+  await first.locator(".mission-tab-main").click();
+  await expect(planner).toBeVisible();
+
+  page.once("dialog", dialog => dialog.accept());
+  await first.getByRole("button", { name: "Delete Mission 1" }).click();
+  await expect(first).toHaveCount(0);
+  await expect(second).toBeVisible();
+  await second.locator(".mission-tab-main").click();
+  await expect(planner.getByText("Mission 2", { exact: true })).toBeVisible();
+  page.once("dialog", dialog => dialog.accept());
+  await planner.getByRole("button", { name: "Delete Mission 2" }).click();
+  await expect(page.locator(".mission-tab")).toHaveCount(0);
+  await expect(planner).toBeHidden();
 });
 
 test("workspace windows move, minimize, restore, dock, and retain legacy tools", async ({ page }) => {

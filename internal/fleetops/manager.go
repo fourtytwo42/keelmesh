@@ -130,6 +130,7 @@ var coastalDistance = regexp.MustCompile(`(?i)(?:within|inside|no more than|max(
 var relativeTravelDistance = regexp.MustCompile(`(?i)\b(?:travel|go|proceed|sail|run|head|move)?\s*([0-9]+(?:\.[0-9]+)?)\s*(nm|nmi|nautical\s*miles?|km|kilometers?|mi|miles?)\b`)
 var explicitHeading = regexp.MustCompile(`(?i)\b(?:heading|bearing|course)\s*(?:of|to|at)?\s*([0-9]{1,3}(?:\.[0-9]+)?)\s*(?:deg(?:rees?)?|°)?\b`)
 var waypointColor = regexp.MustCompile(`(?i)\b(amber|red|green|cyan|blue|violet|purple|white)\s+(?:waypoints?|route|markers?)\b`)
+var numberedMissionName = regexp.MustCompile(`(?i)^(mission|voyage)\s+([0-9]+)$`)
 
 // coastalDepthRoutes are deterministic samples from the packaged NOAA ETOPO
 // 5 m contour. They let natural-language coastal missions use the same local
@@ -540,7 +541,7 @@ func (m *Manager) CreateMission(req CreateMissionRequest) (domain.MissionWorkspa
 	}
 	now := time.Now().UTC()
 	targets := unique(req.TargetIDs)
-	mission := domain.MissionWorkspaceV2{SchemaVersion: 2, ID: "mission-" + shortHash(req.IdempotencyKey), Name: req.Name, Objective: req.Objective, Status: "draft", TargetIDs: targets, TargetSnapshotHash: hashAny(targets), FleetVersion: m.fleetVersion, Version: 1, Geometry: domain.MissionGeometryV2{Revision: 1, IncludedAreas: [][][]float64{}, ExclusionAreas: [][][]float64{}, Waypoints: []domain.GeoPointV2{}, POIs: []domain.MissionPOIV2{}}, Constraints: defaultConstraints(), Formation: "column", CreatedAt: now, UpdatedAt: now}
+	mission := domain.MissionWorkspaceV2{SchemaVersion: 2, ID: "mission-" + shortHash(req.IdempotencyKey), Name: m.uniqueMissionNameLocked(req.Name), Objective: req.Objective, Status: "draft", TargetIDs: targets, TargetSnapshotHash: hashAny(targets), FleetVersion: m.fleetVersion, Version: 1, Geometry: domain.MissionGeometryV2{Revision: 1, IncludedAreas: [][][]float64{}, ExclusionAreas: [][][]float64{}, Waypoints: []domain.GeoPointV2{}, POIs: []domain.MissionPOIV2{}}, Constraints: defaultConstraints(), Formation: "column", CreatedAt: now, UpdatedAt: now}
 	m.missions[mission.ID] = mission
 	m.persistAsync()
 	return mission, nil
@@ -668,6 +669,7 @@ func (m *Manager) DeleteMission(id string, req Mutation) error {
 	}
 	delete(m.missions, id)
 	m.fleetVersion++
+	m.deleteMissionPersistence(id)
 	m.persistAsync()
 	return nil
 }
@@ -1671,6 +1673,94 @@ func nonempty(a, b string) string {
 	return b
 }
 
+func (m *Manager) uniqueMissionNameLocked(requested string) string {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		requested = "Mission 1"
+	}
+	used := map[string]bool{}
+	maxOrdinal := 0
+	for _, mission := range m.missions {
+		used[strings.ToLower(strings.TrimSpace(mission.Name))] = true
+		if match := numberedMissionName.FindStringSubmatch(strings.TrimSpace(mission.Name)); len(match) == 3 {
+			if ordinal, err := strconv.Atoi(match[2]); err == nil && ordinal > maxOrdinal {
+				maxOrdinal = ordinal
+			}
+		}
+	}
+	if !used[strings.ToLower(requested)] {
+		return requested
+	}
+	if match := numberedMissionName.FindStringSubmatch(requested); len(match) == 3 {
+		prefix := strings.ToUpper(match[1][:1]) + strings.ToLower(match[1][1:])
+		for ordinal := maxOrdinal + 1; ; ordinal++ {
+			candidate := fmt.Sprintf("%s %d", prefix, ordinal)
+			if !used[strings.ToLower(candidate)] {
+				return candidate
+			}
+		}
+	}
+	for suffix := 2; ; suffix++ {
+		candidate := fmt.Sprintf("%s %d", requested, suffix)
+		if !used[strings.ToLower(candidate)] {
+			return candidate
+		}
+	}
+}
+
+func (m *Manager) deduplicateMissionNamesLocked() {
+	missions := make([]domain.MissionWorkspaceV2, 0, len(m.missions))
+	for _, mission := range m.missions {
+		missions = append(missions, mission)
+	}
+	sort.Slice(missions, func(i, j int) bool {
+		if missions[i].CreatedAt.Equal(missions[j].CreatedAt) {
+			return missions[i].ID < missions[j].ID
+		}
+		return missions[i].CreatedAt.Before(missions[j].CreatedAt)
+	})
+	seen := map[string]bool{}
+	maxOrdinal := 0
+	for _, mission := range missions {
+		if match := numberedMissionName.FindStringSubmatch(strings.TrimSpace(mission.Name)); len(match) == 3 {
+			if ordinal, err := strconv.Atoi(match[2]); err == nil && ordinal > maxOrdinal {
+				maxOrdinal = ordinal
+			}
+		}
+	}
+	for _, mission := range missions {
+		name := strings.TrimSpace(mission.Name)
+		key := strings.ToLower(name)
+		if !seen[key] {
+			seen[key] = true
+			continue
+		}
+		if match := numberedMissionName.FindStringSubmatch(name); len(match) == 3 {
+			prefix := strings.ToUpper(match[1][:1]) + strings.ToLower(match[1][1:])
+			for {
+				maxOrdinal++
+				name = fmt.Sprintf("%s %d", prefix, maxOrdinal)
+				if !seen[strings.ToLower(name)] {
+					break
+				}
+			}
+		} else {
+			for suffix := 2; ; suffix++ {
+				candidate := fmt.Sprintf("%s %d", name, suffix)
+				if !seen[strings.ToLower(candidate)] {
+					name = candidate
+					break
+				}
+			}
+		}
+		mission.Name = name
+		mission.Version++
+		mission.UpdatedAt = time.Now().UTC()
+		m.missions[mission.ID] = mission
+		seen[strings.ToLower(name)] = true
+	}
+}
+
 func (m *Manager) Voices() []domain.VoiceV2 {
 	names := []string{"Anna", "Vera", "Charles", "Paul", "Jeff", "Patrick", "James", "Morgan", "Movie Trailer Voice", "Ian", "Sam", "David"}
 	out := make([]domain.VoiceV2, 0, len(names))
@@ -1729,6 +1819,41 @@ func (m *Manager) clearMissionPersistenceAsync() {
 		_, _ = pool.Exec(ctx, `TRUNCATE mission_command_drafts, fleet_plans, mission_workspaces`)
 	}()
 }
+
+// deleteMissionPersistence makes workspace deletion durable. Previously the
+// in-memory mission disappeared but its PostgreSQL row survived and was loaded
+// again after a core restart.
+func (m *Manager) deleteMissionPersistence(id string) {
+	if m.databaseURL == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, m.databaseURL)
+	if err != nil {
+		m.logger.Warn("mission persistence deletion unavailable", "mission_id", id, "error", err)
+		return
+	}
+	defer pool.Close()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		m.logger.Warn("mission persistence deletion could not start", "mission_id", id, "error", err)
+		return
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err = tx.Exec(ctx, `DELETE FROM mission_command_drafts WHERE mission_id=$1`, id); err == nil {
+		_, err = tx.Exec(ctx, `DELETE FROM fleet_plans WHERE mission_id=$1`, id)
+	}
+	if err == nil {
+		_, err = tx.Exec(ctx, `DELETE FROM mission_workspaces WHERE id=$1`, id)
+	}
+	if err == nil {
+		err = tx.Commit(ctx)
+	}
+	if err != nil {
+		m.logger.Warn("mission persistence deletion failed", "mission_id", id, "error", err)
+	}
+}
 func (m *Manager) loadPersistent(ctx context.Context) {
 	if m.databaseURL == "" {
 		return
@@ -1781,6 +1906,7 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 			m.missions[v.ID] = v
 		}
 	})
+	m.deduplicateMissionNamesLocked()
 	m.persistAsync()
 }
 

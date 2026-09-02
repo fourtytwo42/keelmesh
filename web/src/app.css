@@ -114,6 +114,32 @@ code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
    column before centering its icon. */
 .mission-tabs .new-tab{grid-template-columns:1fr;grid-template-rows:1fr;place-items:center;text-align:center}
 
+/* Direct mission lifecycle controls replace the former right-click menu. */
+.mission-tabs .mission-tab{position:relative;min-width:158px;height:38px;display:grid;grid-template-columns:1fr 50px;border-right:1px solid #3b403d;background:#1d2322}
+.mission-tabs .mission-tab.active{background:#303532;color:#fff;box-shadow:inset 0 -2px var(--m6-amber)}
+.mission-tabs .mission-tab-main{min-width:0;width:auto;display:grid;grid-template-columns:7px 1fr;grid-template-rows:1fr 1fr;column-gap:7px;align-items:end;padding:4px 7px 4px 10px;border:0;background:transparent;color:#b0b0a8;text-align:left;cursor:pointer}
+.mission-tabs .mission-tab.active .mission-tab-main{background:transparent;color:#fff;box-shadow:none}
+.mission-tabs .mission-tab-main i{grid-row:1/3;width:6px;height:6px;border-radius:50%;background:#7f8580;align-self:center}
+.mission-tabs .mission-tab-main i.executing{background:var(--m6-green)}
+.mission-tabs .mission-tab-main i.paused{background:var(--m6-amber)}
+.mission-tabs .mission-tab-main span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;font-weight:700}
+.mission-tabs .mission-tab-main small{font-size:7px;text-transform:uppercase;color:#747973}
+.mission-tabs .mission-tab-actions{display:grid;grid-template-columns:repeat(2,25px);border-left:1px solid #343936}
+.mission-tabs .mission-tab-actions button{min-width:0;width:25px;height:37px;display:grid;place-items:center;padding:0;border:0;border-right:0;background:transparent;color:#858a84;cursor:pointer}
+.mission-tabs .mission-tab-actions button:hover:not(:disabled){background:#3a403d;color:#f0b14b}
+.mission-tabs .mission-tab-actions button.delete:hover{background:#3a2422;color:#ef9388}
+.mission-tabs .mission-tab-actions button:disabled{opacity:.22;cursor:default}
+.mission-tabs .mission-tab-actions svg{width:11px;height:11px}
+:root[data-theme="pirate"] .mission-tabs .mission-tab{background:#18130e;border-color:#3d3021;color:#bdaa89}
+:root[data-theme="pirate"] .mission-tabs .mission-tab.active{background:#34281a}
+.mission-summary-actions{float:right;display:flex;align-items:center;gap:3px}
+.mission-summary-actions>span{padding:4px 6px;background:#25332c;color:#6fbc90;font-size:7px;text-transform:uppercase}
+.mission-summary-actions button{width:25px;height:25px;display:grid;place-items:center;border:1px solid #414741;background:#252b29;color:#999e97;cursor:pointer}
+.mission-summary-actions button:hover:not(:disabled){border-color:#bd8734;color:#f1b04a;background:#332b20}
+.mission-summary-actions button.delete:hover{border-color:#9e544d;color:#ef9388;background:#382320}
+.mission-summary-actions button:disabled{opacity:.25;cursor:default}
+.mission-summary-actions svg{width:12px;height:12px}
+
 .solo-mode{display:flex;align-items:center;gap:8px;margin-top:8px;padding:7px 8px;border:1px solid #3e4944;background:#1f2825;color:#dca143}.solo-mode>svg{width:16px}.solo-mode>span{display:grid}.solo-mode b{font-size:7px;letter-spacing:.1em}.solo-mode small{color:#858c86;font-size:7px}.mission-advisor{margin:8px;padding:8px;border:1px solid #49614f;background:#1d2923}.mission-advisor.fallback{border-color:#6a5635;background:#2a261d}.mission-advisor header{display:flex;align-items:center;gap:6px}.mission-advisor header svg{width:13px;color:#70b88f}.mission-advisor header b{font-size:7px;letter-spacing:.08em;color:#8dccaa}.mission-advisor header em{margin-left:auto;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#7e8982;font:6px ui-monospace;font-style:normal}.mission-advisor p{margin:5px 0;color:#a3a79f;font-size:7px;line-height:1.35}.mission-advisor>div{display:flex;flex-wrap:wrap;gap:3px}.mission-advisor>div span{padding:3px 4px;border:1px solid #3d4942;color:#808981;font:5px ui-monospace}.mission-advisor>div span.accepted{border-color:#426653;color:#79bb93}.mission-advisor>div span.failed{border-color:#65413d;color:#c67b70}.candidate-list header>span{margin-left:7px;color:#6f8e7c;font:5px ui-monospace}.candidate-list .maneuver-sequence{display:block;color:#7c847e;font-size:6px;line-height:1.4}
 
 /* Bring the measured cutaway into the same graphite/amber operations system. */

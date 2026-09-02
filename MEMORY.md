@@ -4,8 +4,8 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: The real LLM mission-advisor boundary is deployed on VM 214 and all twelve vessel nodes; preserve its strict advisory-only boundary while continuing M7 hardening.
-- Last meaningful change: Relative navigation intent such as `Travel 15nm from current location heading out to sea, then return` now resolves deterministically into a reviewable seaward out-and-back corridor before GPT-5.6 Luna's strategies enter Go route/policy generation. The exact live sentence produced three distinct OpenAI-backed plan cards instead of `COMMAND_AMBIGUOUS`.
+- Current task: Mission lifecycle and workspace controls are deployed on VM 214 and all twelve vessel nodes; preserve direct, confirmation-gated mission deletion and collision-free persisted names while continuing M7 hardening.
+- Last meaningful change: Mission names are now unique across active and draft workspaces, mission tabs and planner windows expose direct pause/delete controls, tab clicks restore minimized planners, and deletion removes PostgreSQL-backed drafts instead of allowing them to reappear after restart.
 - Next step: add first-class select/delete/clear controls for operating and exclusion polygons, and improve the planner's explanation when every returned strategy is policy-prohibited. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -138,6 +138,7 @@ When sources conflict, use this order:
 
 ## Verification Ledger
 
+- 2026-09-02: Mission lifecycle changes passed all Go tests/vet, strict TypeScript, seven Vitest assertions, production Vite build, Playwright test discovery, live browser control/state inspection, and a durable API deletion followed by core restart. Existing persisted duplicates were deterministically repaired to `Mission 1` and `Mission 2`; all twelve vessel nodes are healthy on binary SHA-256 `5c8c74aac153c7e0ab4f8f4203665eb4ea45b0f5864501ed7aa73d6fa0356b82`. The full Playwright suite was not run because its reset hook would delete the user's current missions. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: New Mission plus alignment passed strict TypeScript, seven Vitest assertions, production Vite build, and a Playwright geometry assertion requiring the icon and tab centers to differ by less than two pixels on both axes. VM 214 and all twelve nodes run binary SHA-256 `ec8c2dd0363f02b0f59d34c88efa2799d3d5f6338c376f3cefcb59cdd31bf77f`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Workspace semantics passed all Go tests/vet, strict TypeScript, seven Vitest assertions, production Vite build, ten unchanged Playwright workflows, and the corrected dedicated window workflow on VM 214. Coverage proves top-nav primary windows never enter the lower taskbar or expose Close, context/detail windows minimize/restore/delete through the taskbar, mission pause/resume/delete is state-backed, and Cutaway retains legacy controls. VM 214 and all twelve nodes run binary SHA-256 `306a0cb2fa84937b628c4fa53111f615cc357052f7cb637e7636b84e2c6144a6`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Fleet selection/status polish passed strict TypeScript, seven Vitest assertions, production Vite build, and all eleven Playwright workflows on VM 214. Tests cover exact selection highlighting state, absent collection-chip UI, vessel status, group status, group reassignment, all mission flows, Arena failover, and release viewports. VM 214 and all twelve vessel nodes run binary SHA-256 `ec74e473578ef84b67c41689b48a875f2fa5e2b6ff74953b98df9c880ffc62be`. No snapshot or GitHub-hosted workflow ran.
@@ -343,6 +344,15 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Mission lifecycle and durable deletion
+
+- Context: Active and draft workspaces could both be named `Mission 1`; deleting a draft removed only in-memory state, so its PostgreSQL row resurrected it after core restart. Mission controls were also split between tab clicks and a right-click menu.
+- Decision: Allocate the next unused numbered name, repair retained duplicate names deterministically, delete mission-owned drafts/plans/workspace rows transactionally, and replace the mission context menu with direct pause/resume and confirmation-gated trash controls in both the mission row and planner window. Clicking a mission row always opens or restores its planner; minimizing returns it to the mission row.
+- Files: `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, `web/src/FleetWorkspace.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: all Go tests/vet on VM 214; local strict TypeScript, seven Vitest assertions, Vite production build, Playwright discovery; deployed browser inspection; temporary mission API delete followed by core restart; twelve-node hash and health verification.
+- Result: Existing missions are uniquely displayed as `Mission 1` and `Mission 2`, drafts can be permanently deleted, and mission control follows one direct interaction model. Pause remains available only for executing/paused missions, matching backend state transitions. VM 214 and all twelve vessel nodes run binary SHA-256 `5c8c74aac153c7e0ab4f8f4203665eb4ea45b0f5864501ed7aa73d6fa0356b82`. No snapshot or hosted workflow.
+- Follow-up: Full Playwright execution remains deferred until the user's current missions may be safely reset; targeted behavior was verified without mutating them.
 
 ### 2026-09-02 - Relative seaward route resolution
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 )
@@ -431,6 +432,37 @@ func TestCompileResolvesRelativeSeawardRoundTripAndBuildsAdvisorStrategies(t *te
 		if plan.Formation != "independent" || len(plan.Assignments) != 1 || len(plan.Assignments[0].Route) != 3 {
 			t.Fatalf("invalid solo strategy plan: %#v", plan)
 		}
+	}
+}
+
+func TestMissionNamesAreUniqueAndPersistedDuplicatesAreRenumbered(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	first, err := m.CreateMission(CreateMissionRequest{
+		Mutation: Mutation{RequestID: "name-one", IdempotencyKey: "name-one", ExpectedVersion: snapshot.FleetVersion},
+		Name:     "Mission 1", TargetIDs: []string{snapshot.Vessels[0].ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := m.CreateMission(CreateMissionRequest{
+		Mutation: Mutation{RequestID: "name-two", IdempotencyKey: "name-two", ExpectedVersion: snapshot.FleetVersion},
+		Name:     "Mission 1", TargetIDs: []string{snapshot.Vessels[1].ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Name != "Mission 1" || second.Name != "Mission 2" {
+		t.Fatalf("mission names were not made unique: %q, %q", first.Name, second.Name)
+	}
+	third := second
+	third.ID = "persisted-duplicate"
+	third.Name = "Mission 1"
+	third.CreatedAt = second.CreatedAt.Add(time.Second)
+	m.missions[third.ID] = third
+	m.deduplicateMissionNamesLocked()
+	if got := m.missions[third.ID].Name; got != "Mission 3" {
+		t.Fatalf("persisted duplicate name = %q", got)
 	}
 }
 
