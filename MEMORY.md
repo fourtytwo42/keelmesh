@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: the fleet map now renders every member of each six-vessel group independently. Seeded formations use readable real simulated spacing, MapLibre labels may deconflict without suppressing their corresponding hull icons, and Kestrel/Mariner/Atlas use depth-aware transparent 2.5D sprites.
+- Last meaningful change: initial M6 fleet placement is now water-safe against the exact packaged Natural Earth coastline. The service migrates both known legacy spawn layouts into deterministic water cells without moving vessels that have actually departed their seed neighborhood, and a restart-persistent coastline test enforces a shoreline margin.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -322,6 +322,14 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Water-safe fleet spawning
+
+- Context: widening the six-vessel formations exposed legacy seed points on narrow Narragansett Bay land polygons.
+- Decision: relocate the affected northern cell centers into water, validate every seeded vessel against the same packaged GeoJSON coastline with a `0.004°` minimum test margin, and migrate retained compact/readable legacy spawn neighborhoods while leaving operated vessels untouched.
+- Files: `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: VM full Go suite, live API-versus-coastline validation before and after core restart (`48` vessels, `0` unsafe), seven Playwright workflows, and deployed visual inspection with zero console errors.
+- Result: initial and retained legacy fleet spawns are water-safe and persist across restart; generated plans still use the exact preview/hash/authorization path. VM 214 and all twelve vessel nodes run binary SHA-256 `01f34ad75e3438266f5de980600a9bc471468d6c4b5c964f510c43d1762d335c`. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - Six-vessel rendering and 2.5D hull sprites
 

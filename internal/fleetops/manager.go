@@ -115,6 +115,8 @@ var groupNames = []string{"Watch Shoal", "Bay Lantern", "Sakonnet", "Block Guard
 var groupCodes = []string{"WS", "BL", "SK", "BG", "BR", "NG", "PJ", "OS"}
 var groupColors = []string{"#e9a93f", "#62c5a8", "#d86f5f", "#b895d8", "#7eb4df", "#d2c05d", "#df8fb0", "#8fca72"}
 var patterns = []string{"solid", "diagonal", "dots", "crosshatch", "vertical", "rings", "dash", "chevron"}
+var spawnCenters = []domain.GeoPointV2{{-71.385, 41.43}, {-71.30, 41.43}, {-71.24, 41.45}, {-71.42, 41.39}, {-71.33, 41.37}, {-71.23, 41.35}, {-71.47, 41.25}, {-71.30, 41.20}}
+var legacySpawnCenters = []domain.GeoPointV2{{-71.375, 41.49}, {-71.315, 41.47}, {-71.24, 41.45}, {-71.43, 41.39}, {-71.33, 41.37}, {-71.23, 41.35}, {-71.47, 41.25}, {-71.30, 41.20}}
 
 func New(databaseURL string, logger *slog.Logger) *Manager {
 	m := &Manager{logger: logger, databaseURL: databaseURL, secret: []byte("keelmesh-m6-runtime-authority"), fleetVersion: 1, vessels: map[string]domain.VesselProfileV2{}, groups: map[string]domain.OperationalGroupV2{}, collections: map[string]domain.SavedCollectionV2{}, missions: map[string]domain.MissionWorkspaceV2{}, drafts: map[string]domain.CommandDraftV2{}, plans: map[string]domain.FleetPlanV2{}, leases: map[string]domain.FleetLeaseV2{}, idempotency: map[string]string{}, startedPlans: map[string]string{}}
@@ -124,6 +126,9 @@ func New(databaseURL string, logger *slog.Logger) *Manager {
 
 func (m *Manager) Run(ctx context.Context) {
 	m.loadPersistent(ctx)
+	// Persist any deterministic spawn-layout migration after all retained fleet
+	// identities, groups, collections, and mission workspaces have loaded.
+	m.persistAsync()
 	t := time.NewTicker(200 * time.Millisecond)
 	defer t.Stop()
 	for {
@@ -148,7 +153,6 @@ func classFor(slot int) domain.VesselClassV2 {
 }
 
 func (m *Manager) seed() {
-	centers := []domain.GeoPointV2{{-71.375, 41.49}, {-71.315, 41.47}, {-71.24, 41.45}, {-71.43, 41.39}, {-71.33, 41.37}, {-71.23, 41.35}, {-71.47, 41.25}, {-71.30, 41.20}}
 	for g := 0; g < 8; g++ {
 		gid := fmt.Sprintf("group-%02d", g+1)
 		members := make([]string, 0, 6)
@@ -160,7 +164,7 @@ func (m *Manager) seed() {
 			// Keep all six members legible at the default regional zoom. These are
 			// real simulated positions, not screen-space offsets, so selection,
 			// routing, and distance calculations all agree with the map.
-			p := domain.GeoPointV2{centers[g][0] + float64(slot%3-1)*.022, centers[g][1] + float64(slot/3)*.028}
+			p := spawnPoint(spawnCenters, g, slot, .022, .028)
 			env := environmentAt(p, float64(idx))
 			m.vessels[id] = domain.VesselProfileV2{SchemaVersion: 2, ID: id, Designation: fmt.Sprintf("KM-%03d", 214+idx), Callsign: callsigns[idx], DisplayName: fmt.Sprintf("%s (KM-%03d)", callsigns[idx], 214+idx), Class: class, GroupID: gid, GroupCode: groupCodes[g], GroupColor: groupColors[g], GroupPattern: patterns[g], Available: true, Telemetry: domain.VesselTelemetryV2{Position: p, HeadingDeg: float64((idx * 37) % 360), SpeedMPS: .4 + float64(idx%5)*.11, Reserve: .96 - float64(idx%9)*.025, ProjectedReserve: .89 - float64(idx%9)*.025, Mode: "patrol", Health: "nominal", PNTIntegrity: "trusted", UncertaintyM: 4 + float64(idx%5), TapeDepthSeconds: 60, Environment: env}}
 		}
@@ -172,6 +176,36 @@ func (m *Manager) seed() {
 	}
 	sort.Strings(all)
 	m.collections["collection-relays"] = domain.SavedCollectionV2{SchemaVersion: 2, ID: "collection-relays", Name: "Atlas relay watch", MemberIDs: filterIDs(all, func(v domain.VesselProfileV2) bool { return v.Class.ID == "atlas" }, m.vessels), Revision: 1}
+}
+
+func spawnPoint(centers []domain.GeoPointV2, group, slot int, longitudeStep, latitudeStep float64) domain.GeoPointV2 {
+	return domain.GeoPointV2{centers[group][0] + float64(slot%3-1)*longitudeStep, centers[group][1] + float64(slot/3)*latitudeStep}
+}
+
+func migrateLegacySpawn(v domain.VesselProfileV2, seeded domain.VesselProfileV2) domain.VesselProfileV2 {
+	var designation int
+	if _, err := fmt.Sscanf(v.Designation, "KM-%d", &designation); err != nil {
+		return v
+	}
+	idx := designation - 214
+	if idx < 0 || idx >= 48 {
+		return v
+	}
+	group, slot := idx/6, idx%6
+	legacyCompact := spawnPoint(legacySpawnCenters, group, slot, .008, .007)
+	legacyReadable := spawnPoint(legacySpawnCenters, group, slot, .022, .028)
+	if samePoint(v.Telemetry.Position, legacyCompact) || samePoint(v.Telemetry.Position, legacyReadable) {
+		v.Telemetry.Position = seeded.Telemetry.Position
+		v.Telemetry.Environment = seeded.Telemetry.Environment
+	}
+	return v
+}
+
+func samePoint(a, b domain.GeoPointV2) bool {
+	// The simulator may advance a legacy seed by a few metres before retained
+	// state loads. Keep the migration neighborhood tight enough that a vessel
+	// which has actually departed its initial cell is never repositioned.
+	return math.Abs(a[0]-b[0]) < .003 && math.Abs(a[1]-b[1]) < .003
 }
 
 func filterIDs(ids []string, pred func(domain.VesselProfileV2) bool, vs map[string]domain.VesselProfileV2) []string {
@@ -1155,6 +1189,9 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 	load(`SELECT profile FROM fleet_vessels ORDER BY designation`, func(b []byte) {
 		var v domain.VesselProfileV2
 		if json.Unmarshal(b, &v) == nil && v.ID != "" {
+			if seeded, ok := m.vessels[v.ID]; ok {
+				v = migrateLegacySpawn(v, seeded)
+			}
 			m.vessels[v.ID] = v
 		}
 	})

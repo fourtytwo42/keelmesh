@@ -1,8 +1,11 @@
 package fleetops
 
 import (
+	"encoding/json"
 	"log/slog"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
@@ -39,6 +42,127 @@ func TestSeededGroupsUseReadableRealWorldSpacing(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestSeededVesselsAreInWaterWithShorelineMargin(t *testing.T) {
+	type geometry struct {
+		Type        string          `json:"type"`
+		Coordinates json.RawMessage `json:"coordinates"`
+	}
+	type feature struct {
+		Properties map[string]any `json:"properties"`
+		Geometry   geometry       `json:"geometry"`
+	}
+	var chart struct {
+		Features []feature `json:"features"`
+	}
+	path := filepath.Join("..", "..", "web", "public", "assets", "maps", "narragansett.geojson")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &chart); err != nil {
+		t.Fatal(err)
+	}
+	land := make([][][]domain.GeoPointV2, 0)
+	for _, f := range chart.Features {
+		if f.Properties["kind"] != "land" {
+			continue
+		}
+		switch f.Geometry.Type {
+		case "Polygon":
+			var polygon [][]domain.GeoPointV2
+			if err := json.Unmarshal(f.Geometry.Coordinates, &polygon); err != nil {
+				t.Fatal(err)
+			}
+			land = append(land, polygon)
+		case "MultiPolygon":
+			var polygons [][][]domain.GeoPointV2
+			if err := json.Unmarshal(f.Geometry.Coordinates, &polygons); err != nil {
+				t.Fatal(err)
+			}
+			land = append(land, polygons...)
+		}
+	}
+	m := New("", slog.Default())
+	for _, vessel := range m.Snapshot().Vessels {
+		if pointOnLand(vessel.Telemetry.Position, land) {
+			t.Fatalf("%s spawned on land at %v", vessel.DisplayName, vessel.Telemetry.Position)
+		}
+		if distanceToShore(vessel.Telemetry.Position, land) < .004 {
+			t.Fatalf("%s spawned too close to the rendered shoreline at %v", vessel.DisplayName, vessel.Telemetry.Position)
+		}
+	}
+}
+
+func TestKnownLegacySpawnIsMigratedWithoutMovingAnOperatedVessel(t *testing.T) {
+	m := New("", slog.Default())
+	seeded := m.vessels["00000000-0000-6000-8000-000000000002"]
+	legacy := seeded
+	legacy.Telemetry.Position = spawnPoint(legacySpawnCenters, 0, 1, .008, .007)
+	migrated := migrateLegacySpawn(legacy, seeded)
+	if migrated.Telemetry.Position != seeded.Telemetry.Position {
+		t.Fatalf("legacy position was not migrated: %v", migrated.Telemetry.Position)
+	}
+	operated := seeded
+	operated.Telemetry.Position = domain.GeoPointV2{-71.28, 41.31}
+	if got := migrateLegacySpawn(operated, seeded); got.Telemetry.Position != operated.Telemetry.Position {
+		t.Fatalf("operated vessel was unexpectedly moved: %v", got.Telemetry.Position)
+	}
+}
+
+func pointOnLand(point domain.GeoPointV2, polygons [][][]domain.GeoPointV2) bool {
+	for _, polygon := range polygons {
+		if len(polygon) == 0 || !pointInRing(point, polygon[0]) {
+			continue
+		}
+		inHole := false
+		for _, hole := range polygon[1:] {
+			if pointInRing(point, hole) {
+				inHole = true
+				break
+			}
+		}
+		if !inHole {
+			return true
+		}
+	}
+	return false
+}
+
+func pointInRing(point domain.GeoPointV2, ring []domain.GeoPointV2) bool {
+	inside := false
+	for i, j := 0, len(ring)-1; i < len(ring); j, i = i, i+1 {
+		a, b := ring[i], ring[j]
+		if (a[1] > point[1]) != (b[1] > point[1]) && point[0] < (b[0]-a[0])*(point[1]-a[1])/(b[1]-a[1])+a[0] {
+			inside = !inside
+		}
+	}
+	return inside
+}
+
+func distanceToShore(point domain.GeoPointV2, polygons [][][]domain.GeoPointV2) float64 {
+	minimum := math.Inf(1)
+	for _, polygon := range polygons {
+		for _, ring := range polygon {
+			for i := 1; i < len(ring); i++ {
+				if distance := pointSegmentDistance(point, ring[i-1], ring[i]); distance < minimum {
+					minimum = distance
+				}
+			}
+		}
+	}
+	return minimum
+}
+
+func pointSegmentDistance(point, start, end domain.GeoPointV2) float64 {
+	dx, dy := end[0]-start[0], end[1]-start[1]
+	if dx == 0 && dy == 0 {
+		return math.Hypot(point[0]-start[0], point[1]-start[1])
+	}
+	t := ((point[0]-start[0])*dx + (point[1]-start[1])*dy) / (dx*dx + dy*dy)
+	t = math.Max(0, math.Min(1, t))
+	return math.Hypot(point[0]-(start[0]+t*dx), point[1]-(start[1]+t*dy))
 }
 
 func TestConcurrentDisjointMissionsAndAuthorityConflict(t *testing.T) {

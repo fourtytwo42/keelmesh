@@ -103,9 +103,9 @@ test("dragged geometry follows the exact preview, authorization, and execution p
   const canvas = page.locator(".operations-map .maplibregl-canvas");
   const box = await canvas.boundingBox();
   if (!box) throw new Error("map canvas has no bounding box");
-  await page.mouse.move(box.x + box.width * 0.47, box.y + box.height * 0.13);
+  await page.mouse.move(box.x + box.width * 0.43, box.y + box.height * 0.32);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.53, box.y + box.height * 0.20, { steps: 8 });
+  await page.mouse.move(box.x + box.width * 0.50, box.y + box.height * 0.40, { steps: 8 });
   await page.mouse.up();
   await expect(planner.getByText("1 operating", { exact: true })).toBeVisible();
 
