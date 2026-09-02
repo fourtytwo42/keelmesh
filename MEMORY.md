@@ -4,10 +4,10 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: Finalize the M5 interview release on VM 214.
-- Last meaningful change: Quiet Fleet, offline packaging, restart verification, M1–M5 verification, and all seven browser workflows passed on VM 214. A repeated-run M3 projection defect was fixed and replay now matches 1,000/1,000 vessels.
-- Next step: commit/push the clean release, export final evidence, create `v0.5.0-interview`, then inspect Proxmox storage and request explicit authorization before any snapshot.
-- Blockers: Snapshot creation intentionally awaits storage-gate inspection and final user authorization.
+- Current task: M5 implementation and release are complete; only the optional Proxmox recovery snapshot remains.
+- Last meaningful change: Release `v0.5.0-interview` was pushed at commit `07e1048`. Two checksum-valid evidence bundles and two consecutive six-minute/full rehearsals passed on VM 214.
+- Next step: obtain read-only Proxmox storage/snapshot state, verify every M5 capacity gate, present the results, and request explicit authorization immediately before any snapshot.
+- Blockers: The available VM SSH key is not authorized for Proxmox root, so host storage preflight could not be read non-interactively. No snapshot was attempted.
 
 ## Current State
 
@@ -132,6 +132,8 @@ When sources conflict, use this order:
 
 ## Verification Ledger
 
+- 2026-09-02: M5 release rehearsals passed twice consecutively in both six-minute and full modes. Two post-commit evidence exports passed all M1–M5 verifiers; each bundle is 56 KiB and validates against its `SHA256SUMS` manifest. Final bundle: `/srv/keelmesh/evidence/release/20260902T045512Z`; manifest SHA-256 `febca6e13ec501d0af8e99314542fc9fb9e059cfa78e49e6e225ce1e71ba9b5c`.
+- 2026-09-02: Release commit `07e1048` and annotated tag `v0.5.0-interview` were pushed. Repository Actions remained disabled, no workflow files existed, and the tracked-file secret scan was clean. No hosted GitHub build or workflow was run.
 - 2026-09-01: M5 VM verification passed. Go tests/vet, strict TypeScript, seven Vitest tests, production build, Ruff, strict mypy, five pytest tests, Bandit, Compose build/validation, M1–M5 API verifiers, and seven Playwright workflows passed. Browser coverage includes Quiet Fleet and 1280×720, 1366×768, and 1440×900.
 - 2026-09-01: M5 measured Quiet Fleet proof: proposal 1 had 3/4 armed and 3/3 quorum but commit failed `AFFECTED_NODE_NOT_ARMED`; proposal 2 armed 4/4 and activated at T+60. Three coordination rounds used 4,616 bytes total under the per-window 4,096-byte budget.
 - 2026-09-01: Offline verification passed from cached images with `--pull never`. AI/Kafka/PostgreSQL/workers ran only on an internal backend network, core retained a separate LAN bridge, provider mode reported `offline`, cloud/local were disabled, and M1–M5 passed. Restart verification passed for AI during mission authority, Worker 2 under load, Kafka/PostgreSQL recovery, and honest core in-memory reset.
@@ -307,6 +309,7 @@ When sources conflict, use this order:
 
 ## Completed Work
 
+- 2026-09-02: Released and pushed `v0.5.0-interview` with two validated evidence bundles, repeated rehearsals, offline proof, restart isolation, and disabled GitHub Actions. Snapshot creation remains intentionally separate and requires Proxmox storage inspection plus explicit user authorization.
 - 2026-09-01: Completed M5 Quiet Fleet authority/contracts/API/map/UI, VM release command, dual-network offline mode, restart verification, release viewport coverage, and M1–M5 regression verification. Fixed cross-run M3 `vessel_latest` updates using run-aware produced-time ordering; repeated 1,000-vessel shadow replay matched 1,000/1,000 with zero dropped events. No Proxmox snapshot was created.
 - 2026-09-01: Completed M4 contracts, private MCP security boundary, Python typed incident agent, adaptive OpenRouter/local/mock provider routing, bounded fixture RAG, isolated deterministic replay, human-gated incident-to-evaluation promotion, provider regression execution, AI evidence export, Engineer UI, M4 verifier/browser coverage, Compose/Kubernetes production shape, and expanded CI.
 - 2026-09-01: Completed M3 contracts, one-image multi-role topology, pinned Kafka/PostgreSQL stack, 1,000+ vessel producer, bounded outbox, three supervised consumers, set-based ingestion, idempotent projections, deterministic duplicate/out-of-order/quarantine faults, actual lag and process metrics, signed worker kill/recovery, redrive, Kafka shadow replay, pgvector fixture retrieval, Prometheus endpoint, live Cutaway UI, verifier/evidence, Kubernetes production shape, and expanded CI.
