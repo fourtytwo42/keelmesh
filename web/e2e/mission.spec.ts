@@ -113,8 +113,11 @@ test("fleet rail, search, group, and filtered selection resolve exact targets", 
   await rail.getByRole("checkbox").check();
   await expectSelected(page, 1);
   await expect(rail.locator(".fleet-vessel-row.selected", { hasText: "Gannet" })).toBeVisible();
+  await expect(rail.locator(".collection-strip")).toHaveCount(0);
+  await rail.getByRole("button", { name: "View status of Gannet", exact: true }).click();
+  await expect(page.getByRole("region", { name: /Gannet \(KM-214\)/ })).toContainText("LOCAL CONDITIONS");
 
-  await rail.getByRole("button", { name: "Manage WS Watch Shoal", exact: true }).click();
+  await rail.getByRole("button", { name: "View status of WS Watch Shoal", exact: true }).click();
   await expect(page.getByRole("region", { name: "Group · WS", exact: true })).toContainText("PRIMARY OPERATIONAL GROUP");
 });
 
@@ -241,7 +244,7 @@ test("fleet rail is the single selection and group-reassignment surface", async 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menu", { name: "Assign Jaeger to group" })).not.toBeVisible();
 
-  await rail.getByRole("button", { name: "Manage BG Block Guard", exact: true }).click();
+  await rail.getByRole("button", { name: "View status of BG Block Guard", exact: true }).click();
   const groupInspector = page.getByRole("region", { name: "Group · BG", exact: true });
   await expect(groupInspector).toBeVisible();
   await groupInspector.getByTitle("Close").click();

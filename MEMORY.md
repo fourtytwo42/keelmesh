@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: Fleet / Groups is now the single authoritative selection surface. The redundant selected-assets ribbon, chip list, expandable drawer, and aggregate selection inspector were removed; map/group/multi-click selection restores and foregrounds Fleet / Groups, where selected rows, per-group counts, direct drag/drop, context reassignment, clear, and mission creation remain together.
+- Last meaningful change: Selection is now visually explicit with large amber map rings and high-contrast Fleet / Groups rows. Every vessel and group row has an eye button for status; group status aggregates reserve, underway, and health/PNT attention. The obsolete saved-collection chip row/action was removed and all workspace scrollbars use a thin graphite/amber theme.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -138,6 +138,7 @@ When sources conflict, use this order:
 
 ## Verification Ledger
 
+- 2026-09-02: Fleet selection/status polish passed strict TypeScript, seven Vitest assertions, production Vite build, and all eleven Playwright workflows on VM 214. Tests cover exact selection highlighting state, absent collection-chip UI, vessel status, group status, group reassignment, all mission flows, Arena failover, and release viewports. VM 214 and all twelve vessel nodes run binary SHA-256 `ec74e473578ef84b67c41689b48a875f2fa5e2b6ff74953b98df9c880ffc62be`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Selection consolidation passed strict TypeScript, seven Vitest assertions, production Vite build, targeted three-workflow Playwright coverage, and the full eleven-workflow browser suite on VM 214. Coverage proves the duplicate selection DOM is absent, Fleet / Groups reflects exact counts, minimized Fleet / Groups automatically restores on map selection, and drag/context group reassignment remains functional. VM 214 and all twelve vessel nodes run binary SHA-256 `1b8f7bca0c724b00bb606f825edc28189af2fe2314204b148b1d3360c78dde04`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Inline group drag/drop and vessel context assignment passed strict TypeScript, seven Vitest assertions, production frontend build, and all eleven Playwright workflows on VM 214. Coverage includes the exact `Jaeger → BL Bay Lantern` move in both lists, context-menu reassignment, create-group form/API, fixture cleanup, selection retention, and inspection. VM 214 and all twelve vessel nodes run binary SHA-256 `320885ef2e8c82029213ddddfa6489fac3150d84d0a3189aadb15026c5eab5fc`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Numbered/color-coded waypoint and water-context behavior passed the full Go suite, strict TypeScript, seven Vitest assertions, production frontend build, and all eleven Playwright workflows on VM 214. VM 214 and all twelve vessel nodes run core binary SHA-256 `81a7ed4750243d84730a70d27d6078b5ae9b313ce390c7a5f375eb3a195147d7`. No snapshot or GitHub-hosted workflow ran.
@@ -326,6 +327,14 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Selection visibility and fleet status polish
+
+- Context: Selected vessels were not visually prominent enough; Fleet / Groups lacked direct status buttons, old saved-collection chips consumed space, and native scrollbars clashed with the workspace.
+- Decision: Render a 21 px amber selection ring around selected map vessels, strengthen selected rail rows, add eye-button vessel/group status, include real group aggregate metrics, remove collection chips/save action, and theme all workspace scrollbars.
+- Files: `web/src/FleetWorkspace.tsx`, `web/src/OperationsMap.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: strict TypeScript, seven Vitest assertions, production Vite build, full eleven-test Playwright suite, central plus twelve-node binary/health verification.
+- Result: Map and rail selection is obvious, live status is one click away at both scopes, Fleet / Groups is less cluttered, and scrolling matches Navy/Pirate palettes. Binary SHA-256 is `ec74e473578ef84b67c41689b48a875f2fa5e2b6ff74953b98df9c880ffc62be`. No snapshot or GitHub-hosted workflow.
 
 ### 2026-09-02 - Unified fleet selection surface
 
