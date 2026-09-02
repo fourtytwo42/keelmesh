@@ -70,7 +70,7 @@ jobs:
         working-directory: web
         run: |
           npx playwright install --with-deps chromium
-          npm run test:e2e
+          npm run test:e2e -- --grep-invert "live cutaway"
 
       - name: Show service logs on failure
         if: failure()
@@ -104,6 +104,19 @@ jobs:
 
       - name: Verify M3 failure, recovery, quarantine, and replay
         run: python3 scripts/verify_m3.py http://127.0.0.1:8080 --json m3-evidence.json --markdown m3-evidence.md
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Verify live cutaway in the full scale appliance
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run test:e2e -- --grep "live cutaway"
 
       - name: Upload M3 evidence
         if: always()
