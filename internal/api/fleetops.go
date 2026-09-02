@@ -116,6 +116,14 @@ func (s *Server) patchMissionV2(w http.ResponseWriter, r *http.Request) {
 	v, err := s.fleetops.PatchMission(r.PathValue("id"), req)
 	respondV2(w, v, err, http.StatusOK)
 }
+func (s *Server) deleteMissionV2(w http.ResponseWriter, r *http.Request) {
+	var req fleetops.Mutation
+	if !decode(w, r, &req) {
+		return
+	}
+	err := s.fleetops.DeleteMission(r.PathValue("id"), req)
+	respondV2(w, map[string]bool{"deleted": err == nil}, err, http.StatusOK)
+}
 func (s *Server) geometryV2(w http.ResponseWriter, r *http.Request) {
 	var req fleetops.GeometryRequest
 	if !decode(w, r, &req) {

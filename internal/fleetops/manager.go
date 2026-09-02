@@ -586,6 +586,12 @@ func (m *Manager) PatchMission(id string, req PatchMissionRequest) (domain.Missi
 		v.Objective = *req.Objective
 	}
 	if req.Status != nil {
+		if (*req.Status == "paused" && v.Status != "executing") || (*req.Status == "executing" && v.Status != "paused") {
+			return v, &Error{"INVALID_MISSION_TRANSITION", "Only an executing mission may pause, and only a paused mission may resume."}
+		}
+		if *req.Status != "paused" && *req.Status != "executing" {
+			return v, &Error{"INVALID_MISSION_STATUS", "Mission status must be paused or executing."}
+		}
 		v.Status = *req.Status
 	}
 	if req.Formation != nil {
@@ -606,10 +612,62 @@ func (m *Manager) PatchMission(id string, req PatchMissionRequest) (domain.Missi
 	}
 	v.Version++
 	v.UpdatedAt = time.Now().UTC()
-	v.AuthorizedPlanID = ""
+	if req.Status == nil {
+		v.AuthorizedPlanID = ""
+	}
 	m.missions[id] = v
 	m.persistAsync()
 	return v, nil
+}
+
+// DeleteMission ends any active movement, releases its vessels, and removes
+// transient plans and authority associated with the exact mission version.
+func (m *Manager) DeleteMission(id string, req Mutation) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.missions[id]
+	if !ok {
+		return &Error{"MISSION_NOT_FOUND", "Mission not found."}
+	}
+	if err := m.check(req, v.Version); err != nil {
+		return err
+	}
+	for vesselID, vessel := range m.vessels {
+		if vessel.Telemetry.MissionID != id {
+			continue
+		}
+		vessel.Telemetry.MissionID = ""
+		vessel.Telemetry.Route = nil
+		vessel.Telemetry.Mode = "patrol"
+		vessel.Telemetry.SpeedMPS = 0
+		m.vessels[vesselID] = vessel
+	}
+	for key, draft := range m.drafts {
+		if draft.MissionID == id {
+			delete(m.drafts, key)
+		}
+	}
+	planIDs := map[string]bool{}
+	for key, plan := range m.plans {
+		if plan.MissionID == id {
+			planIDs[key] = true
+			delete(m.plans, key)
+		}
+	}
+	for key, lease := range m.leases {
+		if lease.MissionID == id {
+			delete(m.leases, key)
+		}
+	}
+	for key, planID := range m.startedPlans {
+		if planIDs[planID] {
+			delete(m.startedPlans, key)
+		}
+	}
+	delete(m.missions, id)
+	m.fleetVersion++
+	m.persistAsync()
+	return nil
 }
 func (m *Manager) SetGeometry(id string, req GeometryRequest) (domain.MissionWorkspaceV2, error) {
 	m.mu.Lock()

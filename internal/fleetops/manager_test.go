@@ -226,6 +226,27 @@ func TestPreviewDoesNotMoveAndExactHashStarts(t *testing.T) {
 	if mission.Status != "executing" {
 		t.Fatalf("status = %s", mission.Status)
 	}
+	pausedStatus := "paused"
+	mission, err = m.PatchMission(mission.ID, PatchMissionRequest{Mutation: Mutation{RequestID: "pause", IdempotencyKey: "pause", ExpectedVersion: mission.Version}, Status: &pausedStatus})
+	if err != nil || mission.Status != "paused" {
+		t.Fatalf("pause failed: status=%s err=%v", mission.Status, err)
+	}
+	pausedAt := m.vessels[target[0]].Telemetry.Position
+	m.tick()
+	if m.vessels[target[0]].Telemetry.Position != pausedAt {
+		t.Fatal("paused mission moved a vessel")
+	}
+	resumeStatus := "executing"
+	mission, err = m.PatchMission(mission.ID, PatchMissionRequest{Mutation: Mutation{RequestID: "resume", IdempotencyKey: "resume", ExpectedVersion: mission.Version}, Status: &resumeStatus})
+	if err != nil || mission.Status != "executing" {
+		t.Fatalf("resume failed: status=%s err=%v", mission.Status, err)
+	}
+	if err = m.DeleteMission(mission.ID, Mutation{RequestID: "delete", IdempotencyKey: "delete", ExpectedVersion: mission.Version}); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := m.missions[mission.ID]; exists || m.vessels[target[0]].Telemetry.MissionID != "" || len(m.vessels[target[0]].Telemetry.Route) != 0 {
+		t.Fatal("deleted mission retained mission state or vessel authority")
+	}
 }
 
 func TestCompileResolvesShorelineIntentWithoutDrawnGeometry(t *testing.T) {

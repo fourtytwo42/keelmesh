@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: Selection is now visually explicit with large amber map rings and high-contrast Fleet / Groups rows. Every vessel and group row has an eye button for status; group status aggregates reserve, underway, and health/PNT attention. The obsolete saved-collection chip row/action was removed and all workspace scrollbars use a thin graphite/amber theme.
+- Last meaningful change: Workspace windows now have explicit primary and context semantics. Top-nav primary tools minimize out of view and restore from the top nav without entering the bottom bar or exposing Close. Vessel/group/detail windows may minimize into the dedicated bottom taskbar, restore by clicking their task, or close permanently with X/trash. Mission tabs have pause/resume/delete context actions, deletion releases vessel authority, and Cutaway uses the graphite/amber visual system.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -138,6 +138,7 @@ When sources conflict, use this order:
 
 ## Verification Ledger
 
+- 2026-09-02: Workspace semantics passed all Go tests/vet, strict TypeScript, seven Vitest assertions, production Vite build, ten unchanged Playwright workflows, and the corrected dedicated window workflow on VM 214. Coverage proves top-nav primary windows never enter the lower taskbar or expose Close, context/detail windows minimize/restore/delete through the taskbar, mission pause/resume/delete is state-backed, and Cutaway retains legacy controls. VM 214 and all twelve nodes run binary SHA-256 `306a0cb2fa84937b628c4fa53111f615cc357052f7cb637e7636b84e2c6144a6`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Fleet selection/status polish passed strict TypeScript, seven Vitest assertions, production Vite build, and all eleven Playwright workflows on VM 214. Tests cover exact selection highlighting state, absent collection-chip UI, vessel status, group status, group reassignment, all mission flows, Arena failover, and release viewports. VM 214 and all twelve vessel nodes run binary SHA-256 `ec74e473578ef84b67c41689b48a875f2fa5e2b6ff74953b98df9c880ffc62be`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Selection consolidation passed strict TypeScript, seven Vitest assertions, production Vite build, targeted three-workflow Playwright coverage, and the full eleven-workflow browser suite on VM 214. Coverage proves the duplicate selection DOM is absent, Fleet / Groups reflects exact counts, minimized Fleet / Groups automatically restores on map selection, and drag/context group reassignment remains functional. VM 214 and all twelve vessel nodes run binary SHA-256 `1b8f7bca0c724b00bb606f825edc28189af2fe2314204b148b1d3360c78dde04`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Inline group drag/drop and vessel context assignment passed strict TypeScript, seven Vitest assertions, production frontend build, and all eleven Playwright workflows on VM 214. Coverage includes the exact `Jaeger → BL Bay Lantern` move in both lists, context-menu reassignment, create-group form/API, fixture cleanup, selection retention, and inspection. VM 214 and all twelve vessel nodes run binary SHA-256 `320885ef2e8c82029213ddddfa6489fac3150d84d0a3189aadb15026c5eab5fc`. No snapshot or GitHub-hosted workflow ran.
@@ -327,6 +328,15 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Logical workspace window and mission lifecycle semantics
+
+- Context: Primary navigation tools and transient detail cards previously shared ambiguous minimize/close behavior and competed for the lower workspace edge.
+- Decision: Classify Fleet, Mission, Arena, Resilience, Quiet Fleet, Engineer, and Cutaway as top-nav primary windows; only minimized vessel/group/detail windows enter the bottom taskbar. Add mission-tab pause/resume/delete and restyle Cutaway in the shared graphite/amber system.
+- Files: `web/src/WindowManager.tsx`, `web/src/FleetWorkspace.tsx`, `web/src/app.css`, `web/e2e/mission.spec.ts`, `internal/fleetops/manager.go`, `internal/api/fleetops.go`, `internal/api/server.go`, `internal/fleetops/manager_test.go`.
+- Commands/tests: strict TypeScript, seven Vitest assertions, production frontend build, all Go tests/vet in Go 1.27, Compose build/health, ten existing Playwright workflows plus the corrected dedicated window workflow.
+- Result: Pause freezes executing mission movement; resume preserves plan authority; delete releases vessels and removes mission plans/leases. VM 214 and all twelve vessel nodes run binary SHA-256 `306a0cb2fa84937b628c4fa53111f615cc357052f7cb637e7636b84e2c6144a6` and passed health checks. No snapshot or GitHub-hosted workflow ran.
+- Follow-up: Rehearse primary and context-window behavior through the current Quick Tunnel.
 
 ### 2026-09-02 - Selection visibility and fleet status polish
 

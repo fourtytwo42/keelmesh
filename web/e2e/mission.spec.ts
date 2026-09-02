@@ -300,6 +300,17 @@ test("dragged geometry follows the exact preview, authorization, and execution p
   await expect(planner.getByText("Movement lease ready")).toBeVisible();
   await planner.getByRole("button", { name: "Start authorized mission" }).click();
   await expect(planner.getByText("executing", { exact: true })).toBeVisible();
+  const missionTab = page.locator(".mission-tabs button.active");
+  await missionTab.click({ button: "right" });
+  await page.getByRole("menu", { name: "Mission actions" }).getByRole("menuitem", { name: "Pause mission" }).click();
+  await expect(missionTab.getByText("paused", { exact: true })).toBeVisible();
+  await missionTab.click({ button: "right" });
+  await page.getByRole("menu", { name: "Mission actions" }).getByRole("menuitem", { name: "Resume mission" }).click();
+  await expect(missionTab.getByText("executing", { exact: true })).toBeVisible();
+  page.once("dialog", dialog => dialog.accept());
+  await missionTab.click({ button: "right" });
+  await page.getByRole("menu", { name: "Mission actions" }).getByRole("menuitem", { name: "Delete mission" }).click();
+  await expect(page.locator(".mission-tabs button.active")).toHaveCount(0);
 });
 
 test("workspace windows move, minimize, restore, dock, and retain legacy tools", async ({ page }) => {
@@ -316,8 +327,30 @@ test("workspace windows move, minimize, restore, dock, and retain legacy tools",
   await expect(engineer).toHaveClass(/docked/);
   await engineer.getByTitle("Minimize").click();
   await expect(engineer).not.toBeVisible();
-  await page.locator(".window-shelf").getByRole("button", { name: /Autonomy Engineer/ }).click();
+  await expect(page.locator(".window-shelf")).not.toContainText("Autonomy Engineer");
+  await page.getByRole("button", { name: "Engineer" }).click();
   await expect(engineer).toBeVisible();
+  await expect(engineer.getByTitle("Close")).toHaveCount(0);
+  await engineer.getByTitle("Minimize").click();
+  await expect(engineer).toBeHidden();
+
+  const rail = page.getByRole("region", { name: "Fleet / Groups" });
+  await rail.getByPlaceholder("Callsign, class, group, status…").fill("Gannet");
+  await rail.getByRole("button", { name: "View status of Gannet" }).click();
+  const vessel = page.getByRole("region", { name: /Gannet \(KM-214\)/ });
+  await vessel.getByTitle("Minimize").click();
+  const detailBar = page.getByRole("group", { name: "Minimized detail windows" });
+  await expect(detailBar).toContainText("Gannet (KM-214)");
+  await detailBar.getByRole("button", { name: "Gannet (KM-214)", exact: true }).click();
+  await expect(vessel).toBeVisible();
+  await expect(detailBar).not.toContainText("Gannet (KM-214)");
+  await vessel.getByTitle("Minimize").click();
+  await detailBar.getByRole("button", { name: "Close Gannet (KM-214)" }).click();
+  await expect(detailBar).not.toContainText("Gannet (KM-214)");
+  await rail.getByRole("button", { name: "View status of Gannet" }).click();
+  await expect(vessel).toBeVisible();
+  await vessel.getByTitle("Close").click();
+  await expect(vessel).not.toBeVisible();
   await page.getByRole("button", { name: "Cutaway" }).click();
   await expect(page.getByRole("region", { name: "Live Infrastructure Cutaway", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Resilience" }).click();
