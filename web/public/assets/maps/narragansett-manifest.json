@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "source": "Natural Earth 1:10m land",
+  "source_url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_land.geojson",
+  "source_revision": "ca96624a56bd078437bca8184e78163e5039ad19",
+  "bounds_wgs84": [
+    -72.1,
+    40.75,
+    -70.55,
+    42.05
+  ],
+  "output_sha256": "0d5d9340cbff3081ba7a16d3647d6b05ca759c6844c76dce8512918eb968b2f7",
+  "display_notice": "Offline simulation basemap; not for navigation."
+}

@@ -21,6 +21,10 @@ test.beforeEach(async ({ page }) => {
   await resetFleet(page);
 });
 
+test.afterEach(async ({ page }) => {
+  await resetFleet(page);
+});
+
 test("map-first workspace exposes the persistent 48-vessel operating picture", async ({ page }) => {
   const rasterRequests: string[] = [];
   page.on("request", request => {
