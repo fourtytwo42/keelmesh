@@ -114,58 +114,60 @@
     {
       "name": "keelmesh-core-1",
       "cpu": "0.41%",
-      "memory": "8.105MiB / 15.62GiB",
+      "memory": "8.285MiB / 15.62GiB",
       "memory_percent": "0.05%",
-      "network_io": "604kB / 1.38MB",
+      "network_io": "3.26MB / 7.56MB",
       "block_io": "0B / 0B"
     },
     {
       "name": "keelmesh-kafka-1",
-      "cpu": "1.21%",
-      "memory": "975.7MiB / 15.62GiB",
-      "memory_percent": "6.10%",
-      "network_io": "238MB / 1GB",
-      "block_io": "0B / 281MB"
+      "cpu": "1.05%",
+      "memory": "996.1MiB / 15.62GiB",
+      "memory_percent": "6.23%",
+      "network_io": "239MB / 1.01GB",
+      "block_io": "0B / 287MB"
     },
     {
       "name": "keelmesh-loadgen-1",
-      "cpu": "0.15%",
-      "memory": "3.285MiB / 15.62GiB",
-      "memory_percent": "0.02%",
-      "network_io": "8.71kB / 5.84kB",
-      "block_io": "0B / 0B"
+      "cpu": "0.14%",
+      "memory": "6.043MiB / 15.62GiB",
+      "memory_percent": "0.04%",
+      "network_io": "31.9kB / 41.8kB",
+      "block_io": "8.19kB / 0B"
     },
     {
       "name": "keelmesh-postgres-1",
-      "cpu": "3.37%",
-      "memory": "189.8MiB / 15.62GiB",
-      "memory_percent": "1.19%",
-      "network_io": "688MB / 66.5MB",
-      "block_io": "0B / 6.81GB"
+      "cpu": "2.88%",
+      "memory": "188.7MiB / 15.62GiB",
+      "memory_percent": "1.18%",
+      "network_io": "690MB / 68.5MB",
+      "block_io": "0B / 6.91GB"
     },
     {
       "name": "keelmesh-worker-1-1",
-      "cpu": "0.13%",
-      "memory": "7.422MiB / 15.62GiB",
-      "memory_percent": "0.05%",
-      "network_io": "24.6kB / 33.9kB",
+      "cpu": "0.18%",
+      "memory": "10.05MiB / 15.62GiB",
+      "memory_percent": "0.06%",
+      "network_io": "140kB / 360kB",
       "block_io": "0B / 0B"
     },
     {
       "name": "keelmesh-worker-2-1",
-      "cpu": "0.12%",
-      "memory": "6.922MiB / 15.62GiB",
-      "memory_percent": "0.04%",
-      "network_io": "24.1kB / 32.7kB",
+      "cpu": "0.18%",
+      "memory": "9.961MiB / 15.62GiB",
+      "memory_percent": "0.06%",
+      "network_io": "140kB / 363kB",
       "block_io": "0B / 0B"
     },
     {
       "name": "keelmesh-worker-3-1",
-      "cpu": "0.18%",
-      "memory": "7.508MiB / 15.62GiB",
-      "memory_percent": "0.05%",
-      "network_io": "29.4kB / 37.2kB",
+      "cpu": "0.17%",
+      "memory": "9.852MiB / 15.62GiB",
+      "memory_percent": "0.06%",
+      "network_io": "145kB / 360kB",
       "block_io": "0B / 0B"
     }
-  ]
+  ],
+  "commit": "8416ccb1c6d37857993af1eedf5741c89669c844",
+  "image_digest": "sha256:cdba149ae65589f42bf4ad5a26fc77c6893effa57228133f50db817a0ed2159f"
 }

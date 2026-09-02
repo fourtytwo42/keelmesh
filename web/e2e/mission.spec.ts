@@ -56,7 +56,7 @@ test("live cutaway exposes measured scale-plane state", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Cutaway" }).click();
   const cutaway = page.getByRole("region", { name: "Live infrastructure cutaway" });
-  await expect(cutaway.getByRole("heading", { name: "The system, peeled open" })).toBeVisible();
+  await expect(cutaway.getByRole("heading", { name: "The system, peeled open" })).toBeVisible({ timeout: 15_000 });
   await expect(cutaway.getByText("Kafka KRaft")).toBeVisible();
   await expect(cutaway.getByText("PostgreSQL + pgvector")).toBeVisible();
   await expect(cutaway.getByText("worker-2", { exact: true })).toBeVisible();

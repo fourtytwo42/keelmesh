@@ -33,7 +33,15 @@ export default function App() {
   }, []);
 
   useEffect(() => { refresh().catch((e) => setError(e.message)); }, [refresh]);
-  useEffect(() => { api<PlatformSnapshot>("/api/v1/platform").then(setPlatform).catch(() => undefined); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => api<PlatformSnapshot>("/api/v1/platform").then((next) => {
+      if (!cancelled) setPlatform(next);
+    }).catch(() => undefined);
+    void refresh();
+    const timer = window.setInterval(refresh, 1_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
   useEffect(() => {
     let socket: WebSocket | null = null; let stopped = false; let retry = 500;
     const connect = () => {
