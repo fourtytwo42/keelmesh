@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M7 Symmetric Fleet Arena is deployed across twelve physical vessel VMs and VM 214; preserve M1-M6 while hardening the explicitly documented distributed-runtime follow-ups.
-- Last meaningful change: Workspace windows now have explicit primary and context semantics. Top-nav primary tools minimize out of view and restore from the top nav without entering the bottom bar or exposing Close. Vessel/group/detail windows may minimize into the dedicated bottom taskbar, restore by clicking their task, or close permanently with X/trash. Mission tabs have pause/resume/delete context actions, deletion releases vessel authority, and Cutaway uses the graphite/amber visual system.
+- Last meaningful change: The New Mission plus icon now overrides the mission tab's inherited status-column grid and is mathematically centered in its complete tab cell. Workspace windows retain explicit primary/context semantics and mission tabs retain pause/resume/delete actions.
 - Next step: rehearse Player B at the current Quick Tunnel `/?arena=1`. Later hardening should replace the central deterministic coordination model with real per-faction replicated consensus and add node mTLS plus independent node-local Python/speech runtimes.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -138,6 +138,7 @@ When sources conflict, use this order:
 
 ## Verification Ledger
 
+- 2026-09-02: New Mission plus alignment passed strict TypeScript, seven Vitest assertions, production Vite build, and a Playwright geometry assertion requiring the icon and tab centers to differ by less than two pixels on both axes. VM 214 and all twelve nodes run binary SHA-256 `ec8c2dd0363f02b0f59d34c88efa2799d3d5f6338c376f3cefcb59cdd31bf77f`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Workspace semantics passed all Go tests/vet, strict TypeScript, seven Vitest assertions, production Vite build, ten unchanged Playwright workflows, and the corrected dedicated window workflow on VM 214. Coverage proves top-nav primary windows never enter the lower taskbar or expose Close, context/detail windows minimize/restore/delete through the taskbar, mission pause/resume/delete is state-backed, and Cutaway retains legacy controls. VM 214 and all twelve nodes run binary SHA-256 `306a0cb2fa84937b628c4fa53111f615cc357052f7cb637e7636b84e2c6144a6`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Fleet selection/status polish passed strict TypeScript, seven Vitest assertions, production Vite build, and all eleven Playwright workflows on VM 214. Tests cover exact selection highlighting state, absent collection-chip UI, vessel status, group status, group reassignment, all mission flows, Arena failover, and release viewports. VM 214 and all twelve vessel nodes run binary SHA-256 `ec74e473578ef84b67c41689b48a875f2fa5e2b6ff74953b98df9c880ffc62be`. No snapshot or GitHub-hosted workflow ran.
 - 2026-09-02: Selection consolidation passed strict TypeScript, seven Vitest assertions, production Vite build, targeted three-workflow Playwright coverage, and the full eleven-workflow browser suite on VM 214. Coverage proves the duplicate selection DOM is absent, Fleet / Groups reflects exact counts, minimized Fleet / Groups automatically restores on map selection, and drag/context group reassignment remains functional. VM 214 and all twelve vessel nodes run binary SHA-256 `1b8f7bca0c724b00bb606f825edc28189af2fe2314204b148b1d3360c78dde04`. No snapshot or GitHub-hosted workflow ran.
@@ -328,6 +329,15 @@ When sources conflict, use this order:
 - Proxmox warned that thin-provisioned virtual sizes exceed the physical thin-pool capacity while creating the M0 snapshot. The snapshot succeeded, but host storage utilization/auto-extension must be monitored before creating many additional snapshots.
 
 ## Completed Work
+
+### 2026-09-02 - Centered New Mission control
+
+- Context: The add icon inherited the normal mission tab's seven-pixel status grid column, so it appeared at the left of an otherwise empty tab.
+- Decision: Collapse the add tab to one full-width/full-height grid cell and center its icon.
+- Files: `web/src/app.css`, `web/e2e/mission.spec.ts`.
+- Commands/tests: strict TypeScript, seven Vitest assertions, production build, and browser bounding-box verification.
+- Result: The icon is centered within two pixels on each axis and deployed to VM 214 plus all twelve nodes.
+- Follow-up: None.
 
 ### 2026-09-02 - Logical workspace window and mission lifecycle semantics
 

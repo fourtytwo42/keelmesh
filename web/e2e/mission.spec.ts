@@ -69,6 +69,12 @@ test("map-first workspace exposes the persistent 48-vessel operating picture", a
   await expect(page.getByText("NOAA-DERIVED FIXTURE", { exact: true })).toBeVisible();
   await expect(page.getByText("SIMULATION ONLY", { exact: true })).toBeVisible();
   await expect(page.locator("img[src='/assets/vessels/kestrel.png']").first()).toBeVisible();
+  const newMission = await page.getByRole("button", { name: "New mission" }).boundingBox();
+  const plusIcon = await page.getByRole("button", { name: "New mission" }).locator("svg").boundingBox();
+  expect(newMission).not.toBeNull();
+  expect(plusIcon).not.toBeNull();
+  expect(Math.abs((newMission!.x + newMission!.width / 2) - (plusIcon!.x + plusIcon!.width / 2))).toBeLessThan(2);
+  expect(Math.abs((newMission!.y + newMission!.height / 2) - (plusIcon!.y + plusIcon!.height / 2))).toBeLessThan(2);
   const overlays = page.locator(".environment-overlays");
   await expect(overlays.getByText("TIME-VARYING FIXTURE", { exact: true })).toBeVisible();
   await expect(overlays.getByRole("button", { name: /CURRENT/ })).toHaveClass(/on/);
