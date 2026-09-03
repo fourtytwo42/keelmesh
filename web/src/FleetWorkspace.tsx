@@ -23,6 +23,7 @@ import type {
 import { OperationsMap, type WaypointColor } from "./OperationsMap";
 import { WindowManager, type WindowDefinition } from "./WindowManager";
 import { HoverHelp } from "./HoverHelp";
+import { useLongPressContext } from "./useLongPressContext";
 import { EngineerView } from "./EngineerView";
 import { PlatformCutaway } from "./PlatformCutaway";
 import { ResilienceDrill } from "./ResilienceDrill";
@@ -1535,11 +1536,11 @@ export function FleetWorkspace() {
           </span>
         </div>
         <nav>
-          <button title="Show or hide fleet and operational groups" onClick={() => toggleWindow("fleet")}>
+          <button aria-label={words.fleet} title="Show or hide fleet and operational groups" onClick={() => toggleWindow("fleet")}>
             <Ship />
-            {words.fleet}
+            <span>{words.fleet}</span>
           </button>
-          <button title="Show or hide the active mission planner" onClick={() => {
+          <button aria-label={words.mission} title="Show or hide the active mission planner" onClick={() => {
             if (mission) {
               missionSelectionSync.current = `${mission.id}:${[...mission.target_ids].sort().join(",")}`;
               setSelected(new Set(mission.target_ids));
@@ -1547,15 +1548,15 @@ export function FleetWorkspace() {
             toggleWindow("planner");
           }}>
             <Route />
-            {words.mission}
+            <span>{words.mission}</span>
           </button>
-          <button title="Show or hide autonomy incident investigation" onClick={() => toggleWindow("engineer")}>
+          <button aria-label={words.engineer} title="Show or hide autonomy incident investigation" onClick={() => toggleWindow("engineer")}>
             <Bot />
-            {words.engineer}
+            <span>{words.engineer}</span>
           </button>
-          <button title="Show or hide the live infrastructure cutaway" onClick={() => toggleWindow("cutaway")}>
+          <button aria-label={words.cutaway} title="Show or hide the live infrastructure cutaway" onClick={() => toggleWindow("cutaway")}>
             <Network />
-            {words.cutaway}
+            <span>{words.cutaway}</span>
           </button>
         </nav>
         <button
@@ -1957,6 +1958,9 @@ function FleetRail({
 }) {
   const [dropGroup, setDropGroup] = useState(""),
     [menu, setMenu] = useState<VesselGroupMenuState | null>(null);
+  const longPressMenu = useLongPressContext<VesselProfileV2>((vessel, point) =>
+    setMenu({ vessel, x: point.x, y: point.y }),
+  );
   const drop = (event: React.DragEvent, groupID: string) => {
     event.preventDefault();
     event.stopPropagation();
@@ -2007,6 +2011,8 @@ function FleetRail({
         {fleet.groups.map((g) => (
           <section
             key={g.id}
+            data-group-drop={g.code}
+            aria-label={`Drop a vessel into ${g.code} ${g.name}`}
             className={dropGroup === g.id ? "drop-active" : ""}
             onDragOver={(e) => {
               e.preventDefault();
@@ -2058,6 +2064,9 @@ function FleetRail({
               .map((v) => (
                 <div
                   draggable
+                  tabIndex={0}
+                  aria-label={`${v.callsign}, ${v.designation}. Long press or press Shift F10 for vessel actions.`}
+                  {...longPressMenu(v)}
                   onDragStart={(e) => {
                     e.dataTransfer.effectAllowed = "move";
                     e.dataTransfer.setData(
@@ -2135,6 +2144,9 @@ function FleetRail({
               .map((v) => (
                 <div
                   draggable
+                  tabIndex={0}
+                  aria-label={`${v.callsign}, ${v.designation}. Long press or press Shift F10 for vessel actions.`}
+                  {...longPressMenu(v)}
                   onDragStart={(e) => {
                     e.dataTransfer.effectAllowed = "move";
                     e.dataTransfer.setData("application/x-keelmesh-vessel", v.id);
@@ -2212,6 +2224,9 @@ function SelectionDrawer({
     represented = groups.filter((group) =>
       vessels.some((v) => v.group_id === group.id),
     ).length;
+  const longPressMenu = useLongPressContext<VesselProfileV2>((vessel, point) =>
+    setMenu({ vessel, x: point.x, y: point.y }),
+  );
   const drop = (event: React.DragEvent, groupID: string) => {
     event.preventDefault();
     event.stopPropagation();
@@ -2273,6 +2288,9 @@ function SelectionDrawer({
                 <div
                   className="selected-vessel-row"
                   draggable
+                  tabIndex={0}
+                  aria-label={`${v.callsign}, ${v.designation}. Long press or press Shift F10 for vessel actions.`}
+                  {...longPressMenu(v)}
                   onDragStart={(e) => {
                     e.dataTransfer.effectAllowed = "move";
                     e.dataTransfer.setData(

@@ -1,54 +1,48 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Expand, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Shrink, SquareDashed, Trash2, X } from "lucide-react";
 
 export type WindowDefinition = {
-  id:string;
-  title:string;
-  icon?:ReactNode;
-  content:ReactNode;
-  initial:{x:number;y:number;width:number;height:number};
-  activation?:number;
-  toggleActivation?:number;
-  kind?:"primary"|"context";
-  autoSize?:boolean;
-  minWidth?:number;
-  minHeight?:number;
-  maximizable?:boolean;
-  preferredDock?:"left"|"right";
-  initialDock?:"left"|"right";
+  id:string; title:string; icon?:ReactNode; content:ReactNode;
+  initial:{x:number;y:number;width:number;height:number}; activation?:number;
+  toggleActivation?:number; kind?:"primary"|"context"; autoSize?:boolean;
+  minWidth?:number; minHeight?:number; maximizable?:boolean;
+  preferredDock?:"left"|"right"; initialDock?:"left"|"right";
   onVisibilityChange?:(visible:boolean)=>void;
 };
-type WindowState = { x:number;y:number;width:number;height:number; minimized:boolean; closed:boolean; maximized:boolean; z:number; dock?:"left"|"right" };
-type Drag = { id:string; mode:"move"|"resize"; startX:number;startY:number; initial:WindowState };
-
-const storageKey="keelmesh.m6.window-layout.v3";
-const reservedBottom=64;
-function clamp(value:number,min:number,max:number){return Math.max(min,Math.min(max,value))}
+type WindowState = { x:number;y:number;width:number;height:number;minimized:boolean;closed:boolean;maximized:boolean;z:number;dock?:"left"|"right" };
+type Drag = { id:string;mode:"move"|"resize";startX:number;startY:number;initial:WindowState };
+const storageKey="keelmesh.m6.window-layout.v3", topBar=82, reservedBottom=64;
+const clamp=(value:number,min:number,max:number)=>Math.max(min,Math.min(max,value));
 
 export function WindowManager({windows}:{windows:WindowDefinition[]}){
   const defaults=useMemo(()=>Object.fromEntries(windows.map((w,i)=>[w.id,{...w.initial,minimized:false,closed:false,maximized:false,z:120+i,dock:w.initialDock}] as const)),[windows]);
-  const [states,setStates]=useState<Record<string,WindowState>>(()=>{try{return {...defaults,...JSON.parse(localStorage.getItem(storageKey)??"{}")}}catch{return defaults}});
-  const drag=useRef<Drag|null>(null);
-  const activations=useRef<Record<string,number>>({});
-  const toggles=useRef<Record<string,number>>({});
+  const [states,setStates]=useState<Record<string,WindowState>>(()=>{try{return{...defaults,...JSON.parse(localStorage.getItem(storageKey)??"{}")}}catch{return defaults}});
+  const [viewport,setViewport]=useState(()=>({width:window.innerWidth,height:window.innerHeight}));
+  const drag=useRef<Drag|null>(null),activations=useRef<Record<string,number>>({}),toggles=useRef<Record<string,number>>({});
+  const phone=viewport.width<=640;
+  useEffect(()=>{const resize=()=>setViewport({width:window.innerWidth,height:window.innerHeight});window.addEventListener("resize",resize);return()=>window.removeEventListener("resize",resize)},[]);
   useEffect(()=>{setStates(current=>{let changed=false;const next={...current};for(const w of windows)if(!next[w.id]){next[w.id]=defaults[w.id];changed=true}return changed?next:current})},[windows,defaults]);
-  useEffect(()=>{for(const w of windows){const token=w.activation??0;if(token>0&&token!==activations.current[w.id]){activations.current[w.id]=token;w.onVisibilityChange?.(true);setStates(current=>{const state=current[w.id]??defaults[w.id];if(!state)return current;return{...current,[w.id]:{...state,z:Math.max(...Object.values(current).map(value=>value.z),120)+1,closed:false,minimized:false}}})}}},[windows,defaults]);
-  useEffect(()=>{for(const w of windows){const token=w.toggleActivation??0;if(token>0&&token!==toggles.current[w.id]){toggles.current[w.id]=token;setStates(current=>{const state=current[w.id]??defaults[w.id];if(!state)return current;const visible=!state.closed&&!state.minimized;w.onVisibilityChange?.(!visible);return{...current,[w.id]:{...state,z:Math.max(...Object.values(current).map(value=>value.z),120)+1,closed:false,minimized:visible}}})}}},[windows,defaults]);
-  useEffect(()=>{localStorage.setItem(storageKey,JSON.stringify(states))},[states]);
-  useEffect(()=>{const resize=new ResizeObserver(entries=>{for(const entry of entries){const element=entry.target as HTMLElement,id=element.dataset.windowContent;if(!id)continue;const definition=windows.find(value=>value.id===id);if(!definition||definition.autoSize===false)continue;const desired=Math.ceil(element.scrollHeight+31);setStates(current=>{const state=current[id]??defaults[id];if(!state||state.maximized||state.dock||desired<=state.height+2)return current;const maximum=Math.max(180,window.innerHeight-Math.max(82,state.y)-reservedBottom),nextHeight=Math.min(desired,maximum);if(nextHeight<=state.height+2)return current;return{...current,[id]:{...state,height:nextHeight}}})}});document.querySelectorAll<HTMLElement>("[data-window-content]").forEach(element=>resize.observe(element));return()=>resize.disconnect()},[windows,states,defaults]);
-  useEffect(()=>{const move=(e:PointerEvent)=>{const d=drag.current;if(!d)return;setStates(s=>{const definition=windows.find(value=>value.id===d.id),minWidth=definition?.minWidth??260,minHeight=definition?.minHeight??160,maxX=window.innerWidth-minWidth,maxY=Math.max(82,window.innerHeight-reservedBottom-minHeight);if(d.mode==="move")return{...s,[d.id]:{...s[d.id],x:clamp(d.initial.x+e.clientX-d.startX,0,maxX),y:clamp(d.initial.y+e.clientY-d.startY,44,maxY),dock:undefined}};return{...s,[d.id]:{...s[d.id],width:clamp(d.initial.width+e.clientX-d.startX,minWidth,window.innerWidth-d.initial.x),height:clamp(d.initial.height+e.clientY-d.startY,minHeight,window.innerHeight-d.initial.y-reservedBottom)}}})};const up=()=>{drag.current=null};window.addEventListener("pointermove",move);window.addEventListener("pointerup",up);return()=>{window.removeEventListener("pointermove",move);window.removeEventListener("pointerup",up)}},[windows]);
-  const focus=(id:string)=>{windows.find(w=>w.id===id)?.onVisibilityChange?.(true);setStates(s=>{const current=s[id]??defaults[id];if(!current)return s;return{...s,[id]:{...current,z:Math.max(...Object.values(s).map(v=>v.z),120)+1,closed:false,minimized:false}}})};
-  const mutate=(id:string,patch:Partial<WindowState>)=>setStates(s=>({...s,[id]:{...(s[id]??defaults[id]),...patch}}));
-  const minimized=windows.filter(w=>w.kind==="context"&&(states[w.id]??defaults[w.id])?.minimized&&!(states[w.id]??defaults[w.id])?.closed);
+  useEffect(()=>{for(const w of windows){const token=w.activation??0;if(token>0&&token!==activations.current[w.id]){activations.current[w.id]=token;w.onVisibilityChange?.(true);setStates(current=>{const state=current[w.id]??defaults[w.id];return state?{...current,[w.id]:{...state,z:Math.max(...Object.values(current).map(v=>v.z),120)+1,closed:false,minimized:false}}:current})}}},[windows,defaults]);
+  useEffect(()=>{for(const w of windows){const token=w.toggleActivation??0;if(token>0&&token!==toggles.current[w.id]){toggles.current[w.id]=token;setStates(current=>{const state=current[w.id]??defaults[w.id];if(!state)return current;const visible=!state.closed&&!state.minimized;w.onVisibilityChange?.(!visible);return{...current,[w.id]:{...state,z:Math.max(...Object.values(current).map(v=>v.z),120)+1,closed:false,minimized:visible}}})}}},[windows,defaults]);
+  useEffect(()=>localStorage.setItem(storageKey,JSON.stringify(states)),[states]);
+  useEffect(()=>{const observer=new ResizeObserver(entries=>{for(const entry of entries){const el=entry.target as HTMLElement,id=el.dataset.windowContent;if(!id||phone)continue;const definition=windows.find(v=>v.id===id);if(!definition||definition.autoSize===false)continue;const desired=Math.ceil(el.scrollHeight+31);setStates(current=>{const state=current[id]??defaults[id];if(!state||state.maximized||state.dock||desired<=state.height+2)return current;const maximum=Math.max(180,viewport.height-Math.max(topBar,state.y)-reservedBottom),height=Math.min(desired,maximum);return height<=state.height+2?current:{...current,[id]:{...state,height}}})}});document.querySelectorAll<HTMLElement>("[data-window-content]").forEach(el=>observer.observe(el));return()=>observer.disconnect()},[windows,defaults,phone,viewport.height]);
+  useEffect(()=>{const move=(e:PointerEvent)=>{const d=drag.current;if(!d||phone)return;setStates(current=>{const definition=windows.find(v=>v.id===d.id),minWidth=Math.min(definition?.minWidth??260,viewport.width-8),minHeight=Math.min(definition?.minHeight??160,viewport.height-topBar-reservedBottom);if(d.mode==="move")return{...current,[d.id]:{...current[d.id],x:clamp(d.initial.x+e.clientX-d.startX,4,Math.max(4,viewport.width-minWidth-4)),y:clamp(d.initial.y+e.clientY-d.startY,topBar,Math.max(topBar,viewport.height-reservedBottom-minHeight)),dock:undefined}};return{...current,[d.id]:{...current[d.id],width:clamp(d.initial.width+e.clientX-d.startX,minWidth,viewport.width-d.initial.x-4),height:clamp(d.initial.height+e.clientY-d.startY,minHeight,viewport.height-d.initial.y-reservedBottom)}}})};const up=()=>{drag.current=null};window.addEventListener("pointermove",move);window.addEventListener("pointerup",up);return()=>{window.removeEventListener("pointermove",move);window.removeEventListener("pointerup",up)}},[windows,phone,viewport]);
+  const focus=(id:string)=>{windows.find(w=>w.id===id)?.onVisibilityChange?.(true);setStates(current=>{const state=current[id]??defaults[id];return state?{...current,[id]:{...state,z:Math.max(...Object.values(current).map(v=>v.z),120)+1,closed:false,minimized:false}}:current})};
+  const mutate=(id:string,patch:Partial<WindowState>)=>setStates(current=>({...current,[id]:{...(current[id]??defaults[id]),...patch}}));
+  const minimized=windows.filter(w=>{const state=states[w.id]??defaults[w.id];return w.kind==="context"&&state?.minimized&&!state?.closed});
   return <>
-    {windows.map(w=>{const s=states[w.id]??defaults[w.id];if(!s||s.closed||s.minimized)return null;const minWidth=w.minWidth??260,minHeight=w.minHeight??160,availableHeight=window.innerHeight-82-reservedBottom,top=clamp(s.y,82,Math.max(82,window.innerHeight-reservedBottom-minHeight)),dockWidth=clamp(s.width,minWidth,Math.max(minWidth,Math.min(520,window.innerWidth*.45))),dockHeight=clamp(s.height,minHeight,availableHeight);const style=s.maximized?{left:8,top:82,width:window.innerWidth-16,height:availableHeight,zIndex:s.z}:s.dock?{left:s.dock==="left"?0:undefined,right:s.dock==="right"?0:undefined,top:82,width:dockWidth,height:dockHeight,zIndex:s.z}:{left:s.x,top,width:s.width,height:Math.min(s.height,window.innerHeight-top-reservedBottom),zIndex:s.z};return <section key={w.id} className={`float-window window-${w.id} ${s.dock?`docked ${s.dock}`:""} ${s.maximized?"maximized":""}`} style={style} onPointerDown={()=>focus(w.id)} onKeyDown={e=>{if(!(e.altKey&&["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)))return;e.preventDefault();const step=e.shiftKey?40:10;mutate(w.id,{dock:undefined,maximized:false,x:clamp(s.x+(e.key==="ArrowLeft"?-step:e.key==="ArrowRight"?step:0),0,window.innerWidth-(w.minWidth??180)),y:clamp(s.y+(e.key==="ArrowUp"?-step:e.key==="ArrowDown"?step:0),82,window.innerHeight-reservedBottom-minHeight)})}} tabIndex={0} aria-label={w.title}>
-      <header className="float-title" onDoubleClick={()=>{if(w.preferredDock)mutate(w.id,{dock:s.dock?undefined:w.preferredDock})}} onPointerDown={e=>{if((e.target as HTMLElement).closest("button"))return;drag.current={id:w.id,mode:"move",startX:e.clientX,startY:e.clientY,initial:s};(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)}}>
-        <span>{w.icon??<SquareDashed/>}</span><strong>{w.title}</strong><small>{s.dock?"DOCKED":"FLOATING"}</small>
-        {w.preferredDock&&(()=>{const side=w.preferredDock,docked=s.dock===side,label=docked?"Return to floating":`Snap ${side}`;return <button aria-label={label} title={label} onClick={()=>mutate(w.id,{dock:docked?undefined:side,maximized:false})}>{side==="right"?(docked?<PanelRightOpen/>:<PanelRightClose/>):(docked?<PanelLeftOpen/>:<PanelLeftClose/>)}</button>})()}
-        {w.maximizable&&<button aria-label={s.maximized?"Restore window":"Expand window"} title={s.maximized?"Restore window":"Expand to workspace"} onClick={()=>mutate(w.id,{maximized:!s.maximized,dock:undefined})}>{s.maximized?<Shrink/>:<Expand/>}</button>}
-        <button aria-label="Minimize" title="Minimize" onClick={()=>{w.onVisibilityChange?.(false);mutate(w.id,{minimized:true})}}><Minus/></button>
-        {w.kind==="context"&&<button aria-label="Close" title="Close" onClick={()=>{w.onVisibilityChange?.(false);mutate(w.id,{closed:true,minimized:false})}}><X/></button>}
-      </header><div className="float-content" data-window-content={w.id}>{w.content}</div>{!s.maximized&&<i className="resize-grip" onPointerDown={e=>{drag.current={id:w.id,mode:"resize",startX:e.clientX,startY:e.clientY,initial:s};e.currentTarget.setPointerCapture?.(e.pointerId)}} />}</section>})}
+    {windows.map(w=>{const s=states[w.id]??defaults[w.id];if(!s||s.closed||s.minimized)return null;const bottomReserve=phone?88:reservedBottom,availableWidth=Math.max(280,viewport.width-8),availableHeight=Math.max(180,viewport.height-topBar-bottomReserve),minWidth=Math.min(w.minWidth??260,availableWidth),minHeight=Math.min(w.minHeight??160,availableHeight),width=Math.min(s.width,availableWidth),height=Math.min(s.height,availableHeight),top=clamp(s.y,topBar,Math.max(topBar,viewport.height-bottomReserve-minHeight)),dockWidth=Math.min(availableWidth,clamp(s.width,minWidth,Math.max(minWidth,Math.min(520,viewport.width*(viewport.width<1000?.58:.45))))),dockHeight=clamp(s.height,minHeight,availableHeight);
+      const style:CSSProperties=phone?{left:4,top:topBar,width:viewport.width-8,height:availableHeight,zIndex:s.z}:s.maximized?{left:8,top:topBar,width:viewport.width-16,height:availableHeight,zIndex:s.z}:s.dock?{left:s.dock==="left"?0:undefined,right:s.dock==="right"?0:undefined,top:topBar,width:dockWidth,height:dockHeight,zIndex:s.z}:{left:clamp(s.x,4,Math.max(4,viewport.width-width-4)),top,width,height:Math.min(height,viewport.height-top-bottomReserve),zIndex:s.z};
+      return <section key={w.id} className={`float-window window-${w.id} ${s.dock?`docked ${s.dock}`:""} ${s.maximized?"maximized":""} ${phone?"phone-window":""}`} style={style} onPointerDown={()=>focus(w.id)} onKeyDown={e=>{if(phone||!(e.altKey&&["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)))return;e.preventDefault();const step=e.shiftKey?40:10;mutate(w.id,{dock:undefined,maximized:false,x:clamp(s.x+(e.key==="ArrowLeft"?-step:e.key==="ArrowRight"?step:0),0,viewport.width-minWidth),y:clamp(s.y+(e.key==="ArrowUp"?-step:e.key==="ArrowDown"?step:0),topBar,viewport.height-reservedBottom-minHeight)})}} tabIndex={0} aria-label={w.title}>
+        <header className="float-title" onDoubleClick={()=>{if(!phone&&w.preferredDock)mutate(w.id,{dock:s.dock?undefined:w.preferredDock})}} onPointerDown={e=>{if(phone||(e.target as HTMLElement).closest("button"))return;drag.current={id:w.id,mode:"move",startX:e.clientX,startY:e.clientY,initial:s};e.currentTarget.setPointerCapture?.(e.pointerId)}}>
+          <span>{w.icon??<SquareDashed/>}</span><strong>{w.title}</strong><small>{phone?"MOBILE":s.dock?"DOCKED":"FLOATING"}</small>
+          {!phone&&w.preferredDock&&(()=>{const side=w.preferredDock,docked=s.dock===side,label=docked?"Return to floating":`Snap ${side}`;return <button aria-label={label} title={label} onClick={()=>mutate(w.id,{dock:docked?undefined:side,maximized:false})}>{side==="right"?(docked?<PanelRightOpen/>:<PanelRightClose/>):(docked?<PanelLeftOpen/>:<PanelLeftClose/>)}</button>})()}
+          {!phone&&w.maximizable&&<button aria-label={s.maximized?"Restore window":"Expand window"} title={s.maximized?"Restore window":"Expand to workspace"} onClick={()=>mutate(w.id,{maximized:!s.maximized,dock:undefined})}>{s.maximized?<Shrink/>:<Expand/>}</button>}
+          <button aria-label="Minimize" title="Minimize" onClick={()=>{w.onVisibilityChange?.(false);mutate(w.id,{minimized:true})}}><Minus/></button>
+          {w.kind==="context"&&<button aria-label="Close" title="Close" onClick={()=>{w.onVisibilityChange?.(false);mutate(w.id,{closed:true,minimized:false})}}><X/></button>}
+        </header><div className="float-content" data-window-content={w.id}>{w.content}</div>
+        {!phone&&!s.maximized&&<i className="resize-grip" onPointerDown={e=>{drag.current={id:w.id,mode:"resize",startX:e.clientX,startY:e.clientY,initial:s};e.currentTarget.setPointerCapture?.(e.pointerId)}}/>}
+      </section>})}
     <div className="window-shelf" role="group" aria-label="Minimized detail windows"><span className="shelf-label">MINIMIZED</span>{minimized.length===0?<small>No detail windows</small>:minimized.map(w=><div className="task-item" key={w.id}><button className="task-restore" onClick={()=>focus(w.id)}><span>{w.icon??<SquareDashed/>}</span><b>{w.title}</b><Minus/></button><button className="task-trash" aria-label={`Close ${w.title}`} title={`Close ${w.title}`} onClick={()=>mutate(w.id,{closed:true,minimized:false})}><Trash2/></button></div>)}</div>
   </>;
 }

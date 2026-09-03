@@ -379,6 +379,12 @@ export function OperationsMap({
       accent?: string;
     } | null>(null),
     [dragMarker, setDragMarker] = useState<{ x: number; y: number; color: string } | null>(null);
+  const longPress = useRef<{
+    timer: number | null;
+    pointer: number;
+    x: number;
+    y: number;
+  } | null>(null);
   fleetRef.current = fleet;
   const selectedGroup = useMemo(() => {
     if (selected.size === 0) return undefined;
@@ -398,6 +404,14 @@ export function OperationsMap({
       .filter((v) => bounds.contains(v.telemetry.position))
       .map((v) => v.id);
   };
+  useEffect(
+    () => () => {
+      const active = longPress.current;
+      if (active && active.timer !== null) window.clearTimeout(active.timer);
+      longPress.current = null;
+    },
+    [],
+  );
   useEffect(() => {
     if (!host.current || mapRef.current) return;
     const map = new maplibregl.Map({
@@ -1149,18 +1163,20 @@ export function OperationsMap({
       })[0];
       if (hit?.properties?.group) onGroup(hit.properties.group);
     };
-    const context = (e: MapMouseEvent) => {
-      e.preventDefault();
+    const openContext = (
+      point: { x: number; y: number },
+      lngLat: { lng: number; lat: number },
+    ) => {
       multiClick.current = { count: 0, at: 0 };
       const projectedWaypoint = (mission?.geometry.waypoints ?? []).findIndex(
         (position) => {
           const p = map.project(position);
-          return Math.hypot(p.x - e.point.x, p.y - e.point.y) <= 14;
+          return Math.hypot(p.x - point.x, p.y - point.y) <= 14;
         },
       );
       const waypointBox: [[number, number], [number, number]] = [
-        [e.point.x - 12, e.point.y - 12],
-        [e.point.x + 12, e.point.y + 12],
+        [point.x - 12, point.y - 12],
+        [point.x + 12, point.y + 12],
       ];
       const waypoint = map.queryRenderedFeatures(waypointBox, {
         layers: ["mission-waypoint-numbers", "mission-waypoints"],
@@ -1188,16 +1204,16 @@ export function OperationsMap({
         return;
       }
       const vesselBox: [[number, number], [number, number]] = [
-        [e.point.x - 20, e.point.y - 20],
-        [e.point.x + 20, e.point.y + 20],
+        [point.x - 20, point.y - 20],
+        [point.x + 20, point.y + 20],
       ];
       const vessel = map.queryRenderedFeatures(vesselBox, {
         layers: ["vessel-symbols", "group-halos"],
       })[0];
-      const maxX = Math.max(4, (host.current?.clientWidth ?? e.point.x) - 224),
-        maxY = Math.max(4, (host.current?.clientHeight ?? e.point.y) - 360),
-        x = Math.min(e.point.x, maxX),
-        y = Math.min(e.point.y, maxY);
+      const maxX = Math.max(4, (host.current?.clientWidth ?? point.x) - 224),
+        maxY = Math.max(4, (host.current?.clientHeight ?? point.y) - 360),
+        x = Math.min(point.x, maxX),
+        y = Math.min(point.y, maxY);
       if (vessel?.properties?.id) {
         setContextMenu({
           kind: "vessel",
@@ -1220,20 +1236,147 @@ export function OperationsMap({
         });
         return;
       }
-      const surface = map.queryRenderedFeatures(e.point, { layers: ["land"] }).length > 0 ? "land" : "water";
+      const surface = map.queryRenderedFeatures([point.x, point.y], { layers: ["land"] }).length > 0 ? "land" : "water";
       const nearbyDepth = map.queryRenderedFeatures(
-        [[e.point.x - 30, e.point.y - 30], [e.point.x + 30, e.point.y + 30]],
+        [[point.x - 30, point.y - 30], [point.x + 30, point.y + 30]],
         { layers: ["depth-contours", "depth-labels"] },
       ).map(feature => Number(feature.properties?.depth_m)).filter(Number.isFinite).sort((a,b)=>a-b)[0];
       setContextMenu({
         kind: "location",
         x,
         y,
-        point: [e.lngLat.lng, e.lngLat.lat],
+        point: [lngLat.lng, lngLat.lat],
         surface,
         depth: nearbyDepth,
       });
     };
+    const context = (e: MapMouseEvent) => {
+      e.preventDefault();
+      openContext(e.point, e.lngLat);
+    };
+    const cancelLongPress = () => {
+      const active = longPress.current;
+      if (active && active.timer !== null) window.clearTimeout(active.timer);
+      longPress.current = null;
+    };
+    const pointerDown = (event: PointerEvent) => {
+      if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+      cancelLongPress();
+      const rect = canvas.getBoundingClientRect();
+      const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      if (editingEnabled && tool === "select") {
+        const hitBox: [[number, number], [number, number]] = [
+          [point.x - 18, point.y - 18],
+          [point.x + 18, point.y + 18],
+        ];
+        const waypoint = map.queryRenderedFeatures(hitBox, { layers: ["mission-waypoint-numbers", "mission-waypoints"] })[0];
+        const poi = map.queryRenderedFeatures(hitBox, { layers: ["mission-poi-labels", "mission-pois"] })[0];
+        const assembly = map.queryRenderedFeatures(hitBox, { layers: ["group-assembly-labels", "group-assembly-rings"] })[0];
+        if (waypoint?.properties?.index !== undefined)
+          dragTarget.current = { kind: "waypoint", index: Number(waypoint.properties.index) };
+        else if (poi?.properties?.index !== undefined)
+          dragTarget.current = { kind: "poi", index: Number(poi.properties.index) };
+        else if (assembly?.properties?.group)
+          dragTarget.current = { kind: "assembly", group: String(assembly.properties.group) };
+        if (dragTarget.current) {
+          event.preventDefault();
+          setDragMarker({ x: point.x, y: point.y, color: String(waypoint?.properties?.color ?? assembly?.properties?.color ?? "#e9a93f") });
+          map.dragPan.disable();
+          map.touchZoomRotate.disable();
+          canvas.style.cursor = "grabbing";
+          return;
+        }
+      }
+      if (editingEnabled && ["box", "include", "exclude"].includes(tool)) {
+        event.preventDefault();
+        selectionMode.current = true;
+        boxStart.current = point;
+        map.dragPan.disable();
+        map.touchZoomRotate.disable();
+        setBox({ x: point.x, y: point.y, w: 0, h: 0 });
+        return;
+      }
+      const state = {
+        timer: 0,
+        pointer: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+      };
+      state.timer = window.setTimeout(() => {
+        const point = { x: state.x - rect.left, y: state.y - rect.top };
+        suppressClick.current = true;
+        map.stop();
+        setMapHover(null);
+        openContext(point, map.unproject([point.x, point.y]));
+        navigator.vibrate?.(12);
+        longPress.current = null;
+      }, 560);
+      longPress.current = state;
+    };
+    const pointerMove = (event: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      if (dragTarget.current) {
+        event.preventDefault();
+        setDragMarker((current) => ({ x: point.x, y: point.y, color: current?.color ?? "#e9a93f" }));
+        return;
+      }
+      if (selectionMode.current && boxStart.current) {
+        event.preventDefault();
+        const start = boxStart.current;
+        setBox({ x: Math.min(start.x, point.x), y: Math.min(start.y, point.y), w: Math.abs(point.x - start.x), h: Math.abs(point.y - start.y) });
+        return;
+      }
+      const state = longPress.current;
+      if (!state || event.pointerId !== state.pointer) return;
+      if (Math.hypot(event.clientX - state.x, event.clientY - state.y) > 12)
+        cancelLongPress();
+    };
+    const pointerUp = (event: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      if (dragTarget.current) {
+        const target = dragTarget.current;
+        const lngLat = map.unproject([point.x, point.y]);
+        const position: Point = [lngLat.lng, lngLat.lat];
+        if (map.queryRenderedFeatures([point.x, point.y], { layers: ["land"] }).length === 0) {
+          if (target.kind === "waypoint") onMoveWaypoint(target.index, position);
+          else if (target.kind === "poi") onMovePOI(target.index, position);
+          else onMoveGroupAssembly(target.group, position);
+        }
+        dragTarget.current = null;
+        suppressClick.current = true;
+        setDragMarker(null);
+        map.dragPan.enable();
+        map.touchZoomRotate.enable();
+        canvas.style.cursor = "default";
+        cancelLongPress();
+        return;
+      }
+      if (selectionMode.current && boxStart.current) {
+        const start = boxStart.current;
+        const min = { x: Math.min(start.x, point.x), y: Math.min(start.y, point.y) };
+        const max = { x: Math.max(start.x, point.x), y: Math.max(start.y, point.y) };
+        if (tool === "include" || tool === "exclude") {
+          const nw = map.unproject([min.x, min.y]), se = map.unproject([max.x, max.y]);
+          onArea(tool, [[nw.lng, nw.lat], [se.lng, nw.lat], [se.lng, se.lat], [nw.lng, se.lat], [nw.lng, nw.lat]]);
+        } else {
+          const hits = map.queryRenderedFeatures([[min.x, min.y], [max.x, max.y]], { layers: ["vessel-symbols", "group-halos"] });
+          onSelect([...new Set(hits.map((hit) => String(hit.properties?.id)).filter(Boolean))], "replace");
+        }
+        selectionMode.current = false;
+        boxStart.current = null;
+        suppressClick.current = true;
+        setBox(null);
+        map.dragPan.enable();
+        map.touchZoomRotate.enable();
+        onToolDone();
+      }
+    };
+    canvas.addEventListener("pointerdown", pointerDown, { passive: false });
+    canvas.addEventListener("pointermove", pointerMove, { passive: false });
+    canvas.addEventListener("pointerup", pointerUp);
+    canvas.addEventListener("pointercancel", cancelLongPress);
     const down = (e: MapMouseEvent) => {
       if (editingEnabled && tool === "select" && e.originalEvent.button === 0) {
         const hitBox: [[number, number], [number, number]] = [
@@ -1428,6 +1571,10 @@ export function OperationsMap({
       map.off("mousedown", down);
       map.off("mousemove", move);
       map.off("mouseup", up);
+      canvas.removeEventListener("pointerdown", pointerDown);
+      canvas.removeEventListener("pointermove", pointerMove);
+      canvas.removeEventListener("pointerup", pointerUp);
+      canvas.removeEventListener("pointercancel", cancelLongPress);
     };
   }, [
     ready,
@@ -1467,7 +1614,13 @@ export function OperationsMap({
       ? fleet.surface_contacts.find((contact) => contact.id === contextMenu.contact)
       : undefined;
   return (
-    <div className="operations-map" ref={host} onPointerLeave={() => setMapHover(null)}>
+    <div
+      className="operations-map"
+      ref={host}
+      role="application"
+      aria-label="Fleet operating map. Tap to select. Long press for contextual actions."
+      onPointerLeave={() => setMapHover(null)}
+    >
       {box && (
         <div
           className="selection-box"
@@ -1497,6 +1650,7 @@ export function OperationsMap({
         <div
           className="map-context-menu vessel-menu"
           role="menu"
+          aria-label="Controlled vessel menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <strong>{pirate ? "SHIP ORDERS" : "VESSEL SELECTION"}</strong>

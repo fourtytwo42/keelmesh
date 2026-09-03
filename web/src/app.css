@@ -409,3 +409,60 @@ code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
 @container workspace-window (max-height:420px){
   .window-planner .mission-scope-strip,.window-planner .voice-status{display:none}
 }
+
+/* Responsive interaction layer: desktop density, touch-sized controls, and phone-safe windows. */
+button,input,select,textarea,[role="button"],[tabindex="0"]{-webkit-tap-highlight-color:transparent}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex="0"]:focus-visible{outline:2px solid #efb04a;outline-offset:-2px}
+.operations-map,.operations-map .maplibregl-canvas{touch-action:none}
+.group-list,.selection-scroll,.float-content,.mission-tabs,.window-shelf{-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.fleet-vessel-row,.selected-vessel-row{touch-action:pan-y}
+
+@media (pointer:coarse){
+  .ops-bar nav button,.theme-toggle,.mission-tabs .new-tab,.mission-tabs .mission-tab-actions button,.float-title button,.maplibregl-ctrl-group button,.rail-actions button,.group-view,.group-delete,.vessel-view,.geometry-actions button,.planning-actions button,.chat-mic,.chat-send,.window-shelf button{min-width:44px;min-height:44px}
+  .float-title{height:44px;flex-basis:44px;gap:9px}.float-title button{height:43px}.float-title>strong{font-size:11px}
+  .rail-search{height:44px}.rail-search span{width:42px}.rail-search input{font-size:12px}
+  .rail-actions{gap:2px;padding:0 4px 5px}.rail-actions button{flex:1;display:grid;place-items:center;gap:2px;padding:3px;font-size:8px;text-decoration:none}
+  .group-row,.group-view,.group-delete{height:44px}.group-row-wrap{grid-template-columns:1fr 44px 44px}.group-row-wrap .group-row{grid-column:1/4;padding-right:89px}.group-view{right:44px;width:44px}.group-delete{width:44px}
+  .group-list .fleet-vessel-row{height:52px;grid-template-columns:28px 36px minmax(0,1fr) auto 44px;padding-right:0}.group-list .fleet-vessel-row>i{width:31px;height:38px}.group-list .fleet-vessel-row img{max-width:28px;max-height:35px}.group-list .fleet-vessel-row b{font-size:11px}.group-list .fleet-vessel-row small{font-size:8px}.vessel-view{width:44px;height:51px}
+  .mission-tabs{overflow-x:auto;scrollbar-width:none}.mission-tabs::-webkit-scrollbar{display:none}.mission-tabs .mission-tab{min-width:190px}.mission-tabs .mission-tab-main span{font-size:11px}.mission-tabs .mission-tab-actions{grid-template-columns:repeat(2,44px);width:88px}.mission-tabs .mission-tab{grid-template-columns:1fr 88px}
+  .maplibregl-ctrl-group button{width:44px!important;height:44px!important}.maplibregl-ctrl-bottom-right{bottom:8px}
+  .environment-overlays button{min-height:44px;font-size:8px}.environment-overlays button b{font-size:8px}
+  .vessel-group-menu,.map-context-menu{font-size:11px}.group-menu-list button,.map-context-menu button{min-height:44px;font-size:10px}.group-menu-list{max-height:min(44vh,320px)}
+  .window-shelf{overflow-x:auto}.window-shelf .task-item,.window-shelf .task-restore,.window-shelf .task-trash{height:44px}.window-shelf .task-trash{width:44px}
+  .hover-help,.map-hover-help{display:none}
+}
+
+@media (max-width:900px){
+  .ops-brand{width:158px}.ops-bar nav button{display:flex;align-items:center;justify-content:center;gap:5px;padding:0 8px}.ops-bar nav button svg{width:15px}.ops-live{padding:0 7px}
+  .mission-tabs .tab-hint{display:none}
+  .environment-overlays{width:min(260px,calc(100vw - 90px))}
+  .map-fixture-label{display:none}
+  .window-engineer .float-content,.window-cutaway .float-content{overflow:auto}
+  .window-engineer .engineer-view,.window-cutaway .cutaway{height:auto;min-height:100%;overflow:visible}
+  .window-engineer .engineer-grid{height:auto;grid-template-columns:1fr;grid-template-rows:none}.window-engineer .engineer-card{min-height:160px}
+  .window-cutaway .pipeline{height:auto;grid-template-columns:1fr;gap:5px}.window-cutaway .flow{min-height:22px}.window-cutaway .evidence-row{grid-template-columns:1fr}
+}
+
+@media (max-width:640px){
+  .ops-bar{height:44px}.ops-brand{width:48px;flex:0 0 48px}.ops-brand>b{width:48px}.ops-brand>span{display:none}
+  .ops-bar nav{flex:1 1 auto;min-width:0;margin-left:0;overflow:hidden}.ops-bar nav button,.ops-bar nav button:nth-child(n+3){display:flex;flex:1 1 25%;width:25%;min-width:0;padding:0}.ops-bar nav button span{display:none}.ops-bar nav button svg{width:18px;height:18px}
+  .theme-toggle{width:44px;padding:0}.ops-live{width:20px;padding:0 4px;font-size:0}.ops-live i{margin:auto}
+  .mission-tabs{height:38px;padding-left:0}.mission-tabs .new-tab{position:sticky;left:0;z-index:2;flex:0 0 44px;background:#202625}.mission-tabs .mission-tab{min-width:178px}
+  .operations-map{top:82px;bottom:89px}.ops-status{bottom:44px;height:44px;padding:0 6px;gap:4px;overflow-x:auto;scrollbar-width:none}.ops-status::-webkit-scrollbar{display:none}.ops-status>span:not(.status-clock){display:none}.ops-status .sim-speed{margin-left:0;flex:0 0 auto}.ops-status .sim-speed small{display:none}.ops-status .sim-speed button{min-width:40px;width:40px;height:40px}.ops-status>.status-clock{flex:0 0 auto;margin-left:auto;padding:0 4px}
+  .environment-overlays{top:6px;width:min(238px,calc(100vw - 74px))}.environment-overlays button{grid-template-columns:8px 1fr;padding:0 4px}.environment-overlays button b{white-space:nowrap}
+  .float-window.phone-window{border-left:0;border-right:0}.float-window.phone-window .float-content{overflow:auto}.float-window.phone-window .float-title{cursor:default}.float-window.phone-window .float-title>small{font-size:7px}
+  .window-planner.phone-window .planner,.window-planner.phone-window .planner-layout{height:auto;min-height:100%;overflow:visible}.window-planner.phone-window .planner-layout{display:block}.window-planner.phone-window .planner-chat-pane,.window-planner.phone-window .planner-options-pane{overflow:visible}.window-planner.phone-window .mission-chat{max-height:34vh;min-height:100px}
+  .window-shelf{height:44px;padding:0 4px;gap:3px}.window-shelf>.shelf-label,.window-shelf>small{display:none}.window-shelf .task-restore{min-width:124px;max-width:180px}
+  .map-context-menu,.vessel-group-menu{position:fixed!important;left:6px!important;right:6px!important;top:auto!important;bottom:48px!important;width:auto!important;max-height:70vh;overflow:auto}
+  .location-facts{grid-template-columns:repeat(2,1fr)}
+  input,select,textarea{font-size:16px!important}
+  .planner-section>summary,.mission-scope-strip,.voice-status{min-height:40px}.map-authoring .geometry-actions{grid-template-columns:repeat(4,1fr)}.geometry-actions button{height:44px!important}
+  .candidate-list{grid-template-columns:1fr!important}.metric-grid{grid-template-columns:repeat(2,1fr)}.condition-strip{grid-template-columns:repeat(2,1fr)}
+  .mission-delete-backdrop{padding:8px}.mission-delete-dialog{width:auto;max-width:calc(100vw - 16px)}
+}
+
+@media (max-width:390px){
+  .environment-overlays{width:205px}.environment-overlays button{font-size:7px}.environment-overlays button b{font-size:7px}
+  .mission-tabs .mission-tab{min-width:160px}.mission-tabs .mission-tab-main{padding-left:6px}
+  .ops-status .sim-rate button{min-width:32px;padding:0 3px}.ops-status{font-size:6px}
+}

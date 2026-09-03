@@ -147,7 +147,7 @@ test("new mission opens as an empty planning workspace and accepts assets afterw
     const fleet = await (await page.request.get("/api/v2/fleet")).json();
     return fleet.missions[0]?.loop;
   }).toBe(true);
-  await planner.getByTitle("Minimize").click();
+  await planner.getByRole("button", { name: "Minimize" }).click();
   await rail.getByRole("button", { name: "Clear" }).click();
   await expectSelected(page, 0);
   await page.locator(".mission-tabs .mission-tab.active .mission-tab-main").click();
@@ -245,7 +245,7 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   const canvas = page.locator(".operations-map .maplibregl-canvas");
   await page.waitForTimeout(1_000);
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
-  await rail.getByTitle("Minimize").click();
+  await rail.getByRole("button", { name: "Minimize" }).click();
   await expect(rail).not.toBeVisible();
   await canvas.dispatchEvent("click", { detail: 3, bubbles: true, clientX: 700, clientY: 250 });
   await expect(rail).toBeVisible();
@@ -276,17 +276,17 @@ test("mission planner owns map authoring and manual route generation bypasses AI
 
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
   await expect(rail).toHaveClass(/docked left/);
-  await expect(rail.getByTitle("Return to floating")).toBeVisible();
-  await rail.getByTitle("Return to floating").click();
-  await expect(rail.getByTitle("Snap left")).toBeVisible();
+  await expect(rail.getByRole("button", { name: "Return to floating" })).toBeVisible();
+  await rail.getByRole("button", { name: "Return to floating" }).click();
+  await expect(rail.getByRole("button", { name: "Snap left" })).toBeVisible();
   await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
   await createSelectedMission(page);
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await expect(planner).toBeVisible();
   await expect(planner).toHaveClass(/docked right/);
-  await expect(planner.getByTitle("Return to floating").locator("svg")).toHaveClass(/lucide-panel-right-open/);
-  await planner.getByTitle("Return to floating").click();
-  const snapRight = planner.getByTitle("Snap right");
+  await expect(planner.getByRole("button", { name: "Return to floating" }).locator("svg")).toHaveClass(/lucide-panel-right-open/);
+  await planner.getByRole("button", { name: "Return to floating" }).click();
+  const snapRight = planner.getByRole("button", { name: "Snap right" });
   await expect(snapRight.locator("svg")).toHaveClass(/lucide-panel-right-close/);
   await expect(planner.getByText("MAP AUTHORING", { exact: true })).toBeVisible();
   await planner.locator("details.objective-section > summary").click();
@@ -316,7 +316,7 @@ test("fleet rail is the single selection and group-reassignment surface", async 
 
   // Selected rows move directly between ordinary group sections.
   const jaeger = rail.locator(".fleet-vessel-row", { hasText: "Jaeger" });
-  await jaeger.dragTo(rail.getByTitle("Drop a vessel into BL Bay Lantern"));
+  await jaeger.dragTo(rail.locator('[data-group-drop="BL"]'));
   await expect.poll(async () => {
     const fleet = await (await page.request.get("/api/v2/fleet")).json();
     return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger")?.group_code;
@@ -340,7 +340,7 @@ test("fleet rail is the single selection and group-reassignment surface", async 
   const groupInspector = page.getByRole("region", { name: "Group · BG", exact: true });
   await expect(groupInspector).toBeVisible();
   await expect(groupInspector.getByRole("spinbutton", { name: /FORMATION HEADING/ })).toHaveValue("0");
-  await groupInspector.getByTitle("Close").click();
+  await groupInspector.getByRole("button", { name: "Close" }).click();
 
   // Creation uses the same exclusive-membership API, then this test restores its fixture.
   await rail.locator(".fleet-vessel-row", { hasText: "Jaeger" }).click({ button: "right" });
@@ -424,7 +424,7 @@ test("mission numbering, direct controls, window restore, and confirmed draft de
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await expect(planner).toBeVisible();
   await expect(planner.getByRole("button", { name: "Delete Mission 1" })).toBeVisible();
-  await planner.getByTitle("Minimize").click();
+  await planner.getByRole("button", { name: "Minimize" }).click();
   await expect(planner).toBeHidden();
   await first.locator(".mission-tab-main").click();
   await expect(planner).toBeVisible();
@@ -449,7 +449,7 @@ test("workspace windows move, minimize, restore, dock, and top navigation toggle
   const fleetWindow = page.getByRole("region", { name: "Fleet / Groups", exact: true });
   await expect(fleetWindow).toHaveClass(/docked left/);
   expect((await fleetWindow.boundingBox())?.width).toBeCloseTo(245, 0);
-  await expect(fleetWindow.getByTitle("Return to floating")).toBeVisible();
+  await expect(fleetWindow.getByRole("button", { name: "Return to floating" })).toBeVisible();
   await page.getByRole("button", { name: "Engineer" }).click();
   const engineer = page.getByRole("region", { name: "Autonomy Engineer", exact: true });
   await expect(engineer).toBeVisible();
@@ -462,32 +462,32 @@ test("workspace windows move, minimize, restore, dock, and top navigation toggle
   await page.keyboard.press("Alt+ArrowRight");
   const after = await engineer.boundingBox();
   expect(after?.x).toBeGreaterThan(before?.x ?? 0);
-  await expect(engineer.getByTitle(/Snap (left|right)/)).toHaveCount(0);
-  await engineer.getByTitle("Minimize").click();
+  await expect(engineer.getByRole("button", { name: /Snap (left|right)/ })).toHaveCount(0);
+  await engineer.getByRole("button", { name: "Minimize" }).click();
   await expect(engineer).not.toBeVisible();
   await expect(page.locator(".window-shelf")).not.toContainText("Autonomy Engineer");
   await page.getByRole("button", { name: "Engineer" }).click();
   await expect(engineer).toBeVisible();
-  await expect(engineer.getByTitle("Close")).toHaveCount(0);
-  await engineer.getByTitle("Minimize").click();
+  await expect(engineer.getByRole("button", { name: "Close" })).toHaveCount(0);
+  await engineer.getByRole("button", { name: "Minimize" }).click();
   await expect(engineer).toBeHidden();
 
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
   await rail.getByPlaceholder("Callsign, class, group, status…").fill("Gannet");
   await rail.getByRole("button", { name: "View status of Gannet" }).click();
   const vessel = page.getByRole("region", { name: /Gannet \(KM-214\)/ });
-  await vessel.getByTitle("Minimize").click();
+  await vessel.getByRole("button", { name: "Minimize" }).click();
   const detailBar = page.getByRole("group", { name: "Minimized detail windows" });
   await expect(detailBar).toContainText("Gannet (KM-214)");
   await detailBar.getByRole("button", { name: "Gannet (KM-214)", exact: true }).click();
   await expect(vessel).toBeVisible();
   await expect(detailBar).not.toContainText("Gannet (KM-214)");
-  await vessel.getByTitle("Minimize").click();
+  await vessel.getByRole("button", { name: "Minimize" }).click();
   await detailBar.getByRole("button", { name: "Close Gannet (KM-214)" }).click();
   await expect(detailBar).not.toContainText("Gannet (KM-214)");
   await rail.getByRole("button", { name: "View status of Gannet" }).click();
   await expect(vessel).toBeVisible();
-  await vessel.getByTitle("Close").click();
+  await vessel.getByRole("button", { name: "Close" }).click();
   await expect(vessel).not.toBeVisible();
   await page.getByRole("button", { name: "Cutaway" }).click();
   const cutaway = page.getByRole("region", { name: "Live Infrastructure Cutaway", exact: true });
@@ -496,7 +496,7 @@ test("workspace windows move, minimize, restore, dock, and top navigation toggle
   await expect(cutaway).toBeHidden();
   await page.getByRole("button", { name: "Cutaway" }).click();
   await expect(cutaway).toBeVisible();
-  await expect(cutaway.getByTitle(/Snap (left|right)/)).toHaveCount(0);
+  await expect(cutaway.getByRole("button", { name: /Snap (left|right)/ })).toHaveCount(0);
 });
 
 test("single-vessel intent uses the real advisor boundary and never offers fleet formations", async ({ page }) => {
