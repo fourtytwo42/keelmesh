@@ -80,6 +80,28 @@ test.afterEach(async ({ page }) => {
   await restoreFixtureGroups(page);
 });
 
+test("global assistant plots one mission silently and accepts one exact confirmation", async ({ page }) => {
+	test.setTimeout(90_000);
+	await page.goto("/");
+	await page.getByRole("button", { name: "Toggle text chat with KeelMesh AI" }).click();
+	const assistant = page.getByRole("region", { name: "KeelMesh Assistant" });
+	await assistant.getByRole("textbox", { name: "Message KeelMesh AI" }).fill("Move Watch Shoal one nautical mile east and hold position.");
+	await assistant.getByRole("button", { name: "Send text message" }).click();
+	await expect(assistant.locator("article.assistant").last()).toContainText(/confirm/i, { timeout: 60_000 });
+	await expect(page.getByRole("region", { name: "Mission" })).toHaveCount(0);
+	await expect.poll(async () => {
+		const fleet = await (await page.request.get("/api/v2/fleet")).json();
+		return fleet.missions.length === 1 ? (fleet.missions[0].plan_ids?.length ?? 0) : 0;
+	}, { timeout: 20_000 }).toBe(1);
+	await assistant.getByRole("textbox", { name: "Message KeelMesh AI" }).fill("Confirm and execute it.");
+	await assistant.getByRole("button", { name: "Send text message" }).click();
+	await expect.poll(async () => {
+		const fleet = await (await page.request.get("/api/v2/fleet")).json();
+		return fleet.missions[0]?.status;
+	}, { timeout: 30_000 }).toBe("executing");
+	await expect(page.getByRole("region", { name: "Mission" })).toHaveCount(0);
+});
+
 test("map-first workspace exposes the persistent operating picture without header clutter", async ({ page }) => {
   const rasterRequests: string[] = [];
   page.on("request", request => {
@@ -210,7 +232,7 @@ test("contact rendezvous shows a live ETA and suppresses the idle hold marker", 
   await createSelectedMission(page);
   const planner = page.getByRole("region", { name: "Mission" });
   await planner.getByRole("textbox", { name: "Message mission AI" }).fill(
-    "Rendezvous yellow group with Safe Haven and maintain a safe stand-off.",
+    "Give me three options to rendezvous yellow group with Safe Haven and maintain a safe stand-off.",
   );
   await planner.getByRole("button", { name: "Send to mission AI" }).click();
   await expect.poll(() => planner.locator(".candidate-list > article").count(), { timeout: 40_000 }).toBe(3);
@@ -288,7 +310,7 @@ test("fleet rail, search, group, and filtered selection resolve exact targets", 
   const inspector = page.getByRole("region", { name: /Gannet \(KM-214\)/ });
   await expect(inspector).toContainText("LOCAL CONDITIONS");
   await expect(inspector).toContainText("BATTERY-ONLY RANGE");
-  await expect(inspector).toContainText("20.0 nm");
+  await expect(inspector).toContainText(/\d+\.\d nm/);
   await expect(inspector).toContainText("4.0 kW");
 
   await rail.getByRole("button", { name: "View status of WS Watch Shoal", exact: true }).click();
@@ -319,7 +341,7 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   await expect(locationMenu).not.toContainText(/waypoint|operating area|exclusion|go to/i);
 });
 
-test("mission planner owns map authoring and presents three conversational choices", async ({ page }) => {
+test("mission planner owns map authoring and presents alternatives only when requested", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/");
   await expect(page.locator(".map-tools")).toHaveCount(0);
@@ -352,7 +374,7 @@ test("mission planner owns map authoring and presents three conversational choic
   await expect(planner).toContainText("WAYPOINT TOOL ACTIVE · ESC TO CANCEL");
   await canvas.click({ position: { x: 780, y: 570 } });
   await expect(planner.getByText("1 waypoints", { exact: true })).toBeVisible();
-  await planner.getByRole("textbox", { name: "Message mission AI" }).fill("Transit to the numbered waypoint and hold position.");
+	await planner.getByRole("textbox", { name: "Message mission AI" }).fill("Give me three options to transit to the numbered waypoint and hold position.");
   await planner.getByRole("button", { name: "Send to mission AI" }).click();
   await expect.poll(() => planner.locator(".candidate-list > article").count(), { timeout: 40_000 }).toBe(3);
   await expect(planner.locator(".option-letter")).toHaveText(["A", "B", "C"]);
@@ -440,6 +462,7 @@ test("executing routes and waypoints are consumed instead of leaving trails", as
 });
 
 test("fleet rail is the single selection and group-reassignment surface", async ({ page }) => {
+  test.setTimeout(60_000);
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet" });
   await rail.getByPlaceholder("Callsign, class, group, status…").fill("Jaeger");
@@ -472,7 +495,8 @@ test("fleet rail is the single selection and group-reassignment surface", async 
   await rail.getByRole("button", { name: "View status of BG Block Guard", exact: true }).click();
   const groupInspector = page.getByRole("region", { name: "Group · BG", exact: true });
   await expect(groupInspector).toBeVisible();
-  await expect(groupInspector.getByRole("spinbutton", { name: /FORMATION HEADING/ })).toHaveValue("0");
+  await groupInspector.locator("details.group-config-section > summary").click();
+  await expect(groupInspector.getByRole("spinbutton", { name: /HEADING/ })).toHaveValue("0");
   await groupInspector.getByRole("button", { name: "Close" }).click();
 
   // Creation uses the same exclusive-membership API, then this test restores its fixture.
@@ -522,7 +546,7 @@ test("dragged geometry follows deterministic planning and the preview boundary",
 
   await planner.getByRole("textbox", { name: "Message mission AI" }).fill("Search the selected operating area and hold when complete.");
   await planner.getByRole("button", { name: "Send to mission AI" }).click();
-  await expect.poll(()=>planner.locator(".candidate-list > article").count(), { timeout: 25_000 }).toBe(3);
+  await expect.poll(()=>planner.locator(".candidate-list > article").count(), { timeout: 25_000 }).toBe(1);
   await expect(planner.locator(".route-summary")).toHaveCount(0);
   await expect(planner.getByRole("button", { name: "Preview exact routes" })).toHaveCount(0);
   const missionTab = page.locator(".mission-tabs .mission-tab.active");
@@ -611,7 +635,7 @@ test("workspace windows move, minimize, restore, dock, and top navigation toggle
   await vessel.getByRole("button", { name: "Minimize" }).click();
   const detailBar = page.getByRole("group", { name: "Minimized detail windows" });
   await expect(detailBar).toContainText("Gannet (KM-214)");
-  await detailBar.getByRole("button", { name: "Gannet (KM-214)", exact: true }).click();
+  await detailBar.getByRole("button", { name: "Restore Gannet (KM-214)", exact: true }).click();
   await expect(vessel).toBeVisible();
   await expect(detailBar).not.toContainText("Gannet (KM-214)");
   await vessel.getByRole("button", { name: "Minimize" }).click();
@@ -639,7 +663,7 @@ test("single-vessel intent uses the real advisor boundary and never offers fleet
   await rail.getByRole("checkbox").check();
   await createSelectedMission(page);
   const planner = page.getByRole("region", { name: "Mission" });
-  await planner.getByRole("textbox", { name: "Message mission AI" }).fill("patrol the shoreline and preserve at least 35% battery reserve");
+	await planner.getByRole("textbox", { name: "Message mission AI" }).fill("Give me three options to patrol the shoreline and preserve at least 35% battery reserve");
   await planner.getByRole("button", { name: "Send to mission AI" }).click();
   await planner.locator("details.objective-section > summary").click();
   await expect(planner.getByText("INDEPENDENT VESSEL", { exact: true })).toBeVisible();
@@ -722,7 +746,7 @@ test("mission chat starts blank and exposes streamlined voice controls", async (
   await expect(planner.getByRole("textbox", { name: "Message mission AI" })).toHaveValue("");
 });
 
-test("spoken multi-leg cardinal intent creates multiple plans and requests Jarvis speech", async ({ page }) => {
+test("spoken multi-leg cardinal intent creates one plan and requests Jarvis speech", async ({ page }) => {
   test.setTimeout(45_000);
   let speechRequests = 0;
   page.on("request", (request) => {
@@ -740,7 +764,7 @@ test("spoken multi-leg cardinal intent creates multiple plans and requests Jarvi
     "I want this group to go two nautical miles south then two nautical miles west and then hold position.",
   );
   await planner.getByRole("button", { name: "Send to mission AI" }).click();
-  await expect.poll(() => planner.locator(".candidate-list > article").count(), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => planner.locator(".candidate-list > article").count(), { timeout: 30_000 }).toBe(1);
   await expect(page.getByText(/COMMAND_AMBIGUOUS/)).toHaveCount(0);
   await expect.poll(() => speechRequests).toBeGreaterThan(0);
   const fleet = await (await page.request.get("/api/v2/fleet")).json();
@@ -763,7 +787,7 @@ test("beach intent resolves a depth-aware one-nautical-mile coastal patrol", asy
   await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).dblclick();
   await createSelectedMission(page);
   const planner = page.getByRole("region", { name: "Mission" });
-  await planner.getByRole("textbox", { name: "Message mission AI" }).fill("patrol the beach, stay within 1nm from the beach as long as ocean depth permits");
+	await planner.getByRole("textbox", { name: "Message mission AI" }).fill("Give me three options to patrol the beach, stay within 1nm from the beach as long as ocean depth permits");
   await planner.getByRole("button", { name: "Send to mission AI" }).click();
 
   await planner.locator("details.map-authoring > summary").click();

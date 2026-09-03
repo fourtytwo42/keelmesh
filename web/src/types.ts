@@ -820,6 +820,7 @@ export type CommandDraftV2 = {
   contact_behavior?: string;
   contact_standoff_m?: number;
   planning_mode: "manual" | "ai_assisted";
+	strategy_count: number;
   waypoints: Point[];
   geometry_source?: string;
   resolution_notes?: string[];
@@ -966,8 +967,18 @@ export type WorkspaceAssistantActionV1 = {
     | "set_theme"
     | "create_mission"
 	| "choose_plan"
+	| "open_mission"
+	| "pause_mission"
+	| "resume_mission"
+	| "delete_mission"
+	| "create_group"
+	| "delete_group"
+	| "move_vessel_to_group"
     | "none";
   target: string;
+	secondary_target: string;
+	name: string;
+	target_ids: string[];
   value: number;
 };
 

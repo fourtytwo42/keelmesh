@@ -1361,6 +1361,7 @@ func TestAIInterpretedSurroundCompilesWithoutManualGeometry(t *testing.T) {
 
 func TestControlledFleetCanOvertakeAndPlanAgainstFastestSurfaceContact(t *testing.T) {
 	m := New("", slog.Default())
+	m.simulationEpochMS = 1_700_000_000_000
 	fastestContact := 0.0
 	fastestID := ""
 	for _, contact := range m.Snapshot().SurfaceContacts {
@@ -1412,13 +1413,35 @@ func TestControlledFleetCanOvertakeAndPlanAgainstFastestSurfaceContact(t *testin
 		if !plan.ContinuousTracking || plan.FollowContactID != fastestID || plan.ReplanIntervalS != 60 || plan.PredictionHorizonS < 120 {
 			t.Fatalf("follow plan is not bound to rolling contact tracking: %#v", plan)
 		}
+		origins := make([]domain.GeoPointV2, 0, len(plan.Assignments))
+		speeds := make([]float64, 0, len(plan.Assignments))
+		var target domain.SurfaceContactV2
 		for _, assignment := range plan.Assignments {
+			vessel := m.vessels[assignment.VesselID]
+			origins = append(origins, vessel.Telemetry.Position)
+			speeds = append(speeds, assignment.SpeedMPS)
+		}
+		for _, item := range m.Snapshot().SurfaceContacts {
+			if item.ID == fastestID {
+				target = item
+				break
+			}
+		}
+		intercept, eta := groupContactInterceptReference(origins, speeds, target, plan.ContactBehavior, plan.ContactStandoffM, len(plan.Assignments), float64(plan.PredictionHorizonS))
+		currentReference := contactReferencePoint(target, plan.ContactBehavior, plan.ContactStandoffM, 0, len(plan.Assignments))
+		for assignmentIndex, assignment := range plan.Assignments {
 			vessel := m.vessels[assignment.VesselID]
 			if assignment.SpeedMPS <= fastestContact {
 				t.Fatalf("plan %s assignment %.2f cannot close on %.2f m/s contact", plan.Name, assignment.SpeedMPS, fastestContact)
 			}
 			if assignment.SpeedMPS > vessel.Class.MaxSpeedMPS {
 				t.Fatalf("plan %s exceeds %s hardware limit: %.2f > %.2f", plan.Name, vessel.Class.Name, assignment.SpeedMPS, vessel.Class.MaxSpeedMPS)
+			}
+			offset := formationOffset(plan.Formation, assignmentIndex, len(plan.Assignments), draft.Constraints.FormationSpacingM, intercept[1])
+			expected := domain.GeoPointV2{intercept[0] + offset[0], intercept[1] + offset[1]}
+			endpoint := assignment.Route[len(assignment.Route)-1]
+			if eta <= 0 || geoDistanceM(endpoint, expected) > 2 || geoDistanceM(endpoint, currentReference) < 2 {
+				t.Fatalf("route does not aim at the predicted intercept: eta=%.1f endpoint=%v expected=%v current=%v", eta, endpoint, expected, currentReference)
 			}
 		}
 	}

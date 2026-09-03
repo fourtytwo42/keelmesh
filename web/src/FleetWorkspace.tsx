@@ -525,6 +525,7 @@ export function FleetWorkspace() {
     targetIDs: string[],
     namingMode: "operator" | "ai" = "operator",
     objectiveOverride = "",
+	showPlanner = true,
   ) {
     const current = await api<FleetSnapshotV2>("/api/v2/fleet");
     const group = current.groups.find(
@@ -566,7 +567,7 @@ export function FleetWorkspace() {
       setDraft(null);
       setPreview(null);
       setLease(null);
-      open("planner");
+	  if (showPlanner) open("planner");
     }
     return m;
   }
@@ -1091,6 +1092,8 @@ export function FleetWorkspace() {
     guidanceKind = "",
     followContactID = "",
     suppressSpeech = false,
+	strategyCount: 1 | 3 = 3,
+	showPlanner = true,
   ) {
     if (!targetMission) return null;
     const compiled = await mutate(() =>
@@ -1106,6 +1109,7 @@ export function FleetWorkspace() {
             target_ids: targetMission.target_ids,
             formation: targetMission.formation,
             planning_mode: planningMode,
+			strategy_count: strategyCount,
             guidance_kind: guidanceKind,
             follow_contact_id: followContactID,
           }),
@@ -1140,14 +1144,14 @@ export function FleetWorkspace() {
       );
       setPreview(null);
       setLease(null);
-      open("planner");
+	  if (showPlanner) open("planner");
       await refresh();
 	  if (planningMode === "ai_assisted" && compiled.advisor?.summary && !suppressSpeech)
 		await speak(compiled.advisor.summary);
     }
 	return result ? compiled : null;
   }
-  async function enactPlan(chosen: FleetPlanV2) {
+  async function enactPlan(chosen: FleetPlanV2, showPlanner = true) {
     const targetMission = fleet?.missions.find((value) => value.id === chosen.mission_id);
     if (!targetMission || chosen.policy_status === "prohibited") return;
     setBusy(true);
@@ -1155,7 +1159,7 @@ export function FleetWorkspace() {
     try {
       setActiveMissionID(targetMission.id);
       setPlanID(chosen.id);
-      open("planner");
+	  if (showPlanner) open("planner");
       let current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find((value) => value.id === targetMission.id);
       if (!current) throw new Error("Mission is no longer available.");
       const routePreview = await api<FleetPreviewV2>(`/api/v2/missions/${targetMission.id}/plans/${chosen.id}:preview`, {
@@ -1388,6 +1392,18 @@ export function FleetWorkspace() {
     );
   }
 
+  function resolveMission(target: string) {
+    const needle = target.toLowerCase().trim();
+    return fleet?.missions.find((value) =>
+      [value.id, value.name].some((candidate) => candidate.toLowerCase() === needle),
+    );
+  }
+
+  function resolveActionVesselIDs(action: WorkspaceAssistantActionV1) {
+	const aliases = action.target_ids?.length > 0 ? action.target_ids : [...selected];
+    return [...new Set(aliases.map((value) => resolveVessel(value)?.id).filter((value): value is string => Boolean(value)))];
+  }
+
   async function applyAssistantAction(action: WorkspaceAssistantActionV1) {
     const target = normalizeWindowTarget(action.target);
     if (action.kind === "open_window") open(target);
@@ -1429,6 +1445,41 @@ export function FleetWorkspace() {
       const rate = [0, 1, 5, 20, 100, 500].includes(action.value) ? action.value : 20;
       await setSimulationRate(rate as FleetSnapshotV2["simulation_rate"]);
     }
+	if (action.kind === "open_mission") {
+	  const targetMission = resolveMission(action.target);
+	  if (targetMission) {
+		setActiveMissionID(targetMission.id);
+		setSelected(new Set(targetMission.target_ids));
+		open("planner");
+	  }
+	}
+	if (action.kind === "pause_mission" || action.kind === "resume_mission") {
+	  const targetMission = resolveMission(action.target);
+	  if (targetMission) await setMissionStatus(targetMission.id, action.kind === "pause_mission" ? "paused" : "executing");
+	}
+	if (action.kind === "delete_mission") {
+	  const targetMission = resolveMission(action.target);
+	  if (targetMission) deleteMission(targetMission.id);
+	}
+	if (action.kind === "create_group") {
+	  const vesselIDs = resolveActionVesselIDs(action);
+	  if (vesselIDs.length > 0) await createGroupFor(vesselIDs, action.name);
+	}
+	if (action.kind === "delete_group") {
+	  const group = resolveGroup(action.target);
+	  if (group) await deleteGroup(group.id);
+	}
+	if (action.kind === "move_vessel_to_group") {
+	  const vessel = resolveVessel(action.target);
+	  const destination = action.secondary_target ?? "";
+	  const group = resolveGroup(destination);
+	  if (vessel && (group || destination.toLowerCase().trim() === "unassigned"))
+		await moveVessel(vessel.id, group?.id ?? "unassigned");
+	}
+  }
+
+  function requestsMissionOptions(text: string) {
+	return /\b(options?|alternatives?|choices?|compare|comparison|strateg(?:y|ies)|several|multiple|(?:two|three|2|3)\s+(?:plans?|ways?|routes?|formations?)|different\s+(?:plans?|routes?|formations?))\b/i.test(text);
   }
 
   function planOptionPayload() {
@@ -1460,9 +1511,11 @@ export function FleetWorkspace() {
       }),
     });
     setCommandScenes((current) => [turn.scene, ...current.map((scene) => scene.state === "active" && !scene.pinned && !scene.critical && !scene.pending_approval ? { ...scene, state: "replaced" } : scene).filter((scene) => scene.id !== turn.scene.id)].slice(0, 50));
-    focusCommandScene(turn.scene.id);
-    if (turn.scene.type === "mission_canvas") open("planner");
-    else if (presentScene) open(`scene-${turn.scene.id}`);
+	if (presentScene) {
+	  focusCommandScene(turn.scene.id);
+	  if (turn.scene.type === "mission_canvas") open("planner");
+	  else open(`scene-${turn.scene.id}`);
+	}
     return turn.assistant;
   }
 
@@ -1514,15 +1567,15 @@ export function FleetWorkspace() {
   }
 
   async function handlePlannerMessage(text: string) {
-    const mightChoose = plans.length > 0 && /\b(option|choice|plan)\s*[abc123]\b|\b(first|second|third)\s+(option|choice|plan)\b|\bgo with\b/i.test(text);
+	const mightChoose = plans.length > 0 && (/\b(option|choice|plan)\s*[abc123]\b|\b(first|second|third)\s+(option|choice|plan)\b|\bgo with\b/i.test(text) || (plans.length === 1 && /\b(confirm|execute it|start it|do it|go ahead|proceed|yes)\b/i.test(text)));
     if (!mightChoose) {
-      await createPlans(mission, text, "ai_assisted");
+	  await createPlans(mission, text, "ai_assisted", "", "", false, requestsMissionOptions(text) ? 3 : 1);
       return;
     }
     setBusy(true);
     setError("");
     try {
-      const response = await askWorkspaceAssistant(text);
+	  const response = await askWorkspaceAssistant(text, false);
       const choice = response.actions.map(chosenPlan).find((value) => value !== null);
       setBusy(false);
       if (choice) {
@@ -1530,7 +1583,7 @@ export function FleetWorkspace() {
         await speak(response.speech);
         return;
       }
-      await createPlans(mission, text, "ai_assisted");
+	  await createPlans(mission, text, "ai_assisted", "", "", false, requestsMissionOptions(text) ? 3 : 1);
     } catch (reason) {
       setBusy(false);
       setError(reason instanceof KeelMeshError ? `${reason.code}: ${reason.message}` : String(reason));
@@ -1541,12 +1594,13 @@ export function FleetWorkspace() {
     setGlobalVoicePhase("thinking");
     setGlobalVoiceProgress(0.3);
     try {
-      const response = await askWorkspaceAssistant(text);
+	  const wantsOptions = requestsMissionOptions(text);
+	  const response = await askWorkspaceAssistant(text, wantsOptions);
       setGlobalVoicePhase("received");
       setGlobalVoiceProgress(0.68);
       const choice = response.actions.map(chosenPlan).find((value) => value !== null);
       if (choice) {
-        await enactPlan(choice);
+		await enactPlan(choice, false);
         await speak(response.speech, true);
         return;
       }
@@ -1556,9 +1610,9 @@ export function FleetWorkspace() {
       }
       if (response.mode === "mission") {
         const intent = response.mission_intent.trim() || text;
-        const created = await createMissionFor([], "ai", intent);
+		const created = await createMissionFor([], "ai", intent, wantsOptions);
         if (created) {
-          const compiled = await createPlans(created, intent, "ai_assisted", "", "", true);
+		  const compiled = await createPlans(created, intent, "ai_assisted", "", "", true, wantsOptions ? 3 : 1, wantsOptions);
           await speak(compiled?.advisor?.summary || response.speech, true);
           return;
         }
@@ -1581,10 +1635,11 @@ export function FleetWorkspace() {
     setAssistantChatInput("");
     setError("");
     try {
-      const response = await askWorkspaceAssistant(value, false);
+	  const wantsOptions = requestsMissionOptions(value);
+	  const response = await askWorkspaceAssistant(value, wantsOptions);
       const choice = response.actions.map(chosenPlan).find((candidate) => candidate !== null);
       if (choice) {
-        await enactPlan(choice);
+		await enactPlan(choice, false);
       } else {
         for (const action of response.actions) {
           if (action.kind !== "create_mission" && action.kind !== "none")
@@ -1592,8 +1647,8 @@ export function FleetWorkspace() {
         }
         if (response.mode === "mission") {
           const intent = response.mission_intent.trim() || value;
-          const created = await createMissionFor([], "ai", intent);
-          if (created) await createPlans(created, intent, "ai_assisted", "", "", true);
+		  const created = await createMissionFor([], "ai", intent, wantsOptions);
+		  if (created) await createPlans(created, intent, "ai_assisted", "", "", true, wantsOptions ? 3 : 1, wantsOptions);
         }
       }
       const history = await api<{ turns?: ConversationTurnV1[] }>(`/api/v4/assistant/history?actor_identity=demo-operator&session_id=${encodeURIComponent(sceneSessionID)}`);

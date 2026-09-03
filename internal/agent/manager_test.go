@@ -187,6 +187,21 @@ func TestWorkspaceCommandUsesRecentVoiceHistoryAndVerifiedNearestVessel(t *testi
 	}
 }
 
+func TestHoldPositionOrderIsNotMisclassifiedAsPositionQuestion(t *testing.T) {
+	fleet := domain.FleetSnapshotV2{
+		Groups:          []domain.OperationalGroupV2{{ID: "group-ws", Code: "WS", Name: "Watch Shoal", ColorName: "yellow", MemberIDs: []string{"vessel-1"}}},
+		Vessels:         []domain.VesselProfileV2{{ID: "vessel-1", Callsign: "Gannet", Designation: "KM-214", DisplayName: "Gannet (KM-214)", Available: true}},
+		SurfaceContacts: []domain.SurfaceContactV2{{ID: "surface-16", Name: "MT Safe Haven", Callsign: "SAFE HAVEN", BoatID: "NPC-4116", Position: domain.GeoPointV2{-71.275, 41.285}}},
+	}
+	result, err := NewManager(Config{}, slog.Default()).WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{Text: "Have Watch Shoal rendezvous with Safe Haven and hold position."}, fleet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Mode != "mission" || result.MissionIntent == "" {
+		t.Fatalf("hold-position task was misclassified: %#v", result)
+	}
+}
+
 func TestWorkspaceCommandConfirmsOnlySuppliedPlanChoice(t *testing.T) {
 	manager := NewManager(Config{}, slog.Default())
 	request := domain.WorkspaceAssistantRequestV1{
@@ -205,5 +220,66 @@ func TestWorkspaceCommandConfirmsOnlySuppliedPlanChoice(t *testing.T) {
 	}
 	if result.Mode != "workspace" || len(result.Actions) != 1 || result.Actions[0].Kind != "choose_plan" || result.Actions[0].Target != "B" {
 		t.Fatalf("unexpected plan confirmation: %#v", result)
+	}
+}
+
+func TestWorkspaceCommandConfirmsSingleRecommendedPlanWithoutLetter(t *testing.T) {
+	request := domain.WorkspaceAssistantRequestV1{
+		Text: "Confirm and execute it.", ActiveMissionID: "mission-1",
+		PlanOptions: []domain.WorkspacePlanOptionV1{{Label: "A", PlanID: "plan-a", Name: "Predicted Intercept", ContentHash: "hash-a", PolicyStatus: "approval_required"}},
+	}
+	result, err := NewManager(Config{}, slog.Default()).WorkspaceCommand(context.Background(), request, domain.FleetSnapshotV2{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Actions) != 1 || result.Actions[0].Kind != "choose_plan" || result.Actions[0].Target != "A" {
+		t.Fatalf("single-plan confirmation was not resolved: %#v", result)
+	}
+}
+
+func TestWorkspaceCommandSupportsMissionAndGroupManagement(t *testing.T) {
+	fleet := domain.FleetSnapshotV2{
+		Missions: []domain.MissionWorkspaceV2{{ID: "mission-7", Name: "Harbor Lantern", Status: "executing"}},
+		Groups:   []domain.OperationalGroupV2{{ID: "group-ws", Code: "WS", Name: "Watch Shoal", ColorName: "amber", MemberIDs: []string{"vessel-2"}}},
+		Vessels:  []domain.VesselProfileV2{{ID: "vessel-1", Callsign: "Gannet", Designation: "KM-214", DisplayName: "Gannet (KM-214)"}},
+	}
+	tests := []struct {
+		name, text, kind, target, secondary string
+	}{
+		{name: "pause mission", text: "Pause Harbor Lantern", kind: "pause_mission", target: "mission-7"},
+		{name: "open mission", text: "Open Harbor Lantern", kind: "open_mission", target: "mission-7"},
+		{name: "delete group", text: "Delete Watch Shoal group", kind: "delete_group", target: "group-ws"},
+		{name: "move vessel", text: "Move Gannet to Watch Shoal", kind: "move_vessel_to_group", target: "vessel-1", secondary: "group-ws"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := NewManager(Config{}, slog.Default()).WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{Text: test.text}, fleet)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Actions) != 1 || result.Actions[0].Kind != test.kind || result.Actions[0].Target != test.target || result.Actions[0].SecondaryTarget != test.secondary {
+				t.Fatalf("unexpected management action: %#v", result)
+			}
+		})
+	}
+}
+
+func TestMissionOptionsReturnsOneStrategyUnlessAlternativesRequested(t *testing.T) {
+	keyFile := filepath.Join(t.TempDir(), "openai-key")
+	if err := os.WriteFile(keyFile, []byte("test-key\n"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"assistant_markdown\":\"Recommended intercept.\",\"geometry_option_id\":\"\",\"strategies\":[{\"id\":\"recommended\",\"name\":\"Predicted intercept\",\"description\":\"Meet the contact on its predicted track\",\"formation\":\"column\",\"speed_factor\":0.8,\"reserve_bias\":0.4,\"maneuvers\":[\"intercept predicted track\",\"match contact motion\"]},{\"id\":\"wide\",\"name\":\"Wide intercept\",\"description\":\"Use a wider intercept\",\"formation\":\"column\",\"speed_factor\":0.6,\"reserve_bias\":0.6,\"maneuvers\":[\"intercept wide\",\"match course\"]},{\"id\":\"reserve\",\"name\":\"Reserve intercept\",\"description\":\"Protect reserve\",\"formation\":\"column\",\"speed_factor\":0.5,\"reserve_bias\":0.8,\"maneuvers\":[\"intercept slowly\",\"match course\"]}]}"}]}]}`))
+	}))
+	defer provider.Close()
+	manager := NewManager(Config{AIURL: "http://127.0.0.1:1", OpenAIKeyFile: keyFile, OpenAIModel: "gpt-5.6-luna", OpenAIURL: provider.URL}, slog.Default())
+	result, err := manager.MissionOptions(context.Background(), domain.MissionPlanningContextV2{MissionID: "mission-1", Intent: "follow Safe Haven", TargetCount: 6, StrategyCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Strategies) != 1 || !strings.Contains(strings.ToLower(result.Summary), "confirm") {
+		t.Fatalf("expected one confirmation-bound recommendation: %#v", result)
 	}
 }

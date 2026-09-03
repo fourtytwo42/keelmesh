@@ -208,6 +208,7 @@ type CommandDraftV2 struct {
 	ContactBehavior       string                          `json:"contact_behavior,omitempty"`
 	ContactStandoffM      float64                         `json:"contact_standoff_m,omitempty"`
 	PlanningMode          string                          `json:"planning_mode"`
+	StrategyCount         int                             `json:"strategy_count"`
 	Waypoints             []GeoPointV2                    `json:"waypoints"`
 	GeometrySource        string                          `json:"geometry_source,omitempty"`
 	ResolutionNotes       []string                        `json:"resolution_notes,omitempty"`
@@ -384,6 +385,7 @@ type MissionPlanningContextV2 struct {
 	GeometryOptions  []MissionGeometryOptionV2 `json:"geometry_options,omitempty"`
 	MapBounds        [][]float64               `json:"map_bounds"`
 	FormationCurrent string                    `json:"formation_current"`
+	StrategyCount    int                       `json:"strategy_count"`
 	Conversation     []MissionChatMessageV2    `json:"conversation,omitempty"`
 	SurfaceContacts  []SurfaceContactV2        `json:"surface_contacts"`
 	FollowContact    *SurfaceContactV2         `json:"follow_contact,omitempty"`
