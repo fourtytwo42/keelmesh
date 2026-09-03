@@ -221,10 +221,10 @@ func (m *Manager) seed() {
 			// routing, and distance calculations all agree with the map.
 			p := spawnPoint(spawnCenters, g, slot, .022, .028)
 			env := environmentAt(p, float64(idx))
-			m.vessels[id] = domain.VesselProfileV2{SchemaVersion: 2, ID: id, Designation: fmt.Sprintf("KM-%03d", 214+idx), Callsign: callsigns[idx], DisplayName: fmt.Sprintf("%s (KM-%03d)", callsigns[idx], 214+idx), Class: class, GroupID: gid, GroupCode: groupCodes[g], GroupColor: groupColors[g], GroupPattern: patterns[g], Available: true, Telemetry: domain.VesselTelemetryV2{Position: p, HeadingDeg: float64((idx * 37) % 360), SpeedMPS: .4 + float64(idx%5)*.11, Reserve: .96 - float64(idx%9)*.025, ProjectedReserve: .89 - float64(idx%9)*.025, Mode: "patrol", Health: "nominal", PNTIntegrity: "trusted", UncertaintyM: 4 + float64(idx%5), TapeDepthSeconds: 60, Environment: env}}
+			m.vessels[id] = domain.VesselProfileV2{SchemaVersion: 2, ID: id, Designation: fmt.Sprintf("KM-%03d", 214+idx), Callsign: callsigns[idx], DisplayName: fmt.Sprintf("%s (KM-%03d)", callsigns[idx], 214+idx), Class: class, GroupID: gid, GroupCode: groupCodes[g], GroupColor: groupColors[g], GroupPattern: patterns[g], Available: true, DecisionCapable: true, Telemetry: domain.VesselTelemetryV2{Position: p, HeadingDeg: float64((idx * 37) % 360), SpeedMPS: .4 + float64(idx%5)*.11, Reserve: .96 - float64(idx%9)*.025, ProjectedReserve: .89 - float64(idx%9)*.025, Mode: "patrol", Health: "nominal", PNTIntegrity: "trusted", UncertaintyM: 4 + float64(idx%5), TapeDepthSeconds: 60, Environment: env}}
 		}
 		assembly := m.vessels[members[0]].Telemetry.Position
-		m.groups[gid] = domain.OperationalGroupV2{SchemaVersion: 2, ID: gid, Code: groupCodes[g], Name: groupNames[g], Color: groupColors[g], Pattern: patterns[g], MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: &assembly, AssemblySource: "first-member", Revision: 1}
+		m.groups[gid] = domain.OperationalGroupV2{SchemaVersion: 2, ID: gid, Code: groupCodes[g], Name: groupNames[g], Color: groupColors[g], Pattern: patterns[g], MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: &assembly, AssemblySource: "first-member", DecisionPolicy: "lowest_reachable_capable_id", DecisionNodeID: members[0], DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
 	}
 	all := make([]string, 0, 48)
 	for id := range m.vessels {
@@ -369,6 +369,7 @@ func (m *Manager) snapshotLocked() domain.FleetSnapshotV2 {
 	sort.Slice(vs, func(i, j int) bool { return vs[i].Designation < vs[j].Designation })
 	gs := make([]domain.OperationalGroupV2, 0, len(m.groups))
 	for _, g := range m.groups {
+		g = m.groupDecisionSnapshotLocked(g)
 		gs = append(gs, g)
 	}
 	sort.Slice(gs, func(i, j int) bool { return gs[i].Code < gs[j].Code })
@@ -479,6 +480,38 @@ func atlasID(g domain.OperationalGroupV2, vs map[string]domain.VesselProfileV2) 
 	return g.MemberIDs[0]
 }
 
+// groupDecisionSnapshotLocked elects a predictable advisory decision node.
+// It grants no additional mission authority: every adjustment still has to fit
+// the signed trajectory envelope. A future deployment can mark only GPU-bearing
+// vessels DecisionCapable without changing election semantics.
+func (m *Manager) groupDecisionSnapshotLocked(g domain.OperationalGroupV2) domain.OperationalGroupV2 {
+	if g.DecisionPolicy == "" {
+		g.DecisionPolicy = "lowest_reachable_capable_id"
+	}
+	if g.FallbackPolicy == "" {
+		g.FallbackPolicy = "safe_hold_then_signal_seek_then_return_home_if_authorized"
+	}
+	candidates := make([]string, 0, len(g.MemberIDs))
+	for _, id := range g.MemberIDs {
+		if vessel, ok := m.vessels[id]; ok && vessel.Available && vessel.DecisionCapable {
+			candidates = append(candidates, id)
+		}
+	}
+	sort.Strings(candidates)
+	previous := g.DecisionNodeID
+	if len(candidates) == 0 {
+		g.DecisionNodeID = ""
+	} else {
+		g.DecisionNodeID = candidates[0]
+	}
+	if g.DecisionEpoch == 0 {
+		g.DecisionEpoch = 1
+	} else if previous != "" && previous != g.DecisionNodeID {
+		g.DecisionEpoch++
+	}
+	return g
+}
+
 func (m *Manager) CreateGroup(req CreateGroupRequest) (domain.OperationalGroupV2, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -503,7 +536,8 @@ func (m *Manager) CreateGroup(req CreateGroupRequest) (domain.OperationalGroupV2
 	id := "group-custom-" + shortHash(req.IdempotencyKey)
 	members := unique(req.MemberIDs)
 	assembly, source, waypointID := m.defaultAssemblyPointLocked(req.Color, members)
-	g := domain.OperationalGroupV2{SchemaVersion: 2, ID: id, Code: m.nextGroupCodeLocked(), Name: name, Color: req.Color, Pattern: req.Pattern, MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: assembly, AssemblySource: source, AssemblyWaypointID: waypointID, Revision: 1}
+	g := domain.OperationalGroupV2{SchemaVersion: 2, ID: id, Code: m.nextGroupCodeLocked(), Name: name, Color: req.Color, Pattern: req.Pattern, MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: assembly, AssemblySource: source, AssemblyWaypointID: waypointID, DecisionPolicy: "lowest_reachable_capable_id", DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
+	g = m.groupDecisionSnapshotLocked(g)
 	for _, vid := range g.MemberIDs {
 		v := m.vessels[vid]
 		if old, ok := m.groups[v.GroupID]; ok {
@@ -1928,6 +1962,16 @@ func (m *Manager) tick() {
 			active = true
 			target := segment.End
 			adjustment := m.localAdjustmentLocked(v, segment)
+			if !adjustment.InsideEnvelope {
+				v.Telemetry.SpeedMPS = 0
+				v.Telemetry.TapeDepthSeconds = cursor.HotTapeDepthS
+				v.Telemetry.Mode = "safe_hold · instruction requested"
+				v.Telemetry.Environment = environmentAt(v.Telemetry.Position, float64(program.MissionTickMS/1000))
+				v.Telemetry.Route = nil
+				program.LastAdjustments[vesselID] = adjustment
+				m.vessels[vesselID] = v
+				continue
+			}
 			if adjustment.InsideEnvelope && adjustment.LateralOffsetM != 0 {
 				target = lateralPoint(segment.Start, segment.End, adjustment.LateralOffsetM)
 			}
@@ -1978,7 +2022,32 @@ func (m *Manager) tick() {
 }
 
 func (m *Manager) localAdjustmentLocked(vessel domain.VesselProfileV2, segment domain.TrajectorySegmentV2) domain.LocalAdjustmentV1 {
-	adjustment := domain.LocalAdjustmentV1{VesselID: vessel.ID, Tick: segment.ActivationTick, Kind: "nominal", Reason: "inside signed trajectory envelope", SpeedFactor: 1, InsideEnvelope: true}
+	decisionNode, scope := vessel.ID, "local"
+	if group, ok := m.groups[vessel.GroupID]; ok {
+		group = m.groupDecisionSnapshotLocked(group)
+		if group.DecisionNodeID != "" {
+			decisionNode, scope = group.DecisionNodeID, "group"
+		}
+	}
+	adjustment := domain.LocalAdjustmentV1{VesselID: vessel.ID, Tick: segment.ActivationTick, Kind: "nominal", Reason: "inside signed trajectory envelope", SpeedFactor: 1, InsideEnvelope: true, DecisionNodeID: decisionNode, DecisionScope: scope, Escalation: "none"}
+	if vessel.Telemetry.UncertaintyM > segment.MaximumUncertaintyM || vessel.Telemetry.PNTIntegrity == "unsafe" {
+		adjustment.Kind = "guardrail_stop"
+		adjustment.Reason = "PNT evidence is outside the signed trajectory envelope"
+		adjustment.SpeedFactor = 0
+		adjustment.InsideEnvelope = false
+		adjustment.Escalation = "instruction_requested"
+		adjustment.Contingency = "safe_hold"
+		return adjustment
+	}
+	if vessel.Telemetry.Reserve <= segment.MinimumReserve {
+		adjustment.Kind = "guardrail_stop"
+		adjustment.Reason = "reserve is at or below the signed mission floor"
+		adjustment.SpeedFactor = 0
+		adjustment.InsideEnvelope = false
+		adjustment.Escalation = "instruction_requested"
+		adjustment.Contingency = "safe_hold"
+		return adjustment
+	}
 	if vessel.Telemetry.Reserve-segment.MinimumReserve < .08 {
 		adjustment.Kind = "energy_compensation"
 		adjustment.Reason = "projected reserve is near the signed floor"
@@ -2607,6 +2676,9 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 			if seeded, ok := m.vessels[v.ID]; ok {
 				v = migrateLegacySpawn(v, seeded)
 			}
+			// Current simulated nodes all expose an inference route. Future physical
+			// deployments may persist false for nodes without a GPU/provider.
+			v.DecisionCapable = true
 			m.vessels[v.ID] = v
 		}
 	})
@@ -2648,6 +2720,7 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 				group.AssemblySource = "first-member"
 			}
 		}
+		group = m.groupDecisionSnapshotLocked(group)
 		m.groups[id] = group
 	}
 	for id, vessel := range m.vessels {

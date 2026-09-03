@@ -87,9 +87,15 @@ test("map-first workspace exposes the persistent 48-vessel operating picture", a
 });
 
 test("pirate watch changes nomenclature, agent voice, and returns cleanly to navy mode", async ({ page }) => {
-  await page.goto("/?arena=1");
+  const pirateRequests: string[] = [];
+  page.on("request", request => {
+    if (request.url().includes("/assets/vessels/pirate-")) pirateRequests.push(request.url());
+  });
+  await page.goto("/");
   await page.getByRole("button", { name: "Enter pirate mode" }).click();
   await expect(page.getByText("PIRATE FLEET COMMAND", { exact: true })).toBeVisible();
+  await expect(page.locator("img[src='/assets/vessels/pirate-kestrel.png']").first()).toBeVisible();
+  await expect.poll(() => pirateRequests.length).toBeGreaterThan(0);
   await expect(page.getByRole("button", { name: /High Seas/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Return to navy mode" })).toBeVisible();
 
@@ -164,11 +170,16 @@ test("water context menu manages numbered colored waypoints and preview-only gui
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
   await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
   await rail.getByRole("button", { name: "Create mission from 6 selected" }).click();
+  await expect(page.getByRole("region", { name: "Mission Planner" })).toBeVisible();
+  await page.waitForTimeout(350);
   const canvas = page.locator(".operations-map .maplibregl-canvas");
-  const first = { x: 650, y: 330 };
-  const second = { x: 760, y: 330 };
+  // Keep fixtures in clear open water. The original points now intersect the
+  // wider six-vessel station-keeping cells and correctly invoke vessel rather
+  // than water context behavior.
+  const first = { x: 430, y: 450 };
+  const second = { x: 520, y: 450 };
   const menuPoint = first;
-  const destination = { x: 700, y: 400 };
+  const destination = { x: 580, y: 470 };
 
   await canvas.click({ position: first, button: "right" });
   const water = page.getByRole("menu", { name: "Water navigation menu" });

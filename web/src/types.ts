@@ -9,6 +9,7 @@ export type Vessel = {
   reserve: number;
   speed_mps: number;
   available: boolean;
+  decision_capable: boolean;
   route_index: number;
   route_progress: number;
 };
@@ -620,6 +621,10 @@ export type OperationalGroupV2 = {
   assembly_point?: Point;
   assembly_source?: string;
   assembly_waypoint_id?: string;
+  decision_policy: string;
+  decision_node_id?: string;
+  decision_epoch: number;
+  fallback_policy: string;
   revision: number;
 };
 export type SavedCollectionV2 = {
@@ -724,6 +729,10 @@ export type LocalAdjustmentV1 = {
   speed_factor: number;
   lateral_offset_m: number;
   inside_envelope: boolean;
+  decision_node_id: string;
+  decision_scope: string;
+  escalation: string;
+  contingency?: string;
 };
 
 export type TrajectoryProgramSummaryV1 = {

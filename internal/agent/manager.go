@@ -30,6 +30,7 @@ type Config struct {
 	CoreTokenFile         string
 	InvestigatorTokenFile string
 	SeederTokenFile       string
+	ControlTokenFile      string
 	OpenAIKeyFile         string
 	OpenAIModel           string
 	OpenAIURL             string
@@ -42,6 +43,7 @@ func ConfigFromEnv() Config {
 		CoreTokenFile:         env("KEELMESH_CORE_AI_TOKEN_FILE", "/run/secrets/core_to_ai_token"),
 		InvestigatorTokenFile: env("KEELMESH_MCP_INVESTIGATOR_TOKEN_FILE", "/run/secrets/mcp_investigator_token"),
 		SeederTokenFile:       env("KEELMESH_MCP_SEEDER_TOKEN_FILE", "/run/secrets/mcp_seeder_token"),
+		ControlTokenFile:      env("KEELMESH_MCP_CONTROL_TOKEN_FILE", "/run/secrets/mcp_control_token"),
 		OpenAIKeyFile:         env("OPENAI_API_KEY_FILE", "/run/secrets/openai_api_key"),
 		OpenAIModel:           env("OPENAI_MODEL", "gpt-5.6-luna"),
 		OpenAIURL:             env("OPENAI_RESPONSES_URL", "https://api.openai.com/v1/responses"),

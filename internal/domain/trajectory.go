@@ -74,6 +74,10 @@ type LocalAdjustmentV1 struct {
 	SpeedFactor    float64 `json:"speed_factor"`
 	LateralOffsetM float64 `json:"lateral_offset_m"`
 	InsideEnvelope bool    `json:"inside_envelope"`
+	DecisionNodeID string  `json:"decision_node_id"`
+	DecisionScope  string  `json:"decision_scope"`
+	Escalation     string  `json:"escalation"`
+	Contingency    string  `json:"contingency,omitempty"`
 }
 
 type TrajectoryProgramSummaryV1 struct {

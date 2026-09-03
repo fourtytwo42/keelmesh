@@ -43,18 +43,19 @@ type VesselTelemetryV2 struct {
 }
 
 type VesselProfileV2 struct {
-	SchemaVersion int               `json:"schema_version"`
-	ID            string            `json:"id"`
-	Designation   string            `json:"designation"`
-	Callsign      string            `json:"callsign"`
-	DisplayName   string            `json:"display_name"`
-	Class         VesselClassV2     `json:"class"`
-	GroupID       string            `json:"group_id"`
-	GroupCode     string            `json:"group_code"`
-	GroupColor    string            `json:"group_color"`
-	GroupPattern  string            `json:"group_pattern"`
-	Available     bool              `json:"available"`
-	Telemetry     VesselTelemetryV2 `json:"telemetry"`
+	SchemaVersion   int               `json:"schema_version"`
+	ID              string            `json:"id"`
+	Designation     string            `json:"designation"`
+	Callsign        string            `json:"callsign"`
+	DisplayName     string            `json:"display_name"`
+	Class           VesselClassV2     `json:"class"`
+	GroupID         string            `json:"group_id"`
+	GroupCode       string            `json:"group_code"`
+	GroupColor      string            `json:"group_color"`
+	GroupPattern    string            `json:"group_pattern"`
+	Available       bool              `json:"available"`
+	DecisionCapable bool              `json:"decision_capable"`
+	Telemetry       VesselTelemetryV2 `json:"telemetry"`
 }
 
 type OperationalGroupV2 struct {
@@ -70,6 +71,10 @@ type OperationalGroupV2 struct {
 	AssemblyPoint      *GeoPointV2 `json:"assembly_point,omitempty"`
 	AssemblySource     string      `json:"assembly_source,omitempty"`
 	AssemblyWaypointID string      `json:"assembly_waypoint_id,omitempty"`
+	DecisionPolicy     string      `json:"decision_policy"`
+	DecisionNodeID     string      `json:"decision_node_id,omitempty"`
+	DecisionEpoch      int64       `json:"decision_epoch"`
+	FallbackPolicy     string      `json:"fallback_policy"`
 	Revision           int64       `json:"revision"`
 }
 

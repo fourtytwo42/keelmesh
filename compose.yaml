@@ -55,6 +55,7 @@ services:
       KEELMESH_CORE_AI_TOKEN_FILE: /run/keelmesh-auth/core-ai/token
       KEELMESH_MCP_INVESTIGATOR_TOKEN_FILE: /run/keelmesh-auth/investigator/token
       KEELMESH_MCP_SEEDER_TOKEN_FILE: /run/keelmesh-auth/seeder/token
+      KEELMESH_MCP_CONTROL_TOKEN_FILE: /run/keelmesh-auth/control/token
       KEELMESH_SPEECH_URL: http://speech:8091
     depends_on:
       postgres:
@@ -89,9 +90,10 @@ services:
         test -s /investigator/token || head -c 32 /dev/urandom | base64 > /investigator/token
         test -s /seeder/token || head -c 32 /dev/urandom | base64 > /seeder/token
         test -s /core-ai/token || head -c 32 /dev/urandom | base64 > /core-ai/token
+        test -s /control/token || head -c 32 /dev/urandom | base64 > /control/token
         cp /run/secrets/openrouter_api_key /openrouter/token
         cp /run/secrets/openai_api_key /openai/token
-        chmod 0444 /investigator/token /seeder/token /core-ai/token
+        chmod 0444 /investigator/token /seeder/token /core-ai/token /control/token
         chown 10001:10001 /openrouter/token
         chown 10001:10001 /openai/token
         chmod 0400 /openrouter/token
@@ -100,6 +102,7 @@ services:
       - mcp-investigator-token:/investigator
       - mcp-seeder-token:/seeder
       - core-ai-token:/core-ai
+      - mcp-control-token:/control
       - openrouter-runtime:/openrouter
       - openai-runtime:/openai
     secrets:
@@ -123,6 +126,7 @@ services:
       - core-ai-token:/run/keelmesh-auth/core-ai:ro
       - mcp-investigator-token:/run/keelmesh-auth/investigator:ro
       - mcp-seeder-token:/run/keelmesh-auth/seeder:ro
+      - mcp-control-token:/run/keelmesh-auth/control:ro
     ports:
       - "${KEELMESH_PORT:-8080}:8080"
     healthcheck:
@@ -255,6 +259,7 @@ volumes:
   mcp-investigator-token:
   mcp-seeder-token:
   core-ai-token:
+  mcp-control-token:
   openrouter-runtime:
   openai-runtime:
 

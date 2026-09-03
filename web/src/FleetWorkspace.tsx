@@ -76,6 +76,8 @@ const formations = [
   "ring",
   "search_grid",
 ];
+const vesselAsset = (classID: string, pirate: boolean) =>
+  `/assets/vessels/${pirate ? "pirate-" : ""}${classID}.png`;
 
 export function FleetWorkspace() {
   const [fleet, setFleet] = useState<FleetSnapshotV2 | null>(null),
@@ -1076,6 +1078,7 @@ export function FleetWorkspace() {
       initial: { x: 350, y: 92, width: 350, height: 590 },
       content: (
         <VesselInspector
+          pirate={pirate}
           vessel={inspectedVessel}
           reachability={reachability}
           lookup={vesselsByID}
@@ -1813,7 +1816,7 @@ function FleetRail({
                     onChange={() => onSelect([v.id], "toggle")}
                   />
                   <i style={{ borderColor: v.group_color }}>
-                    <img src={`/assets/vessels/${v.class.id}.png`} />
+                    <img src={vesselAsset(v.class.id, pirate)} />
                   </i>
                   <span>
                     <b>{v.callsign}</b>
@@ -1887,7 +1890,7 @@ function FleetRail({
                     onChange={() => onSelect([v.id], "toggle")}
                   />
                   <i style={{ borderColor: "#737973" }}>
-                    <img src={`/assets/vessels/${v.class.id}.png`} />
+                    <img src={vesselAsset(v.class.id, pirate)} />
                   </i>
                   <span>
                     <b>{v.callsign}</b>
@@ -2029,7 +2032,7 @@ function SelectionDrawer({
                   key={v.id}
                 >
                   <GripVertical />
-                  <img src={`/assets/vessels/${v.class.id}.png`} />
+                  <img src={vesselAsset(v.class.id, pirate)} />
                   <span>
                     <b>{v.callsign}</b>
                     <small>
@@ -2069,11 +2072,13 @@ function SelectionDrawer({
   );
 }
 function SelectionInspector({
+  pirate,
   vessels,
   groups,
   onInspectVessel,
   onInspectGroup,
 }: {
+  pirate: boolean;
   vessels: VesselProfileV2[];
   groups: FleetSnapshotV2["groups"];
   onInspectVessel: (id: string) => void;
@@ -2124,7 +2129,7 @@ function SelectionInspector({
                 key={v.id}
                 onClick={() => onInspectVessel(v.id)}
               >
-                <img src={`/assets/vessels/${v.class.id}.png`} />
+                <img src={vesselAsset(v.class.id, pirate)} />
                 <span>
                   <b>{v.callsign}</b>
                   <small>
@@ -2177,7 +2182,8 @@ function GroupManager({
       (v) =>
         v.telemetry.health !== "nominal" ||
         v.telemetry.pnt_integrity !== "trusted",
-    ).length;
+    ).length,
+    decisionNode = members.find((v) => v.id === group.decision_node_id);
   return (
     <div className="group-manager">
       <div className="group-identity">
@@ -2209,7 +2215,16 @@ function GroupManager({
           v={String(attention)}
           sub={attention ? "health or PNT" : "all nominal"}
         />
+        <Metric
+          k="DECISION NODE"
+          v={decisionNode?.callsign || "None reachable"}
+          sub={`epoch ${group.decision_epoch} · ${group.decision_policy.replaceAll("_", " ")}`}
+        />
       </div>
+      <p className="group-decision-note">
+        This node coordinates bounded group adaptations. Decisions outside the
+        signed mission guardrails stop safely and request operator instruction.
+      </p>
       <label>
         <span className="field-label">
           <Pencil /> GROUP NAME
@@ -2322,11 +2337,13 @@ function GroupManager({
   );
 }
 function VesselInspector({
+  pirate,
   vessel,
   reachability,
   lookup,
   onRename,
 }: {
+  pirate: boolean;
   vessel: VesselProfileV2;
   reachability: ReachabilityV2 | null;
   lookup: Map<string, VesselProfileV2>;
@@ -2336,7 +2353,7 @@ function VesselInspector({
   return (
     <div className="vessel-inspector">
       <div className="vessel-hero">
-        <img src={`/assets/vessels/${vessel.class.id}.png`} />
+        <img src={vesselAsset(vessel.class.id, pirate)} />
         <div>
           <span style={{ color: vessel.group_color }}>
             {vessel.group_code} · {vessel.class.name.toUpperCase()}

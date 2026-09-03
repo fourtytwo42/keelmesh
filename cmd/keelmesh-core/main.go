@@ -92,7 +92,7 @@ func main() {
 	go platformManager.Run(ctx)
 	go agentManager.Run(ctx)
 	go fleetManager.Run(ctx)
-	privateServer := &http.Server{Addr: ":8081", Handler: privateHandler(agentManager), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
+	privateServer := &http.Server{Addr: ":8081", Handler: privateHandler(agentManager, fleetManager, arenaManager), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	go func() {
 		logger.Info("keelmesh private AI boundary listening", "address", privateServer.Addr)
 		if err := privateServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -117,9 +117,10 @@ func main() {
 	}
 }
 
-func privateHandler(manager *agent.Manager) http.Handler {
+func privateHandler(manager *agent.Manager, fleet *fleetops.Manager, arenaManager *arena.Manager) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", manager.MCPHandler())
+	mux.Handle("/mcp/control", manager.MCPControlHandler(fleet, arenaManager))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ready","boundary":"mcp"}`))

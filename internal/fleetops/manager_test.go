@@ -19,6 +19,9 @@ func TestSeededFleetHasStableClassMix(t *testing.T) {
 		t.Fatalf("seed = %d vessels, %d groups", len(s.Vessels), len(s.Groups))
 	}
 	for _, g := range s.Groups {
+		if g.DecisionPolicy != "lowest_reachable_capable_id" || g.DecisionNodeID != g.MemberIDs[0] || g.DecisionEpoch < 1 {
+			t.Fatalf("group %s decision election = policy %q node %q epoch %d", g.ID, g.DecisionPolicy, g.DecisionNodeID, g.DecisionEpoch)
+		}
 		counts := map[string]int{}
 		for _, id := range g.MemberIDs {
 			counts[m.vessels[id].Class.ID]++
@@ -26,6 +29,21 @@ func TestSeededFleetHasStableClassMix(t *testing.T) {
 		if counts["kestrel"] != 3 || counts["mariner"] != 2 || counts["atlas"] != 1 {
 			t.Fatalf("group %s class mix: %#v", g.ID, counts)
 		}
+	}
+}
+
+func TestLocalAdjustmentStopsAndEscalatesOutsideGuardrails(t *testing.T) {
+	m := New("", slog.Default())
+	vessel := m.vessels[m.groups["group-01"].MemberIDs[1]]
+	vessel.Telemetry.PNTIntegrity = "unsafe"
+	vessel.Telemetry.UncertaintyM = 80
+	segment := domain.TrajectorySegmentV2{MaximumUncertaintyM: 25, MinimumReserve: .2, TargetSpeedMPS: 1, MaximumSpeedMPS: 2}
+	adjustment := m.localAdjustmentLocked(vessel, segment)
+	if adjustment.InsideEnvelope || adjustment.SpeedFactor != 0 || adjustment.Escalation != "instruction_requested" || adjustment.Contingency != "safe_hold" {
+		t.Fatalf("unsafe adjustment did not fail closed: %#v", adjustment)
+	}
+	if adjustment.DecisionScope != "group" || adjustment.DecisionNodeID != m.groups["group-01"].MemberIDs[0] {
+		t.Fatalf("unexpected group decision authority: %#v", adjustment)
 	}
 }
 
