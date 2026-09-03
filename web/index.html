@@ -8,6 +8,17 @@
   </head>
   <body>
     <div id="root"></div>
+    <noscript>KeelMesh requires JavaScript to display the operations workspace.</noscript>
+    <script>
+      // This deliberately uses plain ES5-era syntax. If an embedded browser
+      // cannot fetch or parse the module bundle, replace the empty dark root
+      // with an actionable recovery surface instead of failing invisibly.
+      window.setTimeout(function () {
+        var root = document.getElementById("root");
+        if (!root || root.childNodes.length > 0) return;
+        root.innerHTML = '<main style="box-sizing:border-box;min-height:100vh;padding:48px;background:#07171c;color:#eee8dc;font:16px/1.5 system-ui,sans-serif"><p style="color:#e7a72f;letter-spacing:.12em">WORKSPACE RECOVERY</p><h1>KeelMesh could not start in this browser.</h1><p>Reload to fetch the current compatible workspace bundle.</p><button onclick="window.location.reload()" style="min-height:44px;padding:0 20px;border:1px solid #e7a72f;background:#e7a72f;color:#101615;font-weight:700;cursor:pointer">Reload workspace</button></main>';
+      }, 8000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
