@@ -123,6 +123,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v2/groups", s.groupsV2)
 	mux.HandleFunc("POST /api/v2/groups", s.createGroupV2)
 	mux.HandleFunc("PATCH /api/v2/groups/{id}", s.patchGroupV2)
+	mux.HandleFunc("POST /api/v2/groups/{id}/route:command", s.groupRouteCommandV2)
 	mux.HandleFunc("POST /api/v2/groups/{id}/members:move", s.moveGroupMemberV2)
 	mux.HandleFunc("DELETE /api/v2/groups/{id}", s.deleteGroupV2)
 	mux.HandleFunc("GET /api/v2/collections", s.collectionsV2)

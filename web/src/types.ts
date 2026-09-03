@@ -623,6 +623,10 @@ export type OperationalGroupV2 = {
   assembly_point?: Point;
   assembly_source?: string;
   assembly_waypoint_id?: string;
+  route_waypoints?: MissionWaypointV2[];
+  route_mode: "hold" | "moving_to_hold" | "once" | "loop" | "pause_pending" | "paused" | "completed";
+  route_index: number;
+  route_revision: number;
   decision_policy: string;
   decision_node_id?: string;
   decision_epoch: number;
@@ -693,6 +697,7 @@ export type MissionWaypointV2 = {
     | "cyan"
     | "white";
   sequence: number;
+  owner_group_id?: string;
 };
 export type MissionGeometryV2 = {
   revision: number;

@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -984,5 +985,71 @@ func TestFollowSurfaceContactCompilesPredictedTrack(t *testing.T) {
 	}
 	if planning.FollowContact == nil || planning.FollowContact.BoatID != "NPC-4101" || len(planning.SurfaceContacts) != 12 {
 		t.Fatalf("advisor context is missing bounded traffic state: %#v", planning)
+	}
+}
+
+func TestGroupAssemblyTranslationAndWaypointRouteState(t *testing.T) {
+	m := New("", slog.Default())
+	group := m.groups["group-01"]
+	anchor := m.vessels[group.MemberIDs[0]].Telemetry.Position
+	destination := domain.GeoPointV2{anchor[0] + .01, anchor[1]}
+	updated, err := m.PatchGroup(group.ID, PatchGroupRequest{
+		Mutation:      Mutation{RequestID: "move-hold", IdempotencyKey: "move-hold", ExpectedVersion: group.Revision},
+		AssemblyPoint: &destination,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := m.vessels[group.MemberIDs[0]].Telemetry.Position
+	m.tick()
+	after := m.vessels[group.MemberIDs[0]].Telemetry.Position
+	if before == after || geoDistanceM(after, destination) >= geoDistanceM(before, destination) {
+		t.Fatalf("group did not translate toward moved hold point: before=%v after=%v", before, after)
+	}
+
+	waypoints := []domain.MissionWaypointV2{
+		{ID: "route-one", Position: destination, Color: updated.ColorName, Sequence: 1},
+		{ID: "route-two", Position: domain.GeoPointV2{destination[0], destination[1] + .01}, Color: updated.ColorName, Sequence: 2},
+	}
+	updated, err = m.CommandGroupRoute(group.ID, GroupRouteCommandRequest{
+		Mutation:  Mutation{RequestID: "route-once", IdempotencyKey: "route-once", ExpectedVersion: updated.Revision},
+		Action:    "start_once",
+		Waypoints: waypoints,
+	})
+	if err != nil || updated.RouteMode != "once" || len(updated.RouteWaypoints) != 2 {
+		t.Fatalf("group route did not arm: group=%#v err=%v", updated, err)
+	}
+	updated, err = m.CommandGroupRoute(group.ID, GroupRouteCommandRequest{
+		Mutation:  Mutation{RequestID: "route-loop", IdempotencyKey: "route-loop", ExpectedVersion: updated.Revision},
+		Action:    "enable_loop",
+		Waypoints: waypoints,
+	})
+	if err != nil || updated.RouteMode != "loop" {
+		t.Fatalf("group route did not enter loop mode: group=%#v err=%v", updated, err)
+	}
+	updated, err = m.CommandGroupRoute(group.ID, GroupRouteCommandRequest{
+		Mutation: Mutation{RequestID: "route-pause", IdempotencyKey: "route-pause", ExpectedVersion: updated.Revision},
+		Action:   "pause_after_leg",
+	})
+	if err != nil || updated.RouteMode != "pause_pending" {
+		t.Fatalf("group route did not request bounded pause: group=%#v err=%v", updated, err)
+	}
+}
+
+func TestClearGroupRouteHoldsAtLowestVesselID(t *testing.T) {
+	m := New("", slog.Default())
+	group := m.groups["group-01"]
+	ids := cloneStrings(group.MemberIDs)
+	sort.Strings(ids)
+	want := m.vessels[ids[0]].Telemetry.Position
+	updated, err := m.CommandGroupRoute(group.ID, GroupRouteCommandRequest{
+		Mutation: Mutation{RequestID: "route-clear", IdempotencyKey: "route-clear", ExpectedVersion: group.Revision},
+		Action:   "clear",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.AssemblyPoint == nil || *updated.AssemblyPoint != want || updated.RouteMode != "moving_to_hold" || len(updated.RouteWaypoints) != 0 {
+		t.Fatalf("clear did not create deterministic lowest-ID hold: %#v", updated)
 	}
 }

@@ -34,9 +34,13 @@ type Props = {
   onGroup: (id: string) => void;
   onContact: (id: string) => void;
   onWaypoint: (p: Point, color: WaypointColor) => void;
+  onMoveWaypoint: (index: number, p: Point) => void;
   onDeleteWaypoint: (index: number) => void;
   onClearWaypoints: (color?: WaypointColor) => void;
   onClearGroupAssembly: (groupID: string) => void;
+  onMoveGroupAssembly: (groupID: string, p: Point) => void;
+  onClearGroupWaypoints: (groupID: string) => void;
+  onHoldGroupAtVessel: (groupID: string, vesselID: string) => void;
   onGoTo: (p: Point, color: WaypointColor) => void;
   onUseWaypointColor: (color: WaypointColor) => void;
   onArea: (kind: "include" | "exclude", polygon: Point[]) => void;
@@ -175,6 +179,13 @@ function geometryData(
 ): GeoJSON.FeatureCollection {
   const waypoints = mission?.geometry.waypoints ?? [],
     details = mission?.geometry.waypoint_details ?? [];
+  const routes = new Map<string, MissionWaypointV2[]>();
+  details.forEach((waypoint, index) => {
+    const key = waypoint.owner_group_id || `color:${waypoint.color}`;
+    const existing = routes.get(key) ?? [];
+    existing.push({ ...waypoint, position: waypoints[index] ?? waypoint.position });
+    routes.set(key, existing);
+  });
   return {
     type: "FeatureCollection",
     features: [
@@ -190,6 +201,21 @@ function geometryData(
           geometry: { type: "Polygon" as const, coordinates: [coordinates] },
         }),
       ),
+      ...[...routes.entries()].flatMap(([key, entries]) =>
+        entries.length < 2
+          ? []
+          : [{
+              type: "Feature" as const,
+              id: `route-${key}`,
+              properties: { kind: "waypoint-route", color: entries[0].color },
+              geometry: {
+                type: "LineString" as const,
+                coordinates: entries
+                  .sort((a, b) => a.sequence - b.sequence)
+                  .map((entry) => entry.position),
+              },
+            }],
+      ),
       ...waypoints.map((coordinates, index) => ({
         type: "Feature" as const,
         id: details[index]?.id ?? `legacy-waypoint-${index + 1}`,
@@ -198,6 +224,7 @@ function geometryData(
           index,
           sequence: index + 1,
           color: details[index]?.color ?? "amber",
+          ownerGroup: details[index]?.owner_group_id ?? "",
         },
         geometry: { type: "Point" as const, coordinates },
       })),
@@ -294,9 +321,13 @@ export function OperationsMap({
   onGroup,
   onContact,
   onWaypoint,
+  onMoveWaypoint,
   onDeleteWaypoint,
   onClearWaypoints,
   onClearGroupAssembly,
+  onMoveGroupAssembly,
+  onClearGroupWaypoints,
+  onHoldGroupAtVessel,
   onGoTo,
   onUseWaypointColor,
   onArea,
@@ -308,7 +339,9 @@ export function OperationsMap({
     selectionMode = useRef(false),
     fleetRef = useRef(fleet),
     flowAnchors = useRef<Point[]>([]),
-    multiClick = useRef({ count: 0, at: 0 });
+    multiClick = useRef({ count: 0, at: 0 }),
+    dragTarget = useRef<{ kind: "waypoint"; index: number } | { kind: "assembly"; group: string } | null>(null),
+    suppressClick = useRef(false);
   const [ready, setReady] = useState(false),
     [box, setBox] = useState<{
       x: number;
@@ -322,7 +355,8 @@ export function OperationsMap({
       depth: true,
     }),
     [contextMenu, setContextMenu] = useState<ContextMenu | null>(null),
-    [waypointColor, setWaypointColor] = useState<WaypointColor>("amber");
+    [waypointColor, setWaypointColor] = useState<WaypointColor>("amber"),
+    [dragMarker, setDragMarker] = useState<{ x: number; y: number; color: string } | null>(null);
   fleetRef.current = fleet;
   const waypointColors = useMemo(() => {
     const seen = new Set<string>();
@@ -338,6 +372,19 @@ export function OperationsMap({
       ];
     });
   }, [fleet.groups]);
+  const selectedGroup = useMemo(() => {
+    if (selected.size === 0) return undefined;
+    return fleet.groups.find((group) =>
+      group.member_ids.length === selected.size &&
+      [...selected].every((id) => group.member_ids.includes(id)),
+    );
+  }, [fleet.groups, selected]);
+  const effectiveWaypointColor = selectedGroup
+    ? (selectedGroup.color_name as WaypointColor)
+    : waypointColor;
+  useEffect(() => {
+    if (selectedGroup) setWaypointColor(selectedGroup.color_name as WaypointColor);
+  }, [selectedGroup]);
   const visibleVesselIDs = () => {
     const map = mapRef.current;
     if (!map) return [];
@@ -515,6 +562,23 @@ export function OperationsMap({
           ],
           "line-width": 2,
           "line-dasharray": [3, 2],
+        },
+      });
+      map.addLayer({
+        id: "mission-waypoint-routes",
+        type: "line",
+        source: "mission-geometry",
+        filter: ["==", ["get", "kind"], "waypoint-route"],
+        paint: {
+          "line-color": [
+            "match", ["get", "color"],
+            "amber", "#e9a93f", "teal", "#62c5a8", "coral", "#d86f5f",
+            "violet", "#b895d8", "blue", "#7eb4df", "yellow", "#d2c05d",
+            "pink", "#df8fb0", "lime", "#8fca72", "#e9a93f",
+          ],
+          "line-width": 2,
+          "line-dasharray": [2, 2],
+          "line-opacity": 0.8,
         },
       });
       map.addLayer({
@@ -972,11 +1036,15 @@ export function OperationsMap({
     canvas.style.cursor = tool === "select" ? "default" : "crosshair";
     const click = (e: MapMouseEvent) => {
       setContextMenu(null);
+      if (suppressClick.current) {
+        suppressClick.current = false;
+        return;
+      }
       if (tool === "waypoint") {
         if (
           map.queryRenderedFeatures(e.point, { layers: ["land"] }).length === 0
         )
-          onWaypoint([e.lngLat.lng, e.lngLat.lat], waypointColor);
+          onWaypoint([e.lngLat.lng, e.lngLat.lat], effectiveWaypointColor);
         onToolDone();
         return;
       }
@@ -1106,6 +1174,46 @@ export function OperationsMap({
       });
     };
     const down = (e: MapMouseEvent) => {
+      if (tool === "select" && e.originalEvent.button === 0) {
+        const hitBox: [[number, number], [number, number]] = [
+          [e.point.x - 14, e.point.y - 14],
+          [e.point.x + 14, e.point.y + 14],
+        ];
+        const waypoint = map.queryRenderedFeatures(hitBox, {
+          layers: ["mission-waypoint-numbers", "mission-waypoints"],
+        })[0];
+        const assembly = map.queryRenderedFeatures(hitBox, {
+          layers: ["group-assembly-labels", "group-assembly-rings"],
+        })[0];
+        if (waypoint?.properties?.index !== undefined) {
+          dragTarget.current = {
+            kind: "waypoint",
+            index: Number(waypoint.properties.index),
+          };
+          setDragMarker({
+            x: e.point.x,
+            y: e.point.y,
+            color: String(waypoint.properties.color ?? "#e9a93f"),
+          });
+          map.dragPan.disable();
+          canvas.style.cursor = "grabbing";
+          return;
+        }
+        if (assembly?.properties?.group) {
+          dragTarget.current = {
+            kind: "assembly",
+            group: String(assembly.properties.group),
+          };
+          setDragMarker({
+            x: e.point.x,
+            y: e.point.y,
+            color: String(assembly.properties.color ?? "#e9a93f"),
+          });
+          map.dragPan.disable();
+          canvas.style.cursor = "grabbing";
+          return;
+        }
+      }
       if (
         !["box", "include", "exclude"].includes(tool) &&
         !e.originalEvent.shiftKey
@@ -1117,6 +1225,14 @@ export function OperationsMap({
       setBox({ x: e.point.x, y: e.point.y, w: 0, h: 0 });
     };
     const move = (e: MapMouseEvent) => {
+      if (dragTarget.current) {
+        setDragMarker((current) => ({
+          x: e.point.x,
+          y: e.point.y,
+          color: current?.color ?? "#e9a93f",
+        }));
+        return;
+      }
       if (!selectionMode.current || !boxStart.current) return;
       const s = boxStart.current;
       setBox({
@@ -1127,6 +1243,20 @@ export function OperationsMap({
       });
     };
     const up = (e: MapMouseEvent) => {
+      if (dragTarget.current) {
+        const target = dragTarget.current;
+        const point: Point = [e.lngLat.lng, e.lngLat.lat];
+        if (map.queryRenderedFeatures(e.point, { layers: ["land"] }).length === 0) {
+          if (target.kind === "waypoint") onMoveWaypoint(target.index, point);
+          else onMoveGroupAssembly(target.group, point);
+        }
+        dragTarget.current = null;
+        suppressClick.current = true;
+        setDragMarker(null);
+        map.dragPan.enable();
+        canvas.style.cursor = "default";
+        return;
+      }
       if (!selectionMode.current || !boxStart.current) return;
       const s = boxStart.current;
       const min = { x: Math.min(s.x, e.point.x), y: Math.min(s.y, e.point.y) },
@@ -1182,13 +1312,16 @@ export function OperationsMap({
     ready,
     tool,
     waypointColor,
+    effectiveWaypointColor,
     mission,
     onSelect,
     onGroup,
     onContact,
     onWaypoint,
+    onMoveWaypoint,
     onDeleteWaypoint,
     onClearGroupAssembly,
+    onMoveGroupAssembly,
     onArea,
     onToolDone,
   ]);
@@ -1209,6 +1342,12 @@ export function OperationsMap({
         <div
           className="selection-box"
           style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
+        />
+      )}
+      {dragMarker && (
+        <div
+          className="map-drag-marker"
+          style={{ left: dragMarker.x, top: dragMarker.y, borderColor: dragMarker.color }}
         />
       )}
       {contextMenu?.kind === "vessel" && (
@@ -1279,6 +1418,30 @@ export function OperationsMap({
           >
             {pirate ? "Dismiss muster" : "Clear selection"}
           </button>
+          {contextMenu.group && (
+            <>
+              <strong>{pirate ? "CREW NAVIGATION" : "GROUP NAVIGATION"}</strong>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  onHoldGroupAtVessel(contextMenu.group, contextMenu.vessel);
+                  setContextMenu(null);
+                }}
+              >
+                {pirate ? "Muster and hold on this ship" : "Hold group at this vessel"}
+              </button>
+              <button
+                className="menu-danger"
+                role="menuitem"
+                onClick={() => {
+                  onClearGroupWaypoints(contextMenu.group);
+                  setContextMenu(null);
+                }}
+              >
+                {pirate ? "Clear crew bearings" : "Clear group waypoints"}
+              </button>
+            </>
+          )}
         </div>
       )}
       {contextMenu?.kind === "water" && (
@@ -1295,8 +1458,14 @@ export function OperationsMap({
               {Math.abs(contextMenu.point[0]).toFixed(4)}°W
             </small>
           </strong>
-          <div className="waypoint-colors" aria-label="Waypoint color">
-            {waypointColors.map((color) => (
+          {selectedGroup ? (
+            <div className="waypoint-owner">
+              <i style={{ background: selectedGroup.color }} />
+              {selectedGroup.code} {selectedGroup.name} · {selectedGroup.color_name}
+            </div>
+          ) : (
+            <div className="waypoint-colors" aria-label="Waypoint color">
+              {waypointColors.map((color) => (
               <button
                 type="button"
                 aria-label={`${color.label} waypoint`}
@@ -1308,13 +1477,14 @@ export function OperationsMap({
                 <i style={{ background: color.hex }} />
                 {color.label}
               </button>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
           <button
             role="menuitem"
             disabled={selected.size === 0}
             onClick={() => {
-              onGoTo(contextMenu.point, waypointColor);
+              onGoTo(contextMenu.point, effectiveWaypointColor);
               setContextMenu(null);
             }}
           >
@@ -1325,7 +1495,7 @@ export function OperationsMap({
           <button
             role="menuitem"
             onClick={() => {
-              onWaypoint(contextMenu.point, waypointColor);
+              onWaypoint(contextMenu.point, effectiveWaypointColor);
               setContextMenu(null);
             }}
           >
@@ -1337,14 +1507,14 @@ export function OperationsMap({
               !mission ||
               selected.size === 0 ||
               (mission.geometry.waypoint_details ?? []).every(
-                (w) => w.color !== waypointColor,
+                (w) => w.color !== effectiveWaypointColor,
               )
             }
             onClick={() => {
-              onUseWaypointColor(waypointColor);
+              onUseWaypointColor(effectiveWaypointColor);
               setContextMenu(null);
             }}
-          >{`Plan via ${waypointColor} waypoints`}</button>
+          >{`Plan via ${effectiveWaypointColor} waypoints`}</button>
           <button
             role="menuitem"
             onClick={() => {
@@ -1385,14 +1555,14 @@ export function OperationsMap({
             disabled={
               !mission ||
               (mission.geometry.waypoint_details ?? []).every(
-                (w) => w.color !== waypointColor,
+                (w) => w.color !== effectiveWaypointColor,
               )
             }
             onClick={() => {
-              onClearWaypoints(waypointColor);
+              onClearWaypoints(effectiveWaypointColor);
               setContextMenu(null);
             }}
-          >{`Clear ${waypointColor} waypoints`}</button>
+          >{`Clear ${effectiveWaypointColor} waypoints`}</button>
           <button
             className="menu-danger"
             role="menuitem"

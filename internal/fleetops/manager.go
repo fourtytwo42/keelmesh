@@ -55,6 +55,12 @@ type MoveGroupMemberRequest struct {
 	Mutation
 	VesselID string `json:"vessel_id"`
 }
+type GroupRouteCommandRequest struct {
+	Mutation
+	Action         string                     `json:"action"`
+	Waypoints      []domain.MissionWaypointV2 `json:"waypoints"`
+	AnchorVesselID string                     `json:"anchor_vessel_id,omitempty"`
+}
 type PatchVesselRequest struct {
 	Mutation
 	Callsign string `json:"callsign"`
@@ -279,7 +285,7 @@ func (m *Manager) seed() {
 			m.vessels[id] = domain.VesselProfileV2{SchemaVersion: 2, ID: id, Designation: fmt.Sprintf("KM-%03d", 214+idx), Callsign: callsigns[idx], DisplayName: fmt.Sprintf("%s (KM-%03d)", callsigns[idx], 214+idx), Class: class, GroupID: gid, GroupCode: groupCodes[g], GroupColor: groupColors[g], GroupColorName: groupColorNames[g], GroupPattern: patterns[g], Available: true, DecisionCapable: true, Telemetry: domain.VesselTelemetryV2{Position: p, HeadingDeg: float64((idx * 37) % 360), SpeedMPS: .4 + float64(idx%5)*.11, Reserve: .96 - float64(idx%9)*.025, ProjectedReserve: .89 - float64(idx%9)*.025, Mode: "patrol", Health: "nominal", PNTIntegrity: "trusted", UncertaintyM: 4 + float64(idx%5), TapeDepthSeconds: 60, Environment: env}}
 		}
 		assembly := m.vessels[members[0]].Telemetry.Position
-		m.groups[gid] = domain.OperationalGroupV2{SchemaVersion: 2, ID: gid, Code: groupCodes[g], Name: groupNames[g], Color: groupColors[g], ColorName: groupColorNames[g], Pattern: patterns[g], MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: &assembly, AssemblySource: "first-member", DecisionPolicy: "lowest_reachable_capable_id", DecisionNodeID: members[0], DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
+		m.groups[gid] = domain.OperationalGroupV2{SchemaVersion: 2, ID: gid, Code: groupCodes[g], Name: groupNames[g], Color: groupColors[g], ColorName: groupColorNames[g], Pattern: patterns[g], MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: &assembly, AssemblySource: "first-member", RouteMode: "hold", RouteRevision: 1, DecisionPolicy: "lowest_reachable_capable_id", DecisionNodeID: members[0], DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
 	}
 	all := make([]string, 0, 48)
 	for id := range m.vessels {
@@ -601,7 +607,7 @@ func (m *Manager) CreateGroup(req CreateGroupRequest) (domain.OperationalGroupV2
 	id := "group-custom-" + shortHash(req.IdempotencyKey)
 	members := unique(req.MemberIDs)
 	assembly, source, waypointID := m.defaultAssemblyPointLocked(req.Color, members)
-	g := domain.OperationalGroupV2{SchemaVersion: 2, ID: id, Code: m.nextGroupCodeLocked(), Name: name, Color: req.Color, ColorName: nearestWaypointColor(req.Color), Pattern: req.Pattern, MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: assembly, AssemblySource: source, AssemblyWaypointID: waypointID, DecisionPolicy: "lowest_reachable_capable_id", DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
+	g := domain.OperationalGroupV2{SchemaVersion: 2, ID: id, Code: m.nextGroupCodeLocked(), Name: name, Color: req.Color, ColorName: nearestWaypointColor(req.Color), Pattern: req.Pattern, MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: assembly, AssemblySource: source, AssemblyWaypointID: waypointID, RouteMode: "hold", RouteRevision: 1, DecisionPolicy: "lowest_reachable_capable_id", DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
 	g = m.groupDecisionSnapshotLocked(g)
 	for _, vid := range g.MemberIDs {
 		v := m.vessels[vid]
@@ -696,6 +702,7 @@ func (m *Manager) PatchGroup(id string, req PatchGroupRequest) (domain.Operation
 		g.AssemblyPoint = nil
 		g.AssemblySource = ""
 		g.AssemblyWaypointID = ""
+		g.RouteMode = "hold"
 	}
 	if req.AssemblyPoint != nil {
 		point := *req.AssemblyPoint
@@ -705,6 +712,10 @@ func (m *Manager) PatchGroup(id string, req PatchGroupRequest) (domain.Operation
 		g.AssemblyPoint = &point
 		g.AssemblySource = "operator"
 		g.AssemblyWaypointID = ""
+		g.RouteWaypoints = nil
+		g.RouteIndex = 0
+		g.RouteMode = "moving_to_hold"
+		g.RouteRevision++
 	}
 	if req.UseFirstMemberAssembly {
 		if len(g.MemberIDs) == 0 {
@@ -714,6 +725,10 @@ func (m *Manager) PatchGroup(id string, req PatchGroupRequest) (domain.Operation
 		g.AssemblyPoint = &point
 		g.AssemblySource = "first-member"
 		g.AssemblyWaypointID = ""
+		g.RouteWaypoints = nil
+		g.RouteIndex = 0
+		g.RouteMode = "moving_to_hold"
+		g.RouteRevision++
 	}
 	g.Revision++
 	m.groups[id] = g
@@ -730,6 +745,101 @@ func (m *Manager) PatchGroup(id string, req PatchGroupRequest) (domain.Operation
 	m.persistAsync()
 	return g, nil
 }
+
+// CommandGroupRoute changes only the group's operator-authored navigation
+// program. It never bypasses mission authority: active mission conflicts still
+// fail closed, while idle groups execute these points through the bounded
+// station-keeping controller.
+func (m *Manager) CommandGroupRoute(id string, req GroupRouteCommandRequest) (domain.OperationalGroupV2, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	g, ok := m.groups[id]
+	if !ok {
+		return g, &Error{"GROUP_NOT_FOUND", "Group not found."}
+	}
+	if err := m.check(req.Mutation, g.Revision); err != nil {
+		return g, err
+	}
+	for _, mission := range m.missions {
+		if mission.Status != "executing" && mission.Status != "authorized" {
+			continue
+		}
+		for _, vesselID := range mission.TargetIDs {
+			if contains(g.MemberIDs, vesselID) {
+				return g, &Error{"ACTIVE_MISSION_REPLAN_REQUIRED", "Pause or re-plan active movement authority before changing the group route."}
+			}
+		}
+	}
+	copyWaypoints := func() ([]domain.MissionWaypointV2, error) {
+		if len(req.Waypoints) < 2 || len(req.Waypoints) > 64 {
+			return nil, &Error{"GROUP_ROUTE_INVALID", "A group route requires between 2 and 64 waypoints."}
+		}
+		points := make([]domain.MissionWaypointV2, len(req.Waypoints))
+		for i, waypoint := range req.Waypoints {
+			if !withinMapBounds(waypoint.Position) {
+				return nil, &Error{"GROUP_ROUTE_INVALID", "Every group waypoint must remain inside the local water-simulation bounds."}
+			}
+			waypoint.OwnerGroupID = id
+			waypoint.Sequence = i + 1
+			points[i] = waypoint
+		}
+		return points, nil
+	}
+	switch req.Action {
+	case "start_once", "enable_loop":
+		points, err := copyWaypoints()
+		if err != nil {
+			return g, err
+		}
+		g.RouteWaypoints = points
+		if g.RouteIndex < 0 || g.RouteIndex >= len(points) || g.RouteMode == "hold" || g.RouteMode == "completed" {
+			g.RouteIndex = 0
+		}
+		if req.Action == "start_once" {
+			g.RouteMode = "once"
+		} else {
+			g.RouteMode = "loop"
+		}
+	case "pause_after_leg":
+		if g.RouteMode != "once" && g.RouteMode != "loop" {
+			return g, &Error{"GROUP_ROUTE_NOT_ACTIVE", "The group does not have an active route to pause."}
+		}
+		g.RouteMode = "pause_pending"
+	case "clear":
+		g.RouteWaypoints = nil
+		g.RouteIndex = 0
+		g.RouteMode = "moving_to_hold"
+		if len(g.MemberIDs) > 0 {
+			ids := cloneStrings(g.MemberIDs)
+			sort.Strings(ids)
+			point := m.vessels[ids[0]].Telemetry.Position
+			g.AssemblyPoint = &point
+			g.AssemblySource = "lowest-id-on-clear"
+			g.AssemblyWaypointID = ""
+		}
+	case "hold_at_vessel":
+		vessel, exists := m.vessels[req.AnchorVesselID]
+		if !exists || vessel.GroupID != id {
+			return g, &Error{"GROUP_ANCHOR_INVALID", "The hold anchor must be a vessel in this operational group."}
+		}
+		point := vessel.Telemetry.Position
+		g.AssemblyPoint = &point
+		g.AssemblySource = "operator-vessel-anchor"
+		g.AssemblyWaypointID = ""
+		g.RouteWaypoints = nil
+		g.RouteIndex = 0
+		g.RouteMode = "moving_to_hold"
+	default:
+		return g, &Error{"GROUP_ROUTE_COMMAND_INVALID", "Unknown group route command."}
+	}
+	g.RouteRevision++
+	g.Revision++
+	m.groups[id] = g
+	m.fleetVersion++
+	m.persistAsync()
+	return g, nil
+}
+
 func (m *Manager) MoveGroupMember(id string, req MoveGroupMemberRequest) (domain.OperationalGroupV2, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -2302,37 +2412,86 @@ func (m *Manager) advanceEnergy(vessel domain.VesselProfileV2, speed float64, mi
 
 func (m *Manager) tickIdleGroupsLocked() bool {
 	changed := false
+	persistentChanged := false
 	for _, group := range m.groups {
 		if group.AssemblyPoint == nil || len(group.MemberIDs) == 0 {
 			continue
 		}
+		center := *group.AssemblyPoint
+		routing := (group.RouteMode == "once" || group.RouteMode == "loop" || group.RouteMode == "pause_pending") && len(group.RouteWaypoints) > 0
+		if routing {
+			if group.RouteIndex < 0 || group.RouteIndex >= len(group.RouteWaypoints) {
+				group.RouteIndex = 0
+			}
+			center = group.RouteWaypoints[group.RouteIndex].Position
+		}
+		allArrived := true
+		movementSeconds := 4.0 // 20× simulation time at the 200 ms wall-clock tick.
 		for index, vesselID := range group.MemberIDs {
 			vessel := m.vessels[vesselID]
 			if vessel.Telemetry.MissionID != "" {
+				allArrived = false
 				continue
 			}
-			offset := formationOffset(group.Formation, index, len(group.MemberIDs), group.FormationSpacingM, (*group.AssemblyPoint)[1])
-			target := domain.GeoPointV2{(*group.AssemblyPoint)[0] + offset[0], (*group.AssemblyPoint)[1] + offset[1]}
+			offset := formationOffset(group.Formation, index, len(group.MemberIDs), group.FormationSpacingM, center[1])
+			target := domain.GeoPointV2{center[0] + offset[0], center[1] + offset[1]}
 			distance := geoDistanceM(vessel.Telemetry.Position, target)
 			if distance > 2 {
+				allArrived = false
 				dx, dy := target[0]-vessel.Telemetry.Position[0], target[1]-vessel.Telemetry.Position[1]
 				length := math.Hypot(dx, dy)
-				speed := math.Min(.8, distance/20)
-				step := speed * .2 / 111_000
+				speed := math.Min(vessel.Class.MaxSpeedMPS*.7, math.Max(.8, distance/25))
+				step := speed * movementSeconds / 111_000
 				vessel.Telemetry.Position[0] += dx / length * math.Min(step, length)
 				vessel.Telemetry.Position[1] += dy / length * math.Min(step, length)
 				vessel.Telemetry.HeadingDeg = math.Mod(math.Atan2(dx, dy)*180/math.Pi+360, 360)
 				vessel.Telemetry.SpeedMPS = speed
-				vessel.Telemetry.Mode = "forming · " + strings.ReplaceAll(group.Formation, "_", " ")
+				if routing {
+					vessel.Telemetry.Mode = fmt.Sprintf("group route · waypoint %d/%d", group.RouteIndex+1, len(group.RouteWaypoints))
+				} else {
+					vessel.Telemetry.Mode = "forming · " + strings.ReplaceAll(group.Formation, "_", " ")
+				}
+				vessel.Telemetry.Route = []domain.GeoPointV2{vessel.Telemetry.Position, target}
 			} else {
 				vessel.Telemetry.SpeedMPS = 0
-				vessel.Telemetry.Mode = "station_keep · " + strings.ReplaceAll(group.Formation, "_", " ")
+				if group.RouteMode == "pause_pending" {
+					vessel.Telemetry.Mode = "route pause pending"
+				} else {
+					vessel.Telemetry.Mode = "station_keep · " + strings.ReplaceAll(group.Formation, "_", " ")
+				}
+				vessel.Telemetry.Route = nil
 			}
-			vessel.Telemetry.Reserve = m.advanceEnergy(vessel, vessel.Telemetry.SpeedMPS, m.simTickMS/1000, .2)
+			vessel.Telemetry.Reserve = m.advanceEnergy(vessel, vessel.Telemetry.SpeedMPS, m.simTickMS/1000, movementSeconds)
 			vessel.Telemetry.Environment = environmentAt(vessel.Telemetry.Position, float64(m.simTickMS/1000))
 			m.vessels[vesselID] = vessel
 			changed = true
 		}
+		if allArrived {
+			priorMode, priorIndex := group.RouteMode, group.RouteIndex
+			switch group.RouteMode {
+			case "once":
+				if group.RouteIndex+1 < len(group.RouteWaypoints) {
+					group.RouteIndex++
+				} else {
+					group.RouteMode = "completed"
+					group.AssemblyPoint = &center
+					group.AssemblySource = "route-complete"
+				}
+			case "loop":
+				group.RouteIndex = (group.RouteIndex + 1) % len(group.RouteWaypoints)
+			case "pause_pending":
+				group.RouteMode = "paused"
+				group.AssemblyPoint = &center
+				group.AssemblySource = "route-paused"
+			case "moving_to_hold":
+				group.RouteMode = "hold"
+			}
+			m.groups[group.ID] = group
+			persistentChanged = persistentChanged || priorMode != group.RouteMode || priorIndex != group.RouteIndex
+		}
+	}
+	if persistentChanged {
+		m.persistAsync()
 	}
 	return changed
 }
@@ -2905,6 +3064,12 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 	})
 	for id, group := range m.groups {
 		group.ColorName = nearestWaypointColor(group.Color)
+		if group.RouteMode == "" {
+			group.RouteMode = "hold"
+		}
+		if group.RouteRevision == 0 {
+			group.RouteRevision = 1
+		}
 		if !validFormation(group.Formation) {
 			group.Formation = "column"
 		}

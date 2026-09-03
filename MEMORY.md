@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: fictional surface traffic and AI follow-target planning are complete, deployed, and pushed at commit `dc61c84`.
-- Last meaningful change: twelve stable, moving, non-commandable surface contacts now use six original generated sprite classes, looped tracks, distinct colors/Boat IDs, map inspection, and exact-name/color-aware follow planning. Pirate mode intentionally does not alter these neutral contacts.
-- Next step: resume the adaptive group-autonomy follow-ups or add receding-horizon contact tracking if the demo needs indefinite pursuit.
+- Current task: draggable hold/waypoint navigation and the group route state machine are implemented on VM 214 and all twelve vessel nodes; final push remains.
+- Last meaningful change: idle groups now translate at the displayed 20× simulation rate, execute group-owned waypoint routes once or as loops, and honor pause-after-current-leg, deterministic clear/hold, and vessel-anchor hold commands. Mission targets can be reassigned by operational group.
+- Next step: commit and push the verified group-navigation slice.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
 ## Current State
@@ -24,6 +24,7 @@ Durable project context lives here. Update this file whenever information should
 - M8 is live on VM 214 and all twelve vessel nodes. Missions compile into complete signed ten-second trajectory programs with no fixed six-segment ceiling; nodes expose a rolling 60-second hot tape, execution cursor, immutable revisions, future activation, and restart-persistent program state. Routine close-contact and reserve pressure produce deterministic bounded speed/heading/lateral adjustments. Groups persist formation, spacing, and assembly points and station-keep using deterministic environment, propulsion, and day/night solar accounting. The workspace now has unassigned vessels, safe group deletion, content-sized windows, map-click selection without unsolicited inspectors, and a Markdown mission chat with live provider receipts, route visuals, compact cards, and viewport-safe two-pane expansion.
 - M9 work in progress: `/mcp/control` is a separate private Streamable HTTP MCP boundary with its own runtime token, strict schemas/body/deadline bounds, operator-visible reads, mission draft/compile/plan/preview tools, and presentation-only workspace actions. It intentionally omits direct authorize/start/effect tools and returns a hash-bound human approval pause for effects. Design and follow-ups are in `M9_GROUP_AUTONOMY_AND_EXTERNAL_MCP.md`.
 - Fictional surface traffic, last verified 2026-09-02: the M6 operating picture includes twelve deterministic AIS-like contacts across container ship, tanker, ferry, trawler, fictional patrol vessel, and yacht classes. Each has a stable generated name, Boat ID, callsign, color identity, speed/course/dimensions/activity, and looped programmed route. Left-click opens a movable detail inspector. Mission intent may identify a contact by exact name, callsign, Boat ID, or unique color and generate a bounded predicted-track follow plan; the contacts are simulation-only and cannot be directly commanded. Their neutral generated art is unchanged by Pirate mode.
+- Group map navigation, last verified 2026-09-02: group assembly translation uses the same 20× monotonic simulation cadence shown by the UI. Mission waypoint metadata includes an owning group; exact whole-group selection fixes new waypoint color/ownership to that group. Draggable waypoints and hold points persist through existing mutation APIs. The group route state machine is `once -> loop -> pause_pending -> paused`, with route completion/loop advancement only after the whole formation reaches its current leg. Clear and vessel-anchor hold commands discard the route and move the formation to a deterministic hold. These idle controls reject conflicts with executing or authorized mission movement.
 - Visual system, last verified 2026-09-02: `lucide-react` 1.39.0 provides coherent UI icons. Navy mode shows a skull control to enter Pirate mode; Pirate mode shows an anchor control to return. The selected mode persists in local storage, changes workspace/Arena nomenclature and palette, and sends a typed persona to Morgan. Persona changes never grant additional tools or bypass exact-plan/effect approval. The default map uses the pinned Natural Earth 1:10m land dataset revision `ca96624a56bd078437bca8184e78163e5039ad19`, clipped locally by `scripts/generate_narragansett_map.py`; the incomplete NOAA raster extract is not rendered by default.
 - Pirate vessel art, last verified 2026-09-02: Pirate mode replaces Kestrel, Mariner, and Atlas hulls in both MapLibre and inspectors with three generated fictional transparent tall-ship assets. The art is an original genre treatment and does not copy named film vessels.
 - `IMPLEMENTATION_PLAN.md` is the Friday delivery plan. It sequences the work as visible vertical slices with acceptance gates, a three-day schedule, contingency cuts, API/contracts, verification evidence, and a six-minute rehearsal.
@@ -142,6 +143,15 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+### 2026-09-02 - Draggable Group Navigation
+
+- Context: Correct heading-only-looking hold behavior and make map waypoints executable by operational groups.
+- Decision: Keep idle/group navigation distinct from exact-hash mission execution, but make it stateful, bounded, persistent, and conflict-aware. Route play cycles once, loop, then pause-after-current-leg.
+- Files: `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `internal/api/fleetops.go`, `internal/api/server.go`, `web/src/OperationsMap.tsx`, `web/src/FleetWorkspace.tsx`, `web/src/types.ts`, and `web/src/app.css`.
+- Commands/tests: full Go test/vet passed on VM 214; TypeScript typecheck, seven Vitest assertions, and production build passed; live read-only sample showed 20 vessels translating in two seconds; reversible API drill returned `once, loop, pause_pending, moving_to_hold` and restored the original BG assembly point.
+- Result: VM 214 and all twelve vessel nodes are healthy on binary SHA-256 `a169ce68d821a772d7bc8493c284e71b5d1ac6406c07845ea10b9a23271ee67a`, with draggable waypoint/hold callbacks, group-colored route controls, right-click hold/clear commands, mission geometry save semantics, and mission group reassignment.
+- Follow-up: deploy the new core binary to all vessel nodes and add a browser drag/route regression once the shared E2E fixture isolates persisted mission state cleanly.
 
 ### 2026-09-02 - Fictional Surface Traffic And Follow Planning
 

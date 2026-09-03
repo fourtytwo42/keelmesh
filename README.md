@@ -114,6 +114,13 @@ identity, and run independent mission tabs. Area, exclusion, and waypoint
 geometry plus typed or spoken intent produce deterministic formation options;
 every option still follows preview → exact-hash authorization → execution.
 
+Idle operational groups also have a bounded map-navigation controller. Hold
+points and numbered waypoints are draggable; group-colored routes can run once,
+switch to a loop, or pause after completing the current leg. Clearing a route
+creates a deterministic hold around the group's lowest vessel ID, and changing
+the group hold point translates the full formation at the displayed 20×
+simulation rate. Right-click vessel controls use the same group route API.
+
 The chart is a packaged NOAA NCDS extract and all vessel/environment state is
 clearly labeled simulation data. Pocket TTS and faster-whisper run privately on
 VM 214; the user-authorized Jarvis clone is the default voice and remains a

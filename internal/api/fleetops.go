@@ -77,6 +77,14 @@ func (s *Server) patchGroupV2(w http.ResponseWriter, r *http.Request) {
 	v, err := s.fleetops.PatchGroup(r.PathValue("id"), req)
 	respondV2(w, v, err, http.StatusOK)
 }
+func (s *Server) groupRouteCommandV2(w http.ResponseWriter, r *http.Request) {
+	var req fleetops.GroupRouteCommandRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.fleetops.CommandGroupRoute(r.PathValue("id"), req)
+	respondV2(w, v, err, http.StatusOK)
+}
 func (s *Server) moveGroupMemberV2(w http.ResponseWriter, r *http.Request) {
 	var req fleetops.MoveGroupMemberRequest
 	if !decode(w, r, &req) {

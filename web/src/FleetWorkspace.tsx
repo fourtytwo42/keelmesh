@@ -411,6 +411,17 @@ export function FleetWorkspace() {
     return m;
   }
   async function createMission() {
+    const source = mission;
+    if (
+      source &&
+      source.status === "draft" &&
+      source.target_ids.length === selected.size &&
+      source.target_ids.every((id) => selected.has(id))
+    ) {
+      setActiveMissionID(source.id);
+      open("planner");
+      return;
+    }
     await createMissionFor([...selected]);
   }
   async function createGroupFor(memberIDs: string[], name?: string) {
@@ -653,6 +664,13 @@ export function FleetWorkspace() {
         },
     );
   }
+  function selectedOperationalGroup(snapshot = fleet) {
+    if (!snapshot || selected.size === 0) return undefined;
+    return snapshot.groups.find((group) =>
+      group.member_ids.length === selected.size &&
+      [...selected].every((id) => group.member_ids.includes(id)),
+    );
+  }
   async function saveWaypoints(
     target: MissionWorkspaceV2,
     entries: MissionWaypointV2[],
@@ -703,14 +721,34 @@ export function FleetWorkspace() {
   async function addWaypoint(p: Point, color: WaypointColor) {
     const target = await missionForWaypoint();
     if (!target) return;
+    const owner = selectedOperationalGroup();
     const entries = waypointEntries(target);
     entries.push({
       id: requestID("waypoint"),
       position: p,
-      color,
+      color: (owner?.color_name as WaypointColor | undefined) ?? color,
       sequence: entries.length + 1,
+      owner_group_id: owner?.id,
     });
     await saveWaypoints(target, entries);
+  }
+  async function moveWaypoint(index: number, position: Point) {
+    if (!mission) return;
+    const entries = waypointEntries(mission);
+    if (!entries[index]) return;
+    entries[index] = { ...entries[index], position };
+    const updated = await saveWaypoints(mission, entries);
+    const ownerID = entries[index].owner_group_id;
+    if (!updated || !ownerID) return;
+    const group = (await api<FleetSnapshotV2>("/api/v2/fleet")).groups.find(
+      (candidate) => candidate.id === ownerID,
+    );
+    if (group && ["once", "loop", "pause_pending"].includes(group.route_mode))
+      await commandGroupRoute(
+        ownerID,
+        group.route_mode === "loop" ? "enable_loop" : "start_once",
+        entries.filter((entry) => entry.owner_group_id === ownerID),
+      );
   }
   async function deleteWaypoint(index: number) {
     if (!mission) return;
@@ -725,6 +763,63 @@ export function FleetWorkspace() {
       ? waypointEntries(mission).filter((entry) => entry.color !== color)
       : [];
     await saveWaypoints(mission, entries);
+  }
+  async function commandGroupRoute(
+    groupID: string,
+    action: "start_once" | "enable_loop" | "pause_after_leg" | "clear" | "hold_at_vessel",
+    explicitWaypoints?: MissionWaypointV2[],
+    anchorVesselID?: string,
+  ) {
+    const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet"),
+      group = snapshot.groups.find((candidate) => candidate.id === groupID);
+    if (!group) return;
+    const sourceMission = snapshot.missions.find((candidate) => candidate.id === activeMissionID) ?? mission;
+    const entries = explicitWaypoints ?? (sourceMission ? waypointEntries(sourceMission) : []);
+    const route = entries.filter(
+      (entry) =>
+        entry.owner_group_id === groupID ||
+        (!entry.owner_group_id && entry.color === group.color_name),
+    );
+    await mutate(() =>
+      api(`/api/v2/groups/${groupID}/route:command`, {
+        method: "POST",
+        body: JSON.stringify({
+          request_id: requestID("group-route"),
+          idempotency_key: requestID("group-route-key"),
+          expected_version: group.revision,
+          action,
+          waypoints: route,
+          anchor_vessel_id: anchorVesselID,
+        }),
+      }),
+    );
+    await refresh();
+  }
+  async function cycleGroupRoute(groupID: string) {
+    const group = fleet?.groups.find((candidate) => candidate.id === groupID);
+    if (!group) return;
+    if (group.route_mode === "once")
+      return commandGroupRoute(groupID, "enable_loop");
+    if (group.route_mode === "loop")
+      return commandGroupRoute(groupID, "pause_after_leg");
+    if (group.route_mode === "pause_pending") return;
+    return commandGroupRoute(groupID, "start_once");
+  }
+  async function clearGroupWaypoints(groupID: string) {
+    const group = fleet?.groups.find((candidate) => candidate.id === groupID);
+    if (!group) return;
+    if (mission) {
+      const remaining = waypointEntries(mission).filter(
+        (entry) =>
+          entry.owner_group_id !== groupID &&
+          !(!entry.owner_group_id && entry.color === group.color_name),
+      );
+      await saveWaypoints(mission, remaining);
+    }
+    await commandGroupRoute(groupID, "clear", []);
+  }
+  async function holdGroupAtVessel(groupID: string, vesselID: string) {
+    await commandGroupRoute(groupID, "hold_at_vessel", [], vesselID);
   }
   async function goToLocation(p: Point, color: WaypointColor) {
     let target: MissionWorkspaceV2 | null = selectionMatchesMission
@@ -745,6 +840,7 @@ export function FleetWorkspace() {
       position: p,
       color,
       sequence: 1,
+      owner_group_id: selectedOperationalGroup()?.id,
     };
     const updated = await saveWaypoints(target, [entry]);
     if (!updated) return;
@@ -759,25 +855,30 @@ export function FleetWorkspace() {
     await createPlans(mission, text);
   }
   async function addPolygon(kind: "include" | "exclude", poly: Point[]) {
-    if (!mission) return;
+    let target: MissionWorkspaceV2 | null = mission;
+    if (!target && selected.size > 0) target = await createMissionFor([...selected]);
+    if (!target) {
+      setError("Select one or more vessels before drawing mission geometry.");
+      return;
+    }
     await mutate(() =>
-      api(`/api/v2/missions/${mission.id}/geometry`, {
+      api(`/api/v2/missions/${target.id}/geometry`, {
         method: "POST",
         body: JSON.stringify({
           request_id: requestID("geometry"),
           idempotency_key: requestID("geometry-key"),
-          expected_version: mission.version,
+          expected_version: target.version,
           included_areas:
             kind === "include"
-              ? [...mission.geometry.included_areas, poly]
-              : mission.geometry.included_areas,
+              ? [...target.geometry.included_areas, poly]
+              : target.geometry.included_areas,
           exclusion_areas:
             kind === "exclude"
-              ? [...mission.geometry.exclusion_areas, poly]
-              : mission.geometry.exclusion_areas,
-          waypoints: mission.geometry.waypoints,
-          waypoint_details: mission.geometry.waypoint_details,
-          pois: mission.geometry.pois,
+              ? [...target.geometry.exclusion_areas, poly]
+              : target.geometry.exclusion_areas,
+          waypoints: target.geometry.waypoints,
+          waypoint_details: target.geometry.waypoint_details,
+          pois: target.geometry.pois,
         }),
       }),
     );
@@ -1062,6 +1163,10 @@ export function FleetWorkspace() {
           onCreateGroupFromVessel={createGroupFromVessel}
           onDeleteGroup={deleteGroup}
           onCreateMission={createMission}
+          mission={mission}
+          onCycleRoute={cycleGroupRoute}
+          onClearGroupWaypoints={clearGroupWaypoints}
+          onHoldGroupAtVessel={holdGroupAtVessel}
         />
       ),
     });
@@ -1125,6 +1230,7 @@ export function FleetWorkspace() {
         <Planner
           pirate={pirate}
           mission={mission}
+          groups={fleet.groups}
           draft={draft}
           command={command}
           setCommand={setCommand}
@@ -1147,6 +1253,16 @@ export function FleetWorkspace() {
           onTranscriptionStart={() => void beginTranscription()}
           onTranscriptionStop={endTranscription}
           onFormation={(f) => updateMission({ formation: f })}
+          onAssignGroup={(groupID) => {
+            const group = fleet.groups.find((candidate) => candidate.id === groupID);
+            if (group) {
+              setPlans([]);
+              setDraft(null);
+              setPreview(null);
+              setLease(null);
+              void updateMission({ target_ids: group.member_ids });
+            }
+          }}
           onArea={(kind) => setTool(kind)}
           onTool={setTool}
           onCreate={(intent) => createPlans(mission, intent)}
@@ -1432,10 +1548,18 @@ export function FleetWorkspace() {
           open("contact-inspector");
         }}
         onWaypoint={addWaypoint}
+        onMoveWaypoint={moveWaypoint}
         onDeleteWaypoint={deleteWaypoint}
         onClearWaypoints={clearWaypoints}
         onClearGroupAssembly={(groupID) =>
           void patchGroup(groupID, { clear_assembly_point: true })
+        }
+        onMoveGroupAssembly={(groupID, point) =>
+          void patchGroup(groupID, { assembly_point: point })
+        }
+        onClearGroupWaypoints={(groupID) => void clearGroupWaypoints(groupID)}
+        onHoldGroupAtVessel={(groupID, vesselID) =>
+          void holdGroupAtVessel(groupID, vesselID)
         }
         onGoTo={goToLocation}
         onUseWaypointColor={useWaypointColor}
@@ -1569,6 +1693,8 @@ function VesselGroupContextMenu({
   groups,
   onMove,
   onCreate,
+  onClearWaypoints,
+  onHold,
   onClose,
 }: {
   pirate: boolean;
@@ -1576,6 +1702,8 @@ function VesselGroupContextMenu({
   groups: FleetSnapshotV2["groups"];
   onMove: (vesselID: string, groupID: string) => void;
   onCreate: (vesselID: string, name: string) => void;
+  onClearWaypoints?: (groupID: string) => void;
+  onHold?: (groupID: string, vesselID: string) => void;
   onClose: () => void;
 }) {
   const [creating, setCreating] = useState(false),
@@ -1613,6 +1741,31 @@ function VesselGroupContextMenu({
           </span>
         </header>
         <div className="group-menu-list">
+          {state.vessel.group_id && onClearWaypoints && onHold && (
+            <>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  onHold(state.vessel.group_id, state.vessel.id);
+                  onClose();
+                }}
+              >
+                <MapPinned />
+                <span>{pirate ? "Hold crew on this ship" : "Hold group at this vessel"}</span>
+              </button>
+              <button
+                className="menu-danger"
+                role="menuitem"
+                onClick={() => {
+                  onClearWaypoints(state.vessel.group_id);
+                  onClose();
+                }}
+              >
+                <Trash2 />
+                <span>{pirate ? "Clear crew bearings" : "Clear group waypoints"}</span>
+              </button>
+            </>
+          )}
           <button
             role="menuitem"
             disabled={!state.vessel.group_id}
@@ -1706,6 +1859,10 @@ function FleetRail({
   onCreateGroupFromVessel,
   onDeleteGroup,
   onCreateMission,
+  mission,
+  onCycleRoute,
+  onClearGroupWaypoints,
+  onHoldGroupAtVessel,
 }: {
   pirate: boolean;
   fleet: FleetSnapshotV2;
@@ -1722,6 +1879,10 @@ function FleetRail({
   onCreateGroupFromVessel: (vesselID: string, name: string) => void;
   onDeleteGroup: (groupID: string) => void;
   onCreateMission: () => void;
+  mission: MissionWorkspaceV2 | null;
+  onCycleRoute: (groupID: string) => void;
+  onClearGroupWaypoints: (groupID: string) => void;
+  onHoldGroupAtVessel: (groupID: string, vesselID: string) => void;
 }) {
   const [dropGroup, setDropGroup] = useState(""),
     [menu, setMenu] = useState<VesselGroupMenuState | null>(null);
@@ -1772,7 +1933,21 @@ function FleetRail({
         </button>
       </div>
       <div className="group-list">
-        {fleet.groups.map((g) => (
+        {fleet.groups.map((g) => {
+          const routeWaypointCount = (mission?.geometry.waypoint_details ?? []).filter(
+            (waypoint) =>
+              waypoint.owner_group_id === g.id ||
+              (!waypoint.owner_group_id && waypoint.color === g.color_name),
+          ).length;
+          const routeTitle =
+            g.route_mode === "once"
+              ? "Enable waypoint loop"
+              : g.route_mode === "loop"
+                ? "Pause after current waypoint"
+                : g.route_mode === "pause_pending"
+                  ? "Pause pending at current waypoint"
+                  : "Run waypoints once";
+          return (
           <section
             key={g.id}
             className={dropGroup === g.id ? "drop-active" : ""}
@@ -1803,6 +1978,16 @@ function FleetRail({
                   {g.member_ids.filter((id) => selected.has(id)).length}/
                   {g.member_ids.length}
                 </small>
+              </button>
+              <button
+                className={`group-route ${g.route_mode}`}
+                aria-label={`${routeTitle} for ${g.code} ${g.name}`}
+                title={routeTitle}
+                disabled={routeWaypointCount < 2 || g.route_mode === "pause_pending"}
+                onClick={() => onCycleRoute(g.id)}
+              >
+                {g.route_mode === "pause_pending" ? <Pause /> : <Play />}
+                {g.route_mode === "loop" && <span>∞</span>}
               </button>
               <button
                 className="group-view"
@@ -1872,7 +2057,8 @@ function FleetRail({
                 </div>
               ))}
           </section>
-        ))}
+          );
+        })}
         {filtered.some((v) => !v.group_id) && (
           <section
             className={`unassigned-group ${dropGroup === "unassigned" ? "drop-active" : ""}`}
@@ -1946,11 +2132,12 @@ function FleetRail({
         className="wide amber"
         onClick={onCreateMission}
         disabled={selected.size === 0}
+        aria-label={`Create mission from ${selected.size} selected`}
       >
-        <Route />
+        <Save />
         {pirate
-          ? `Chart voyage for ${selected.size} mustered`
-          : `Create mission from ${selected.size} selected`}
+          ? `Save chart as voyage for ${selected.size} mustered`
+          : `Save map as mission for ${selected.size} selected`}
       </button>
       {menu && (
         <VesselGroupContextMenu
@@ -1959,6 +2146,8 @@ function FleetRail({
           groups={fleet.groups}
           onMove={onMove}
           onCreate={onCreateGroupFromVessel}
+          onClearWaypoints={onClearGroupWaypoints}
+          onHold={onHoldGroupAtVessel}
           onClose={() => setMenu(null)}
         />
       )}
@@ -2653,6 +2842,7 @@ function EditableTitle({
 function Planner({
   pirate,
   mission,
+  groups,
   draft,
   command,
   setCommand,
@@ -2672,6 +2862,7 @@ function Planner({
   onTranscriptionStart,
   onTranscriptionStop,
   onFormation,
+  onAssignGroup,
   onArea,
   onTool,
   onCreate,
@@ -2685,6 +2876,7 @@ function Planner({
 }: {
   pirate: boolean;
   mission: MissionWorkspaceV2 | null;
+  groups: FleetSnapshotV2["groups"];
   draft: CommandDraftV2 | null;
   command: string;
   setCommand: (v: string) => void;
@@ -2704,6 +2896,7 @@ function Planner({
   onTranscriptionStart: () => void;
   onTranscriptionStop: () => void;
   onFormation: (v: string) => void;
+  onAssignGroup: (groupID: string) => void;
   onArea: (k: "include" | "exclude") => void;
   onTool: (t: Tool) => void;
   onCreate: (intent: string) => void;
@@ -2876,6 +3069,26 @@ function Planner({
       </div>
       </section>
       <section className="planner-options-pane">
+      <label>
+        {pirate ? "ASSIGNED CREW" : "ASSIGNED OPERATIONAL GROUP"}
+        <select
+          value={
+            groups.find(
+              (group) =>
+                group.member_ids.length === mission.target_ids.length &&
+                group.member_ids.every((id) => mission.target_ids.includes(id)),
+            )?.id ?? ""
+          }
+          onChange={(event) => onAssignGroup(event.target.value)}
+        >
+          <option value="" disabled>Mixed or individual assets</option>
+          {groups.map((group) => (
+            <option value={group.id} key={group.id}>
+              {group.code} · {group.name} · {group.color_name}
+            </option>
+          ))}
+        </select>
+      </label>
       {mission.trajectory && (
         <div className="trajectory-program-summary">
           <header>
