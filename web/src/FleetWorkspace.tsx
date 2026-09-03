@@ -91,9 +91,7 @@ export function FleetWorkspace() {
     [activeGroupID, setActiveGroupID] = useState<string>(""),
     [tool, setTool] = useState<Tool>("select"),
     [search, setSearch] = useState(""),
-    [command, setCommand] = useState(
-      "Search the selected area in a dispersed screen, avoid shallow water, and keep 35% reserve",
-    ),
+    [command, setCommand] = useState(""),
     [draft, setDraft] = useState<CommandDraftV2 | null>(null),
     [plans, setPlans] = useState<FleetPlanV2[]>([]),
     [planID, setPlanID] = useState(""),
@@ -109,6 +107,9 @@ export function FleetWorkspace() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [connected, setConnected] = useState(true),
+    [autoRead, setAutoRead] = useState(
+      () => localStorage.getItem("keelmesh.auto-read") === "true",
+    ),
     [pendingDeleteID, setPendingDeleteID] = useState("");
   const audio = useRef<HTMLAudioElement | null>(null),
     speechAbort = useRef<AbortController | null>(null),
@@ -174,6 +175,9 @@ export function FleetWorkspace() {
     localStorage.setItem("keelmesh.theme", pirate ? "pirate" : "navy");
     document.documentElement.dataset.theme = pirate ? "pirate" : "navy";
   }, [pirate]);
+  useEffect(() => {
+    localStorage.setItem("keelmesh.auto-read", String(autoRead));
+  }, [autoRead]);
   const refresh = useCallback(async () => {
     const value = await api<FleetSnapshotV2>("/api/v2/fleet");
     setFleet(value);
@@ -788,6 +792,9 @@ export function FleetWorkspace() {
     ).catch(() => null);
     if (!compiled) return;
     setDraft(compiled);
+    setCommand("");
+    if (autoRead && compiled.advisor?.summary)
+      void speak(compiled.advisor.summary);
     const current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find(
       (m) => m.id === targetMission.id,
     );
@@ -1098,13 +1105,14 @@ export function FleetWorkspace() {
           voices={voices}
           voice={voice}
           speechState={speechState}
+          autoRead={autoRead}
+          recording={speechState.startsWith("listening")}
           onVoice={setVoice}
-          onSpeak={() =>
-            speak(
-              activePlan
-                ? `${activePlan.name}. ${activePlan.maneuvers.join(". ")}. Minimum projected reserve ${Math.round(activePlan.minimum_reserve * 100)} percent.`
-                : command,
-            )
+          onAutoRead={setAutoRead}
+          onTranscriptionToggle={() =>
+            speechState.startsWith("listening")
+              ? endTranscription()
+              : void beginTranscription()
           }
           onFormation={(f) => updateMission({ formation: f })}
           onArea={(kind) => setTool(kind)}
@@ -2529,8 +2537,11 @@ function Planner({
   voices,
   voice,
   speechState,
+  autoRead,
+  recording,
   onVoice,
-  onSpeak,
+  onAutoRead,
+  onTranscriptionToggle,
   onFormation,
   onArea,
   onTool,
@@ -2556,8 +2567,11 @@ function Planner({
   voices: VoiceV2[];
   voice: string;
   speechState: string;
+  autoRead: boolean;
+  recording: boolean;
   onVoice: (v: string) => void;
-  onSpeak: () => void;
+  onAutoRead: (enabled: boolean) => void;
+  onTranscriptionToggle: () => void;
   onFormation: (v: string) => void;
   onArea: (k: "include" | "exclude") => void;
   onTool: (t: Tool) => void;
@@ -2664,14 +2678,26 @@ function Planner({
             }
           }}
         />
-        <button
-          className="chat-send"
-          aria-label="Send to mission AI"
-          disabled={!command.trim() || busy}
-          onClick={() => onCreate(command.trim())}
-        >
-          <Send />
-        </button>
+        <div className="chat-composer-actions">
+          <button
+            className={`chat-mic ${recording ? "recording" : ""}`}
+            aria-label={recording ? "Stop voice input" : "Start voice input"}
+            aria-pressed={recording}
+            title={recording ? "Stop and transcribe" : "Speak to mission AI"}
+            disabled={busy}
+            onClick={onTranscriptionToggle}
+          >
+            <Mic />
+          </button>
+          <button
+            className="chat-send"
+            aria-label="Send to mission AI"
+            disabled={!command.trim() || busy}
+            onClick={() => onCreate(command.trim())}
+          >
+            <Send />
+          </button>
+        </div>
       </div>
       <div className="voice-row">
         <select value={voice} onChange={(e) => onVoice(e.target.value)}>
@@ -2682,10 +2708,15 @@ function Planner({
             </option>
           ))}
         </select>
-        <button onClick={onSpeak}>
+        <label className="auto-read-toggle">
+          <input
+            type="checkbox"
+            checked={autoRead}
+            onChange={(event) => onAutoRead(event.target.checked)}
+          />
           <Volume2 />
-          {pirate ? "Sound the orders" : "Read aloud"}
-        </button>
+          {pirate ? "Read replies aloud" : "Read AI replies aloud"}
+        </label>
         <small>{speechState}</small>
       </div>
       </section>

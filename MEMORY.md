@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M8 adaptive mission execution and conversational planning is implemented and deployed; retain exact-plan authority and the M2 stale-safe incident drill while iterating on the node-agent escalation layer.
-- Last meaningful change: arbitrary-duration signed trajectory programs now feed a rolling 60-second hot tape across future revision boundaries. Group station keeping, unassigned vessels, persistent assembly points, bounded local avoidance/energy adjustment, and the full mission chat/planner workspace are live.
+- Last meaningful change: mission chat now starts blank, contains tap-to-start/tap-to-stop VM-local transcription beside Send, clears successful messages from the composer, and has a persistent `Read AI replies aloud` checkbox that automatically sends accepted AI replies through Morgan/Pocket TTS.
 - Next step: add a typed asynchronous node-agent interruption escalation that can propose—but never self-authorize—an out-of-envelope trajectory revision. Routine avoidance and safe hold must remain deterministic and provider-independent.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -30,6 +30,7 @@ Durable project context lives here. Update this file whenever information should
 
 - Keep `MEMORY.md` updated consistently with durable context that should survive chat compression.
 - Do not run builds, tests, or workflows on GitHub-hosted Actions because they may cost money. Run release verification on VM 214 instead; repository pushes must not trigger GitHub workflows.
+- Do not adopt OpenAI Realtime or paid cloud speech for the demo. Keep the existing VM-local faster-whisper STT and Morgan/Pocket TTS path; cloud LLM use remains a separate bounded mission-advisor concern.
 - Agents should read `AGENTS.md` at startup and check `MEMORY.md` whenever context is missing, stale, or uncertain.
 - Use uppercase filenames `AGENTS.md` and `MEMORY.md`.
 - The user likes Rust/Tauri portable applications but explicitly decided not to force Rust or Tauri into this demo; prefer the stack most strongly supported by Havoc's disclosures.
@@ -138,6 +139,15 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+### 2026-09-02 - Streamlined mission voice loop
+
+- Context: The mission chat had lost its microphone control, exposed speech as a one-off button, and started with a canned command.
+- Decision: Restore tap-to-start/tap-to-stop STT inside the chat composer, persist an opt-in auto-read checkbox, synthesize each newly accepted AI reply through the existing selected Pocket TTS voice, and keep the composer blank/clear after successful submission.
+- Files: `web/src/FleetWorkspace.tsx`, `web/src/app.css`, `web/e2e/mission.spec.ts`.
+- Commands/tests: local TypeScript typecheck and seven Vitest assertions passed; VM 214 production Docker build passed; all 13 Playwright mission tests passed against the deployed app; direct Morgan synthesis returned a valid 84,524-byte 24 kHz mono PCM WAV; all twelve vessel nodes restarted healthy on binary SHA-256 `5b0553be537c6d5d188dccea82da6c1deb9455daeede5e4a9c5de2769d9a4002`.
+- Result: The low-cost local speech loop is live on VM 214 and every vessel node. No GitHub-hosted workflow or Proxmox snapshot was used.
+- Follow-up: Browser microphone accuracy remains dependent on the current VM-local faster-whisper model and should continue to be measured separately from this UI repair.
 
 - 2026-09-02: M8 passed the complete Go test suite and `go vet`, strict TypeScript, seven Vitest assertions, production Vite build, Python Ruff/strict mypy/eleven pytest assertions, and all thirteen serial Playwright Operations/Arena workflows. A live 830-second route produced 83 signed segments with a six-segment/60-second rolling hot tape; GPT-5.6 Luna returned a mission-specific Markdown recommendation and three target-aware options. VM 214 and all twelve vessel nodes are healthy on binary SHA-256 `5c7167060c6ea5b0d1e9b6eacfe0169e5cee75ebba4e18ff428e4e106025eef7`. No snapshot or GitHub-hosted workflow ran.
 

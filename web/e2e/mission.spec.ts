@@ -46,6 +46,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.removeItem("keelmesh.m6.window-layout.v1");
     localStorage.removeItem("keelmesh.theme");
+    localStorage.removeItem("keelmesh.auto-read");
   });
   await resetFleet(page);
   await restoreFixtureGroups(page);
@@ -298,6 +299,9 @@ test("dragged geometry follows the exact preview, authorization, and execution p
   await page.mouse.up();
   await expect(planner.getByText("1 operating", { exact: true })).toBeVisible();
 
+  await planner
+    .getByRole("textbox", { name: "Message mission AI" })
+    .fill("Search the selected area, avoid shallow water, and keep 35% reserve");
   await planner.getByRole("button", { name: "Ask AI for strategy options" }).click();
   await expect.poll(()=>planner.locator(".candidate-list > article").count(), { timeout: 25_000 }).toBeGreaterThanOrEqual(2);
   expect(await planner.locator(".candidate-list > article").count()).toBeLessThanOrEqual(4);
@@ -425,6 +429,21 @@ test("single-vessel intent uses the real advisor boundary and never offers fleet
   await expect(planner.locator(".candidate-list")).not.toContainText("Line Abreast");
   await expect(planner.locator(".candidate-list")).not.toContainText("Trail Economy");
   await expect(planner.locator(".candidate-list > article").first()).toContainText(/shore|reserve|current|patrol/i);
+});
+
+test("mission chat starts blank and exposes streamlined voice controls", async ({ page }) => {
+  await page.goto("/");
+  const rail = page.getByRole("region", { name: "Fleet / Groups" });
+  await rail.getByPlaceholder("Callsign, class, group, status…").fill("Gannet");
+  await rail.getByRole("checkbox").check();
+  await rail.getByRole("button", { name: "Create mission from 1 selected" }).click();
+  const planner = page.getByRole("region", { name: "Mission Planner" });
+  await expect(planner.getByRole("textbox", { name: "Message mission AI" })).toHaveValue("");
+  await expect(planner.getByRole("button", { name: "Start voice input" })).toBeVisible();
+  const autoRead = planner.getByRole("checkbox", { name: "Read AI replies aloud" });
+  await expect(autoRead).not.toBeChecked();
+  await autoRead.check();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("keelmesh.auto-read"))).toBe("true");
 });
 
 test("beach intent resolves a depth-aware one-nautical-mile coastal patrol", async ({ page }) => {
