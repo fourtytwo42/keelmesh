@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: draggable hold/waypoint navigation and the group route state machine are implemented on VM 214 and all twelve vessel nodes; final push remains.
+- Current task: draggable hold/waypoint navigation and the group route state machine are complete, deployed, and pushed at commit `76b3f68`.
 - Last meaningful change: idle groups now translate at the displayed 20× simulation rate, execute group-owned waypoint routes once or as loops, and honor pause-after-current-leg, deterministic clear/hold, and vessel-anchor hold commands. Mission targets can be reassigned by operational group.
-- Next step: commit and push the verified group-navigation slice.
+- Next step: continue the adaptive group-autonomy or receding-horizon follow-target work.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
 ## Current State
