@@ -180,3 +180,79 @@ code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
 .float-window.maximized .planner{padding:8px}.float-window.maximized .planner-layout{grid-template-columns:minmax(340px,.78fr) minmax(560px,1.22fr);gap:9px}.float-window.maximized .planner-chat-pane,.float-window.maximized .planner-options-pane{padding:3px 7px}.float-window.maximized .candidate-list{grid-template-columns:repeat(3,minmax(210px,1fr));align-items:start;gap:5px;margin:6px}.float-window.maximized .candidate-list>article.collapsed .candidate-detail{display:none}.float-window.maximized .route-summary svg{height:42px}
 .planner-assets{margin-bottom:7px;padding:7px;border:1px solid #39413d;background:#151b19}.planner-assets>label{margin:0}.planner-asset-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:5px}.planner-asset-actions>span,.planner-asset-actions>button{display:inline-flex;align-items:center;gap:4px;min-height:25px;padding:4px 7px;border:1px solid #424a45;background:#202724;color:#c9c8bf;font:7px inherit}.planner-asset-actions>span{margin-right:auto;border-color:#66512e;color:#e0a33f}.planner-asset-actions>button{cursor:pointer}.planner-asset-actions>button:hover:not(:disabled){border-color:#b47d2c;color:#efb24c}.planner-asset-actions>button:disabled{opacity:.38;cursor:default}.planner-asset-actions svg{width:11px;height:11px}.planner-assets-hint{margin:6px 0 0;color:#8e948d;font-size:7px;line-height:1.45}
 @media(max-width:1180px){.float-window.maximized .candidate-list{grid-template-columns:repeat(2,minmax(210px,1fr))}}
+
+/* Mission Planner density system: one hierarchy, tuned per window mode. */
+.float-window .planner{padding:8px}
+.float-window .planner-layout{gap:7px}
+.float-window .mission-summary{min-height:42px;padding-left:8px}
+.float-window .mission-summary h2{font-size:17px;line-height:1.08}
+.float-window .mission-summary p{margin:2px 0 6px;font-size:6px}
+.float-window .mission-summary-actions>span{padding:3px 5px;font-size:6px}
+.float-window .mission-summary-actions button{width:23px;height:23px}
+.float-window .mission-chat{gap:4px;max-height:150px;margin-top:5px;padding:5px}
+.float-window .chat-empty{gap:3px;padding:9px 12px}
+.float-window .chat-empty svg{width:17px;height:17px}
+.float-window .chat-empty b{font-size:8px}
+.float-window .chat-empty span{font-size:6px;line-height:1.35}
+.float-window .chat-message{padding:6px 7px}
+.float-window .chat-composer{margin-top:4px}
+.float-window .chat-composer textarea{min-height:43px;padding:6px 66px 6px 7px;font-size:8px}
+.float-window .chat-composer-actions{right:5px;bottom:5px}
+.float-window .chat-mic,.float-window .chat-send{width:25px;height:25px}
+.float-window .voice-row{grid-template-columns:minmax(0,1fr) auto auto;gap:4px;margin:4px 0 1px}
+.float-window .voice-row select,.float-window .auto-read-toggle{height:25px}
+.float-window .auto-read-toggle{padding:0 6px;font-size:6px}
+.float-window .planner-section{margin:5px 0}
+.float-window .planner-section>summary{box-sizing:border-box;min-height:26px;display:flex;align-items:center;gap:6px;padding:6px 7px;font-size:6px}
+.float-window .planner-section>summary::marker{color:#8d6b32}
+.float-window .planner-section>summary em{margin-left:auto;color:#8e948d;font:6px ui-monospace;font-style:normal;letter-spacing:0}
+.float-window .planner-section>label{gap:3px;margin:0 6px 6px;font-size:6px}
+.float-window .planner-section textarea,.float-window .planner-section select{min-height:27px;padding:5px 6px;font-size:8px}
+.float-window .planner-section textarea{min-height:38px}
+.float-window .planner-assets-body{display:grid;gap:5px;padding:0 6px 6px}
+.float-window .planner-assets-body>label{display:grid;gap:3px;margin:0;color:#898f88;font-size:6px;letter-spacing:.07em}
+.float-window .planner-asset-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin:0}
+.float-window .planner-asset-actions>button{justify-content:center;min-width:0;min-height:25px;padding:3px 5px;white-space:nowrap;font-size:6px}
+.float-window .planner-assets-hint{margin:0;padding:0 1px;font-size:6px;line-height:1.3}
+.float-window .formation-control{padding-top:5px;border-top:1px solid #303733}
+.float-window .solo-mode{margin:0;padding:5px 6px}
+.float-window .solo-mode>svg{width:13px;height:13px}
+.float-window .solo-mode b,.float-window .solo-mode small{font-size:6px}
+.float-window .map-authoring .geometry-actions{gap:3px;padding:0 6px}
+.float-window .geometry-actions button{height:26px;padding:0 3px;font-size:6px}
+.float-window .geometry-summary{justify-content:space-between;gap:5px;padding:5px 7px;font-size:6px}
+.float-window .geometry-inventory{max-height:132px;padding:0 6px 6px}
+.float-window .planning-actions{gap:4px;margin-top:5px}
+.float-window .planning-actions .wide{min-height:29px;font-size:7px}
+.float-window .planning-actions .manual-readiness{font-size:6px;padding:1px}
+.float-window .mission-advisor,.float-window .candidate-list{margin:5px}
+.float-window .candidate-list>article{padding:6px}
+.float-window .trajectory-program-summary{margin-bottom:5px;padding:6px}
+
+.float-window.docked .planner{padding:7px}
+.float-window.docked .mission-chat{max-height:118px}
+.float-window.docked .chat-empty{padding:7px 9px}
+.float-window.docked .planner-assets-hint{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.float-window.docked .map-authoring .geometry-actions{grid-template-columns:repeat(4,minmax(0,1fr))}
+.float-window.docked .geometry-actions button{display:grid;place-items:center;grid-template-columns:12px auto;gap:2px}
+
+.float-window.maximized .planner{height:100%;padding:8px 10px}
+.float-window.maximized .planner-layout{height:100%;grid-template-columns:minmax(340px,.72fr) minmax(600px,1.28fr);gap:10px}
+.float-window.maximized .planner-chat-pane,.float-window.maximized .planner-options-pane{padding:2px 8px}
+.float-window.maximized .planner-chat-pane{display:flex;flex-direction:column;border-right:1px solid #353d39}
+.float-window.maximized .mission-chat{flex:0 1 auto;min-height:170px;max-height:42vh}
+.float-window.maximized .planner-assets-body{grid-template-columns:minmax(230px,1.2fr) minmax(210px,1fr);align-items:end}
+.float-window.maximized .planner-assets-body>.planner-asset-actions{grid-column:1/-1;grid-template-columns:repeat(3,minmax(120px,190px));justify-content:start}
+.float-window.maximized .planner-assets-hint{grid-column:1/-1}
+.float-window.maximized .objective-section[open]{display:grid;grid-template-columns:190px minmax(0,1fr);column-gap:6px}
+.float-window.maximized .objective-section>summary{grid-column:1/-1}
+.float-window.maximized .objective-section>label{margin-bottom:6px}
+.float-window.maximized .objective-section textarea{height:27px;min-height:27px;resize:vertical}
+.float-window.maximized .candidate-list{grid-template-columns:repeat(2,minmax(260px,1fr));align-items:start;gap:5px;margin:5px}
+.float-window.maximized .candidate-list>article.collapsed .candidate-detail{display:none}
+.float-window.maximized .route-summary svg{height:42px}
+
+@media(max-width:1100px){
+  .float-window.maximized .planner-layout{grid-template-columns:minmax(300px,.8fr) minmax(480px,1.2fr)}
+  .float-window.maximized .candidate-list{grid-template-columns:1fr}
+}

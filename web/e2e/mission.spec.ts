@@ -117,7 +117,7 @@ test("new mission opens as an empty planning workspace and accepts assets afterw
   await expect(planner).toBeVisible();
   await expect(planner.getByText(/0 frozen assets/)).toBeVisible();
   await expect(planner.getByLabel("ASSIGNED ASSETS")).toHaveValue("");
-  await expect(planner.getByRole("button", { name: "Use fleet selection (0)" })).toBeDisabled();
+  await expect(planner.getByRole("button", { name: "Apply selected (0)" })).toBeDisabled();
 
   const blockGuard = await planner
     .getByLabel("ASSIGNED ASSETS")
