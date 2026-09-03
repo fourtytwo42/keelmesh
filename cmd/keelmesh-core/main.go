@@ -77,7 +77,14 @@ func main() {
 	engine := core.New()
 	platformManager := platform.NewManager(cfg, logger)
 	agentManager := agent.NewManager(agent.ConfigFromEnv(), logger)
-	fleetManager := fleetops.New(cfg.DatabaseURL, logger)
+	fleetDatabaseURL := cfg.DatabaseURL
+	if strings.TrimSpace(os.Getenv("KEELMESH_NODE_ID")) != "" {
+		// Symmetric vessel nodes are deliberately independent of the central
+		// Compose PostgreSQL hostname. Their signed trajectory/journal state is
+		// local; mission workspace persistence remains a central-appliance role.
+		fleetDatabaseURL = ""
+	}
+	fleetManager := fleetops.New(fleetDatabaseURL, logger)
 	arenaManager := arena.NewFromEnv()
 	serverAPI := api.New(engine, logger, webRoot, platformManager, agentManager, fleetManager, arenaManager)
 
