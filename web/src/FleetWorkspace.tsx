@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -38,7 +38,9 @@ import { QuietFleetDrill } from "./QuietFleetDrill";
 import { ArenaView } from "./ArenaView";
 import {
   Anchor,
+  Activity,
   Ban,
+  BatteryCharging,
   Bot,
   BoxSelect,
   CheckCircle2,
@@ -76,6 +78,11 @@ import {
   X,
   RotateCcw,
   CircleDot,
+  Compass,
+  Gauge,
+  Navigation,
+  Satellite,
+  Sun,
   Undo2,
 } from "lucide-react";
 
@@ -1623,11 +1630,11 @@ export function FleetWorkspace() {
       id: `group-manager-${group.id}`,
       kind: "context",
       activation: windowActivations[`group-manager-${group.id}`],
-      minWidth: 300,
+      minWidth: 340,
       minHeight: 240,
       title: `${pirate ? "Crew" : "Group"} · ${group.code}`,
       icon: <Users />,
-      initial: { x: 300 + (index % 5) * 28, y: 105 + (index % 5) * 24, width: 340, height: 390 },
+      initial: { x: 280 + (index % 5) * 28, y: 96 + (index % 5) * 24, width: 390, height: 440 },
       content: (
         <GroupManager
           key={`${group.id}-${group.revision}`}
@@ -1643,11 +1650,11 @@ export function FleetWorkspace() {
       id: `inspector-${vessel.id}`,
       kind: "context",
       activation: windowActivations[`inspector-${vessel.id}`],
-      minWidth: 310,
+      minWidth: 340,
       minHeight: 300,
       title: vessel.display_name,
       icon: <Eye />,
-      initial: { x: 330 + (index % 7) * 26, y: 92 + (index % 7) * 22, width: 350, height: 590 },
+      initial: { x: 310 + (index % 7) * 26, y: 92 + (index % 7) * 22, width: 390, height: 610 },
       content: (
         <VesselInspectorWindow
           pirate={pirate}
@@ -2871,6 +2878,26 @@ function SelectionInspector({
     </div>
   );
 }
+function FormationPreview({ formation, color, count }: { formation: string; color: string; count: number }) {
+  const patterns: Record<string, [number, number][]> = {
+    column: [[50,14],[50,29],[50,44],[50,59],[50,74],[50,89]],
+    trail: [[50,14],[50,29],[50,44],[50,59],[50,74],[50,89]],
+    line_abreast: [[12,52],[28,52],[44,52],[60,52],[76,52],[92,52]],
+    wedge: [[50,16],[36,34],[64,34],[22,56],[78,56],[50,76]],
+    echelon_left: [[78,18],[66,32],[54,46],[42,60],[30,74],[18,88]],
+    echelon_right: [[22,18],[34,32],[46,46],[58,60],[70,74],[82,88]],
+    parallel_columns: [[36,24],[64,24],[36,50],[64,50],[36,76],[64,76]],
+    dispersed_screen: [[18,26],[50,14],[82,30],[28,67],[66,60],[88,84]],
+    ring: [[50,14],[78,31],[78,65],[50,84],[22,65],[22,31]],
+    orbit: [[50,14],[78,31],[78,65],[50,84],[22,65],[22,31]],
+    search_grid: [[22,28],[50,28],[78,28],[22,70],[50,70],[78,70]],
+  };
+  const points = patterns[formation] ?? patterns.column;
+  return <svg viewBox="0 0 100 100" role="img" aria-label={`${formation.replaceAll("_", " ")} formation preview`}>
+    <path d="M50 8 L50 92" />
+    {points.slice(0, Math.max(1, Math.min(count, 6))).map(([x,y], index) => <g key={`${x}-${y}`}><circle cx={x} cy={y} r={index === 0 ? 5 : 4} style={{ fill: index === 0 ? "#f3efe5" : color }} /><path className="formation-bow" d={`M${x} ${y-6} l3 4 h-6 z`} /></g>)}
+  </svg>;
+}
 function GroupManager({
   group,
   vessels,
@@ -2913,115 +2940,52 @@ function GroupManager({
     decisionNode = members.find((v) => v.id === group.decision_node_id);
   return (
     <div className="group-manager">
-      <div className="group-identity">
-        <i style={{ background: color }} />
-        <div>
-          <small>PRIMARY OPERATIONAL GROUP</small>
-          <h2>
-            {group.code} · {name}
-          </h2>
-          <span>
-            {group.color_name} team · {group.member_ids.length} exclusive members · revision{" "}
-            {group.revision}
-          </span>
+      <div className="group-hero" style={{ "--group-color": color } as CSSProperties}>
+        <div className="group-formation-card">
+          <FormationPreview formation={formation} color={color} count={members.length} />
+        </div>
+        <div className="group-identity">
+          <small>PRIMARY OPERATIONAL GROUP · REV {group.revision}</small>
+          <h2>{group.code} · {name}</h2>
+          <span>{group.color_name} team · {members.length} exclusive members</span>
+          <div className="group-state-chips">
+            <b><Activity /> {attention ? `${attention} ATTENTION` : "NOMINAL"}</b>
+            <b><Navigation /> {moving ? `${moving} UNDERWAY` : "STATION KEEP"}</b>
+          </div>
         </div>
       </div>
-      <div className="metric-grid group-status">
-        <Metric
-          k="AVG RESERVE"
-          v={`${Math.round(averageReserve * 100)}%`}
-          sub={`minimum ${Math.round(minimumReserve * 100)}%`}
-        />
-        <Metric
-          k="UNDERWAY"
-          v={`${moving}/${members.length}`}
-          sub="moving vessels"
-        />
-        <Metric
-          k="ATTENTION"
-          v={String(attention)}
-          sub={attention ? "health or PNT" : "all nominal"}
-        />
-        <Metric
-          k="DECISION NODE"
-          v={decisionNode?.callsign || "None reachable"}
-          sub={`epoch ${group.decision_epoch} · ${group.decision_policy.replaceAll("_", " ")}`}
-        />
+      <div className="group-insight-strip">
+        <div><small>ENERGY</small><strong>{Math.round(averageReserve * 100)}%</strong><span>min {Math.round(minimumReserve * 100)}%</span></div>
+        <div><small>FORMATION</small><strong>{formation.replaceAll("_", " ")}</strong><span>{spacing} m spacing</span></div>
+        <div><small>DECISION NODE</small><strong>{decisionNode?.callsign || "Unavailable"}</strong><span>epoch {group.decision_epoch}</span></div>
       </div>
-      <p className="group-decision-note">
-        This node coordinates bounded group adaptations. Decisions outside the
-        signed mission guardrails stop safely and request operator instruction.
-      </p>
-      <label>
-        <span className="field-label">
-          <Pencil /> GROUP NAME
-        </span>
-        <input value={name} onChange={(e) => setName(e.target.value)} />
-      </label>
-      <label>
-        IDENTITY COLOR
-        <select value={color} onChange={(e) => setColor(e.target.value)}>
-          {!groupPalette.some((candidate) => candidate.hex === color) && (
-            <option value={color}>{group.color_name}</option>
-          )}
-          {groupPalette.map((candidate) => (
-            <option value={candidate.hex} key={candidate.name}>
-              {candidate.name[0].toUpperCase() + candidate.name.slice(1)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        MAP PATTERN
-        <select value={pattern} onChange={(e) => setPattern(e.target.value)}>
-          <option>solid</option>
-          <option>diagonal</option>
-          <option>dots</option>
-          <option>crosshatch</option>
-          <option>rings</option>
-          <option>chevron</option>
-        </select>
-      </label>
-      <label>
-        IDLE FORMATION
-        <select value={formation} onChange={(e) => setFormation(e.target.value)}>
-          {formations.map((value) => (
-            <option key={value} value={value}>
-              {value.replaceAll("_", " ")}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        FORMATION SPACING
-        <span className="number-field">
-          <input
-            type="number"
-            min={15}
-            max={1000}
-            step={5}
-            value={spacing}
-            onChange={(e) => setSpacing(Number(e.target.value))}
-          />
-          <small>metres</small>
-        </span>
-      </label>
-      <label>
-        FORMATION HEADING
-        <span className="number-field">
-          <input
-            type="number"
-            min={0}
-            max={359}
-            step={5}
-            value={heading}
-            onChange={(e) => setHeading(Number(e.target.value))}
-          />
-          <small>° true</small>
-        </span>
-      </label>
-      <div className="assembly-control">
-        <header>
+      <div className="group-decision-note">
+        <ShieldCheck />
+        <span><b>BOUNDED GROUP AUTONOMY</b> {group.decision_policy.replaceAll("_", " ")} · outside-guardrail decisions request operator instruction.</span>
+      </div>
+      <details className="group-config-section">
+        <summary><SlidersHorizontal /><b>IDENTITY & STATION POLICY</b><span>EDIT</span><ChevronDown /></summary>
+        <div className="group-config-grid">
+          <label className="wide-field"><span><Pencil /> GROUP NAME</span><input value={name} onChange={(e) => setName(e.target.value)} /></label>
+          <label><span>IDENTITY COLOR</span><select value={color} onChange={(e) => setColor(e.target.value)}>
+            {!groupPalette.some((candidate) => candidate.hex === color) && <option value={color}>{group.color_name}</option>}
+            {groupPalette.map((candidate) => <option value={candidate.hex} key={candidate.name}>{candidate.name[0].toUpperCase() + candidate.name.slice(1)}</option>)}
+          </select></label>
+          <label><span>MAP PATTERN</span><select value={pattern} onChange={(e) => setPattern(e.target.value)}>
+            <option>solid</option><option>diagonal</option><option>dots</option><option>crosshatch</option><option>rings</option><option>chevron</option>
+          </select></label>
+          <label className="wide-field"><span>IDLE FORMATION</span><select value={formation} onChange={(e) => setFormation(e.target.value)}>
+            {formations.map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}
+          </select></label>
+          <label><span>SPACING · METRES</span><input type="number" min={15} max={1000} step={5} value={spacing} onChange={(e) => setSpacing(Number(e.target.value))} /></label>
+          <label><span>HEADING · ° TRUE</span><input type="number" min={0} max={359} step={5} value={heading} onChange={(e) => setHeading(Number(e.target.value))} /></label>
+        </div>
+        <button className="group-config-save" onClick={() => onSave({ name: name.trim(), color, pattern, formation, formation_spacing_m: spacing, formation_heading_deg: heading })} disabled={!name.trim() || spacing < 15 || spacing > 1000 || heading < 0 || heading >= 360}>
+          <Save /> Save station policy
+        </button>
+      </details>
+      <details className="assembly-control">
+        <summary>
           <MapPinned />
           <span>
             <b>ASSEMBLY POINT</b>
@@ -3031,11 +2995,9 @@ function GroupManager({
                 : "Not assigned"}
             </small>
           </span>
-        </header>
-        <p>
-          The group station-keeps around this point using the selected formation
-          and spacing when it has no active movement mission.
-        </p>
+          <ChevronDown />
+        </summary>
+        <p>Idle vessels station-keep here using the formation and spacing above.</p>
         <div>
           <button
             onClick={() => onSave({ use_first_member_assembly: true })}
@@ -3051,35 +3013,16 @@ function GroupManager({
             <Trash2 /> Clear point
           </button>
         </div>
-      </div>
-      <div className="group-members">
-        {members.map((v) => (
-          <span key={v.id}>{v.display_name}</span>
-        ))}
-      </div>
-      <p>
-        Membership is exclusive. Drag vessels between group sections in Fleet /
-        Groups; active mission membership remains frozen.
-      </p>
-      <button
-        className="wide amber"
-        onClick={() =>
-          onSave({
-            name: name.trim(),
-            color,
-            pattern,
-            formation,
-            formation_spacing_m: spacing,
-            formation_heading_deg: heading,
-          })
-        }
-        disabled={!name.trim() || spacing < 15 || spacing > 1000 || heading < 0 || heading >= 360}
-      >
-        Save group station policy
+      </details>
+      <details className="group-members">
+        <summary><Users /><b>MEMBERS</b><span>{members.length}</span><ChevronDown /></summary>
+        <div>{members.map((v) => <span key={v.id}><i style={{ background: v.telemetry.health === "nominal" ? "#70b88f" : "#cf6d62" }} />{v.callsign}<small>{v.designation}</small></span>)}</div>
+      </details>
+      <div className="group-manager-actions">
+      <button className="danger" onClick={onDelete}>
+        <Trash2 /> Delete group · vessels become unassigned
       </button>
-      <button className="wide danger group-delete-wide" onClick={onDelete}>
-        <Trash2 /> Delete group · keep vessels unassigned
-      </button>
+      </div>
     </div>
   );
 }
@@ -3119,10 +3062,13 @@ function VesselInspector({
   onRename: (name: string) => void;
 }) {
   const t = vessel.telemetry;
+  const reservePercent = Math.round(t.reserve * 100);
+  const projectedPercent = Math.round(t.projected_reserve * 100);
+  const bufferPercent = Math.min(100, Math.round((t.tape_depth_seconds / 60) * 100));
   return (
     <div className="vessel-inspector">
       <div className="vessel-hero">
-        <img src={vesselAsset(vessel.class.id, pirate)} />
+        <div className="vessel-portrait" style={{ "--vessel-color": vessel.group_color } as CSSProperties}><img src={vesselAsset(vessel.class.id, pirate)} /><i /></div>
         <div>
           <span style={{ color: vessel.group_color }}>
             {vessel.group_code} · {vessel.group_color_name.toUpperCase()} TEAM · {vessel.class.name.toUpperCase()}
@@ -3136,43 +3082,29 @@ function VesselInspector({
           <p>
             {vessel.designation} · {vessel.class.role}
           </p>
+          <div className="vessel-state-chips"><b className={t.health === "nominal" ? "nominal" : "warning"}><Activity />{t.health}</b><b><Navigation />{t.mode.replaceAll("_", " ")}</b></div>
         </div>
       </div>
-      <div className="metric-grid">
-        <Metric
-          k="RESERVE"
-          v={`${Math.round(t.reserve * 100)}%`}
-          sub={`projected ${Math.round(t.projected_reserve * 100)}%`}
-        />
-        <Metric
-          k="SPEED"
-          v={`${t.speed_mps.toFixed(1)} m/s`}
-          sub={`max ${vessel.class.max_speed_mps}`}
-        />
-        <Metric k="HEADING" v={`${Math.round(t.heading_deg)}°`} sub={t.mode} />
-        <Metric
-          k="PNT"
-          v={t.pnt_integrity}
-          sub={`±${t.uncertainty_m.toFixed(0)} m`}
-        />
-        <Metric
-          k="MISSION TAPE"
-          v={`${t.tape_depth_seconds}s`}
-          sub="validated work"
-        />
-        <Metric k="HEALTH" v={t.health} sub="all systems" />
-        <Metric
-          k="NOMINAL RANGE"
-          v={`${(t.reserve * vessel.class.nominal_range_nm).toFixed(1)} nm`}
-          sub={`${vessel.class.nominal_range_nm.toFixed(0)} nm full · battery only`}
-        />
-        <Metric
-          k="SOLAR ARRAY"
-          v={`${vessel.class.solar_peak_kw.toFixed(1)} kW`}
-          sub="peak daylight output"
-        />
+      <div className="vessel-readiness">
+        <div className="reserve-ring" style={{ "--reserve-angle": `${reservePercent * 3.6}deg`, "--ring-color": reservePercent < 30 ? "#cf6d62" : "#70b88f" } as CSSProperties}>
+          <span><BatteryCharging /><strong>{reservePercent}%</strong><small>ENERGY</small></span>
+        </div>
+        <div className="readiness-bars">
+          <StatusBar icon={<BatteryCharging />} label="PROJECTED MISSION END" value={`${projectedPercent}%`} percent={projectedPercent} />
+          <StatusBar icon={<Route />} label="HOT EXECUTION BUFFER" value={`${t.tape_depth_seconds}s`} percent={bufferPercent} />
+          <StatusBar icon={<Gauge />} label="BATTERY-ONLY RANGE" value={`${(t.reserve * vessel.class.nominal_range_nm).toFixed(1)} nm`} percent={reservePercent} />
+        </div>
       </div>
-      <h3>LOCAL CONDITIONS</h3>
+      <div className="hot-buffer-note">
+        <Route /><span><b>FULL MISSION PROGRAM</b><small>The route may be arbitrarily long. This vessel keeps the next 60 seconds validated and armed as a rolling resilient buffer.</small></span>
+      </div>
+      <div className="vessel-nav-grid">
+        <Insight icon={<Gauge />} label="SPEED" value={`${t.speed_mps.toFixed(1)} m/s`} detail={`${vessel.class.max_speed_mps.toFixed(1)} max`} />
+        <Insight icon={<Compass />} label="HEADING" value={`${Math.round(t.heading_deg)}°`} detail="true" />
+        <Insight icon={<Satellite />} label="PNT" value={t.pnt_integrity} detail={`±${t.uncertainty_m.toFixed(0)} m`} tone={t.pnt_integrity === "trusted" ? "good" : "warn"} />
+        <Insight icon={<Sun />} label="SOLAR" value={`${vessel.class.solar_peak_kw.toFixed(1)} kW`} detail="peak" />
+      </div>
+      <h3 className="insight-heading"><Waves /> LOCAL CONDITIONS <span>NOAA-DERIVED FIXTURE</span></h3>
       <div className="condition-strip">
         <Metric
           k="WIND"
@@ -3195,16 +3127,10 @@ function VesselInspector({
           sub="fixture"
         />
       </div>
-      <small className="fixture">
-        {t.environment.label} · {t.environment.source_ids.join(" · ")}
-      </small>
-      <h3>
-        REACHABLE SWARM{" "}
-        <span>
+      <h3 className="insight-heading"><Network /> REACHABLE SWARM <span>
           {(reachability?.direct_peers.length ?? 0) +
             (reachability?.relayed_peers.length ?? 0)}
-        </span>
-      </h3>
+        </span></h3>
       <div className="peer-list">
         {reachability?.direct_peers.map((p) => (
           <Peer key={p.vessel_id} p={p} lookup={lookup} />
@@ -3214,8 +3140,9 @@ function VesselInspector({
         ))}
       </div>
       <div className="authority-note">
-        <b>Reachability ≠ authority</b>
+        <ShieldCheck /><span><b>Reachability ≠ authority</b>
         <span>{reachability?.authority ?? "Loading scoped authority…"}</span>
+        </span>
       </div>
     </div>
   );
@@ -3301,6 +3228,12 @@ function Peer({
       <em>{p.latency_ms.toFixed(0)} ms</em>
     </div>
   );
+}
+function StatusBar({ icon, label, value, percent }: { icon: ReactNode; label: string; value: string; percent: number }) {
+  return <div className="status-bar"><header>{icon}<span>{label}</span><b>{value}</b></header><i><span style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} /></i></div>;
+}
+function Insight({ icon, label, value, detail, tone = "" }: { icon: ReactNode; label: string; value: string; detail: string; tone?: string }) {
+  return <div className={`insight-tile ${tone}`}>{icon}<span><small>{label}</small><strong>{value}</strong></span><em>{detail}</em></div>;
 }
 function Metric({ k, v, sub }: { k: string; v: string; sub: string }) {
   return (
