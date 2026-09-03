@@ -792,15 +792,39 @@ func (m *Manager) load(ctx context.Context) {
 	if err == nil {
 		defer rows.Close()
 		m.mu.Lock()
+		tombstones := int64(0)
 		for rows.Next() {
 			var v domain.MemoryItemV1
 			var sourceJSON []byte
 			if rows.Scan(&v.ID, &v.Scope.Kind, &v.Scope.ID, &v.Kind, &v.Content, &v.Revision, &sourceJSON, &v.EmbeddingVersion, &v.OutcomeQuality, &v.Inferred, &v.Tombstoned, &v.CreatedAt, &v.UpdatedAt) == nil {
+				v.SchemaVersion = 1
 				_ = json.Unmarshal(sourceJSON, &v.Source)
 				m.items[v.ID] = v
+				if v.Tombstoned {
+					tombstones++
+				}
 			}
 		}
 		m.snapshot.CommittedItems = int64(activeItems(m.items))
+		m.snapshot.Tombstones = tombstones
+		m.mu.Unlock()
+	}
+	candidateRows, err := pool.Query(ctx, "SELECT id,scope_kind,scope_id,kind,content,candidate_hash,state,requires_human,source,created_at FROM memory_candidates ORDER BY created_at")
+	if err == nil {
+		defer candidateRows.Close()
+		m.mu.Lock()
+		for candidateRows.Next() {
+			var candidate domain.MemoryCandidateV1
+			var sourceJSON []byte
+			if candidateRows.Scan(&candidate.ID, &candidate.Scope.Kind, &candidate.Scope.ID, &candidate.Kind, &candidate.Content, &candidate.CandidateHash, &candidate.State, &candidate.RequiresHuman, &sourceJSON, &candidate.CreatedAt) == nil {
+				candidate.SchemaVersion = 1
+				_ = json.Unmarshal(sourceJSON, &candidate.Source)
+				m.candidates[candidate.ID] = candidate
+				if candidate.State == "pending" {
+					m.snapshot.PendingCandidates++
+				}
+			}
+		}
 		m.mu.Unlock()
 	}
 	turnRows, err := pool.Query(ctx, "SELECT id,actor_id,session_id,mission_id,role,content,source_id,created_at FROM memory_conversation_turns ORDER BY created_at DESC LIMIT 2000")
