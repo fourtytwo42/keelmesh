@@ -557,13 +557,13 @@ func (m *Manager) StartReplay(ctx context.Context, req Mutation) (domain.MemoryR
 	turns := len(m.turns)
 	m.mu.RUnlock()
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
-	live := checksum(items)
+	live := memoryProjectionChecksum(items)
 	replayed, sourceEvents, kafkaReplay := m.replayKafka(ctx)
 	if !kafkaReplay {
 		replayed = items
 		sourceEvents = int64(len(items) + turns)
 	}
-	replayedChecksum := checksum(replayed)
+	replayedChecksum := memoryProjectionChecksum(replayed)
 	r := domain.MemoryReplayV1{ID: id, State: "completed", SourceEvents: sourceEvents, ProjectedItems: int64(len(replayed)), LiveChecksum: live, ReplayChecksum: replayedChecksum, Matches: live == replayedChecksum, StartedAt: started, CompletedAt: time.Now().UTC()}
 	for _, v := range replayed {
 		r.ProjectedRevisions += int64(v.Revision)
@@ -1085,6 +1085,27 @@ func activeItems(v map[string]domain.MemoryItemV1) int {
 		}
 	}
 	return n
+}
+
+func memoryProjectionChecksum(items []domain.MemoryItemV1) string {
+	type projected struct {
+		ID             string                `json:"id"`
+		Scope          domain.MemoryScopeV1  `json:"scope"`
+		Kind           string                `json:"kind"`
+		Content        string                `json:"content"`
+		Revision       int                   `json:"revision"`
+		SourceID       string                `json:"source_id"`
+		SourceChecksum string                `json:"source_checksum"`
+		Inferred       bool                  `json:"inferred"`
+		SupersedesID   string                `json:"supersedes_id,omitempty"`
+		Tombstoned     bool                  `json:"tombstoned"`
+	}
+	values := make([]projected, 0, len(items))
+	for _, item := range items {
+		values = append(values, projected{ID: item.ID, Scope: item.Scope, Kind: item.Kind, Content: item.Content, Revision: item.Revision, SourceID: item.Source.ID, SourceChecksum: item.Source.Checksum, Inferred: item.Inferred, SupersedesID: item.SupersedesID, Tombstoned: item.Tombstoned})
+	}
+	sort.Slice(values, func(i, j int) bool { return values[i].ID < values[j].ID })
+	return checksum(values)
 }
 func estimateAssembly(v domain.ContextAssemblyV1) int {
 	n := 0
