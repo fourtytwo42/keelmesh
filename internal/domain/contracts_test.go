@@ -75,3 +75,17 @@ func TestQuietFleetSnapshotV1Fixture(t *testing.T) {
 		t.Fatalf("fixture does not satisfy QuietFleetSnapshotV1: %+v", snapshot)
 	}
 }
+
+func TestMemorySnapshotV1Fixture(t *testing.T) {
+	data, err := os.ReadFile("../../contracts/fixtures/memory-snapshot-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot MemorySnapshotV1
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.SchemaVersion != SchemaVersion || snapshot.EmbeddingVersion != "all-MiniLM-L6-v2-onnx-v1" || snapshot.Sync[0].CentralWatermark != 42 {
+		t.Fatalf("fixture does not satisfy MemorySnapshotV1: %+v", snapshot)
+	}
+}

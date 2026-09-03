@@ -1043,6 +1043,10 @@ export type AssistantTurnV2 = {
   created_at: string;
   completed_at: string;
 };
+export type MemoryScopeV1 = { kind: "operator" | "mission" | "vessel" | "group" | "faction" | "approved_global"; id: string };
+export type MemoryRetrievalHitV1 = { item_id:string; kind:string; content:string; scope:MemoryScopeV1; source_id:string; trust:string; vector_score:number; keyword_score:number; freshness_score:number; trust_score:number; combined_score:number; embedding_version:string };
+export type ContextAssemblyV1 = { schema_version:1; id:string; turn_id:string; actor_identity:string; session_id:string; mission_id?:string; recent_turns:Array<{id:string;role:string;content:string;created_at:string}>; semantic_memories:MemoryRetrievalHitV1[]; procedural_chunks:MemoryRetrievalHitV1[]; operational_episodes:MemoryRetrievalHitV1[]; estimated_tokens:number; token_budget:number; fallback_mode:string; retrieval_receipt_id:string; created_at:string };
+export type MemorySnapshotV1 = { schema_version:1; state_version:number; available:boolean; phase:string; embedding_state:string; embedding_version:string; retrieval_mode:string; committed_items:number; pending_candidates:number; conversation_turns:number; tombstones:number; kafka_lag:number; last_context?:ContextAssemblyV1; last_receipt?:{id:string;mode:string;duration_ms:number;hits:MemoryRetrievalHitV1[];created_at:string}; sync:Array<{node_id:string;central_watermark:number;local_watermark:number;pending_bundles:number;state:string}>; memory_lab:Record<string,unknown>; summary:string; updated_at:string };
 export type ArenaNodeV1 = {
   id: string;
   faction: "A" | "B";

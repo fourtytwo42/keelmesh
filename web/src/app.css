@@ -388,6 +388,7 @@ code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
 .window-cutaway .accounting{gap:5px;margin-top:7px;font-size:6px}
 .window-cutaway .accounting b{font-size:10px}
 .window-cutaway .cutaway-foot{margin-top:5px;font-size:6px}
+.window-cutaway .memory-cutaway{margin-top:7px;border:1px solid #3c4540;background:#1a211f;padding:6px 8px}.window-cutaway .memory-cutaway header{display:grid;grid-template-columns:1.5fr repeat(5,auto);align-items:center;gap:10px}.window-cutaway .memory-cutaway header div{display:grid}.window-cutaway .memory-cutaway small{color:var(--m6-amber);font-size:6px;letter-spacing:.1em}.window-cutaway .memory-cutaway strong{font-size:9px}.window-cutaway .memory-cutaway header>span{color:#92978f;font:6px ui-monospace}.window-cutaway .memory-flow{display:flex;align-items:center;gap:6px;margin-top:5px;color:#898f88;font:6px ui-monospace}.window-cutaway .memory-flow b{padding:3px 5px;border:1px solid #3e4942;background:#222a27;color:#d8d5ca}.window-cutaway .memory-flow i{color:var(--m6-amber);font-style:normal}.window-cutaway .memory-flow small{margin-left:auto;color:#8e948c;letter-spacing:0}
 
 @media(max-width:1050px){
   .window-engineer .engineer-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr))}

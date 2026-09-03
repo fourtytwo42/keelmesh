@@ -18,6 +18,7 @@ import (
 	"github.com/fourtytwo42/keelmesh/internal/arena"
 	"github.com/fourtytwo42/keelmesh/internal/core"
 	"github.com/fourtytwo42/keelmesh/internal/fleetops"
+	"github.com/fourtytwo42/keelmesh/internal/memory"
 	"github.com/fourtytwo42/keelmesh/internal/platform"
 )
 
@@ -66,6 +67,12 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "memory-worker":
+		if err := memory.RunWorker(ctx, memory.ConfigFromEnv(cfg.DatabaseURL, cfg.Brokers), logger); err != nil {
+			logger.Error("memory worker failed", "error", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	webRoot, err := fs.Sub(webContent, "web")
@@ -85,8 +92,9 @@ func main() {
 		fleetDatabaseURL = ""
 	}
 	fleetManager := fleetops.New(fleetDatabaseURL, logger)
+	memoryManager := memory.New(memory.ConfigFromEnv(fleetDatabaseURL, cfg.Brokers), logger)
 	arenaManager := arena.NewFromEnv()
-	serverAPI := api.New(engine, logger, webRoot, platformManager, agentManager, fleetManager, arenaManager)
+	serverAPI := api.New(engine, logger, webRoot, platformManager, agentManager, fleetManager, arenaManager, memoryManager)
 
 	server := &http.Server{
 		Addr:              ":8080",
@@ -99,7 +107,8 @@ func main() {
 	go platformManager.Run(ctx)
 	go agentManager.Run(ctx)
 	go fleetManager.Run(ctx)
-	privateServer := &http.Server{Addr: ":8081", Handler: privateHandler(agentManager, fleetManager, arenaManager), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
+	go memoryManager.Run(ctx)
+	privateServer := &http.Server{Addr: ":8081", Handler: privateHandler(agentManager, fleetManager, arenaManager, memoryManager), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	go func() {
 		logger.Info("keelmesh private AI boundary listening", "address", privateServer.Addr)
 		if err := privateServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -124,10 +133,11 @@ func main() {
 	}
 }
 
-func privateHandler(manager *agent.Manager, fleet *fleetops.Manager, arenaManager *arena.Manager) http.Handler {
+func privateHandler(manager *agent.Manager, fleet *fleetops.Manager, arenaManager *arena.Manager, memoryManager *memory.Manager) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", manager.MCPHandler())
 	mux.Handle("/mcp/control", manager.MCPControlHandler(fleet, arenaManager))
+	mux.Handle("/mcp/memory", memoryManager.MCPHandler())
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ready","boundary":"mcp"}`))

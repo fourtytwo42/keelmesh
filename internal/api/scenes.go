@@ -20,7 +20,13 @@ func (s *Server) assistantTurnV4(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, domain.APIError{Code: "AI_UNAVAILABLE", Message: "Command-scene runtime is unavailable."})
 		return
 	}
+	if s.memory != nil {
+		request.MemoryContext = ptrContext(s.memory.Assemble(r.Context(), request.RequestID, request.ActorIdentity, request.SessionID, request.ActiveMissionID, request.Text))
+	}
 	value, err := s.agent.CreateAssistantTurn(r.Context(), request, s.fleetops.Snapshot())
+	if err == nil && s.memory != nil {
+		s.memory.RecordExchange(r.Context(), value.ID, request.ActorIdentity, request.SessionID, request.ActiveMissionID, request.Text, value.Assistant.Speech, value.Assistant.Provider)
+	}
 	respondAgent(w, value, err, http.StatusCreated)
 }
 

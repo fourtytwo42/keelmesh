@@ -179,10 +179,16 @@ func (s *Server) workspaceAssistantV3(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, domain.APIError{Code: "AI_UNAVAILABLE", Message: "Workspace assistant is unavailable."})
 		return
 	}
+	if s.memory != nil {
+		req.MemoryContext = ptrContext(s.memory.Assemble(r.Context(), req.RequestID, "demo-operator", "global-voice", req.ActiveMissionID, req.Text))
+	}
 	value, err := s.agent.WorkspaceCommand(r.Context(), req, s.fleetops.Snapshot())
 	if err != nil {
 		respondAgent(w, nil, err, http.StatusOK)
 		return
+	}
+	if s.memory != nil {
+		s.memory.RecordExchange(r.Context(), req.RequestID, "demo-operator", "global-voice", req.ActiveMissionID, req.Text, value.Speech, value.Provider)
 	}
 	writeJSON(w, http.StatusOK, value)
 }

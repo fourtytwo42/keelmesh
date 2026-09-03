@@ -4,7 +4,8 @@ import resilienceJSON from "../../contracts/fixtures/resilience-snapshot-v1.json
 import platformJSON from "../../contracts/fixtures/platform-snapshot-v1.json";
 import agentJSON from "../../contracts/fixtures/agent-snapshot-v1.json";
 import quietFleetJSON from "../../contracts/fixtures/quiet-fleet-snapshot-v1.json";
-import type { AgentSnapshot, MissionIntent, PlatformSnapshot, QuietFleetSnapshot, ResilienceSnapshot } from "./types";
+import memoryJSON from "../../contracts/fixtures/memory-snapshot-v1.json";
+import type { AgentSnapshot, MemorySnapshotV1, MissionIntent, PlatformSnapshot, QuietFleetSnapshot, ResilienceSnapshot } from "./types";
 
 describe("shared contract fixtures", () => {
   it("reads MissionIntentV1 using the TypeScript contract", () => {
@@ -42,5 +43,12 @@ describe("shared contract fixtures", () => {
     expect(fixture.metrics.quorum_count).toBe(3);
     expect(fixture.metrics.affected_armed).toBe(3);
     expect(fixture.decisions[0].reason_code).toBe("SPEED_ENVELOPE_EXCEEDED");
+  });
+
+  it("reads MemorySnapshotV1 using the TypeScript contract", () => {
+    const fixture = memoryJSON as MemorySnapshotV1;
+    expect(fixture.embedding_version).toBe("all-MiniLM-L6-v2-onnx-v1");
+    expect(fixture.sync[0].central_watermark).toBe(42);
+    expect(fixture.memory_lab.enabled).toBe(true);
   });
 });

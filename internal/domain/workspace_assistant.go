@@ -13,6 +13,7 @@ type WorkspaceAssistantRequestV1 struct {
 	OpenWindows     []string                `json:"open_windows"`
 	ActiveMissionID string                  `json:"active_mission_id,omitempty"`
 	PlanOptions     []WorkspacePlanOptionV1 `json:"plan_options,omitempty"`
+	MemoryContext   *ContextAssemblyV1      `json:"-"`
 }
 
 // WorkspacePlanOptionV1 gives the conversational assistant only the bounded,

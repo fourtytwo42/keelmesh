@@ -39,6 +39,7 @@ func InitTopics(ctx context.Context, cfg Config) error {
 		compact    bool
 	}{
 		{RawTopic, 12, false}, {AuditTopic, 3, false}, {RetryTopic, 3, false}, {QuarantineTopic, 3, false}, {WorkerStatusTopic, 3, true}, {ControlTopic, 1, true},
+		{MemoryCandidatesTopic, 6, false}, {MemoryEventsTopic, 6, false}, {MemoryCurrentTopic, 6, true}, {MemoryInvalidationsTopic, 3, true},
 	}
 	for _, topic := range topics {
 		configs := map[string]*string{}
@@ -47,6 +48,12 @@ func InitTopics(ctx context.Context, cfg Config) error {
 			configs["cleanup.policy"] = &v
 		} else {
 			retention := "1800000"
+			if topic.name == MemoryCandidatesTopic {
+				retention = "604800000"
+			}
+			if topic.name == MemoryEventsTopic {
+				retention = "2592000000"
+			}
 			bytes := "134217728"
 			configs["retention.ms"] = &retention
 			configs["retention.bytes"] = &bytes

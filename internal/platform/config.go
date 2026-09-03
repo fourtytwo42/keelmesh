@@ -34,10 +34,14 @@ func envInt(key string, fallback int) int {
 }
 
 const (
-	RawTopic          = "telemetry.raw.v1"
-	AuditTopic        = "mission.audit.v1"
-	RetryTopic        = "telemetry.retry.v1"
-	QuarantineTopic   = "telemetry.quarantine.v1"
-	WorkerStatusTopic = "platform.worker-status.v1"
-	ControlTopic      = "platform.control.v1"
+	RawTopic                 = "telemetry.raw.v1"
+	AuditTopic               = "mission.audit.v1"
+	RetryTopic               = "telemetry.retry.v1"
+	QuarantineTopic          = "telemetry.quarantine.v1"
+	WorkerStatusTopic        = "platform.worker-status.v1"
+	ControlTopic             = "platform.control.v1"
+	MemoryCandidatesTopic    = "memory.candidates.v1"
+	MemoryEventsTopic        = "memory.events.v1"
+	MemoryCurrentTopic       = "memory.current.v1"
+	MemoryInvalidationsTopic = "memory.invalidations.v1"
 )

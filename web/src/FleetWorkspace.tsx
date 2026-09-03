@@ -23,6 +23,7 @@ import type {
   WorkspaceAssistantResponseV1,
   AssistantTurnV2,
   CommandSceneV1,
+  MemorySnapshotV1,
 } from "./types";
 import { KeelMeshA2UISurface } from "./A2UISurface";
 import { OperationsMap, type WaypointColor } from "./OperationsMap";
@@ -126,6 +127,7 @@ export function FleetWorkspace() {
     [platform, setPlatform] = useState<PlatformSnapshot | null>(null),
     [agent, setAgent] = useState<AgentSnapshot | null>(null),
     [arena, setArena] = useState<ArenaSnapshotV1 | null>(null),
+    [memory, setMemory] = useState<MemorySnapshotV1 | null>(null),
     [speechState, setSpeechState] = useState("ready"),
     [globalVoicePhase, setGlobalVoicePhase] = useState<GlobalVoicePhase>("idle"),
     [globalVoiceProgress, setGlobalVoiceProgress] = useState(0),
@@ -241,6 +243,7 @@ export function FleetWorkspace() {
       api<PlatformSnapshot>("/api/v1/platform").then(setPlatform),
       api<AgentSnapshot>("/api/v1/ai").then(setAgent),
       api<ArenaSnapshotV1>("/api/v3/arena?faction=A").then(setArena),
+      api<MemorySnapshotV1>("/api/v5/memory").then(setMemory),
       api<{ scenes: CommandSceneV1[] }>(`/api/v4/scenes?actor_identity=demo-operator&session_id=${encodeURIComponent(sceneSessionID)}`).then((value) => {
         const visible = value.scenes.filter((scene) => scene.state === "active" || scene.pinned);
         setCommandScenes(value.scenes);
@@ -257,6 +260,7 @@ export function FleetWorkspace() {
       api<ArenaSnapshotV1>("/api/v3/arena?faction=A")
         .then(setArena)
         .catch(() => {});
+      api<MemorySnapshotV1>("/api/v5/memory").then(setMemory).catch(() => {});
       api<{ scenes: CommandSceneV1[] }>(`/api/v4/scenes?actor_identity=demo-operator&session_id=${encodeURIComponent(sceneSessionID)}`)
         .then((value) => {
           setCommandScenes(value.scenes);
@@ -1784,6 +1788,7 @@ export function FleetWorkspace() {
         <PlatformCutaway
           value={platform}
           fleet={legacy.snapshot}
+          memory={memory}
           onError={setError}
         />
       ),
