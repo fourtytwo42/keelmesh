@@ -256,3 +256,128 @@ code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
   .float-window.maximized .planner-layout{grid-template-columns:minmax(300px,.8fr) minmax(480px,1.2fr)}
   .float-window.maximized .candidate-list{grid-template-columns:1fr}
 }
+
+/* Workspace-native resizing, hover help, and technical-view density. */
+.float-window{container:workspace-window / size;min-width:0;min-height:0}
+.window-planner .float-content{overflow:hidden}
+.window-planner .planner{height:100%;min-height:0;overflow:hidden}
+.window-planner .planner-layout{height:100%;min-height:0}
+.window-planner .planner-chat-pane,.window-planner .planner-options-pane{min-height:0}
+.window-planner .planner-options-pane{overflow:auto;scrollbar-width:thin;scrollbar-color:#9a7435 #171d1b}
+.window-planner:not(.maximized) .chat-empty{display:flex;align-items:center;justify-content:flex-start;gap:7px;padding:6px 8px;text-align:left}
+.window-planner:not(.maximized) .chat-empty span{display:none}
+.window-planner:not(.maximized) .chat-empty svg{flex:0 0 auto;width:15px;height:15px}
+
+@container workspace-window (min-width: 440px) and (min-height: 421px){
+  .window-planner:not(.docked):not(.maximized) .planner-assets-body{grid-template-columns:minmax(0,1fr) minmax(150px,.72fr);align-items:end}
+  .window-planner:not(.docked):not(.maximized) .planner-assets-body>.planner-asset-actions{grid-column:1/-1}
+  .window-planner:not(.docked):not(.maximized) .planner-assets-hint{grid-column:1/-1}
+  .window-planner:not(.docked):not(.maximized) .objective-section[open]{display:grid;grid-template-columns:145px minmax(0,1fr);column-gap:5px}
+  .window-planner:not(.docked):not(.maximized) .objective-section>summary{grid-column:1/-1}
+  .window-planner:not(.docked):not(.maximized) .objective-section textarea{height:27px;min-height:27px;resize:vertical}
+}
+
+@container workspace-window (max-height: 420px){
+  .window-planner .float-content{overflow:hidden}
+  .window-planner .planner{padding:6px}
+  .window-planner .planner-layout{display:block;height:100%}
+  .window-planner .planner-options-pane,.window-planner .mission-summary{display:none}
+  .window-planner .planner-chat-pane{display:flex;height:100%;flex-direction:column}
+  .window-planner .mission-chat{flex:1;min-height:70px;max-height:none;margin-top:0}
+  .window-planner .chat-composer{flex:0 0 auto}
+  .window-planner .voice-row{flex:0 0 auto}
+}
+
+.hover-help{position:fixed;z-index:10000;max-width:270px;pointer-events:none;transform:translate(10px,12px);padding:6px 8px;border:1px solid #786038;background:#111716f7;color:#e9e4d8;box-shadow:0 8px 24px #000b;font:7px/1.4 Inter,"Segoe UI",sans-serif;letter-spacing:.02em}
+.map-hover-help{position:absolute;z-index:60;width:224px;display:grid;gap:3px;pointer-events:none;padding:7px 8px;border:1px solid #dba13f;background:#111716f2;box-shadow:0 10px 28px #000b;color:#dedbd1}
+.map-hover-help strong{font-size:8px;color:#f0ebdf}
+.map-hover-help span{font-size:7px;line-height:1.4;color:#9da199}
+
+/* Engineer is a compact operational console, not a full-page microsite. */
+.window-engineer .float-content,.window-cutaway .float-content{overflow:hidden}
+.window-engineer .engineer-view{position:relative!important;inset:auto!important;box-sizing:border-box;width:100%;height:100%;overflow:hidden;padding:11px 12px 58px;background:radial-gradient(circle at 80% 0,#e5a23a12,transparent 34%),linear-gradient(155deg,#151c1c,#101616 70%);color:var(--m6-ink)}
+.window-engineer .engineer-hero{max-width:none;margin:0 0 8px;align-items:center;gap:16px}
+.window-engineer .engineer-hero small,.window-engineer .engineer-card header small,.window-engineer .engineer-action small{color:var(--m6-amber);font-size:7px;letter-spacing:.11em}
+.window-engineer .engineer-hero h1{margin:3px 0;font:600 20px/1.05 Georgia,serif;color:var(--m6-ink)}
+.window-engineer .engineer-hero p{margin:0;max-width:760px;font-size:9px;line-height:1.35;color:var(--m6-muted)}
+.window-engineer .ai-health{min-width:145px;padding:7px 9px;border-color:#465048;border-radius:2px;background:#1b2321;font-size:8px}
+.window-engineer .ai-health small{font-size:6px}
+.window-engineer .engineer-grid{max-width:none;height:calc(100% - 78px);grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:7px}
+.window-engineer .engineer-card{min-height:0;overflow:hidden;padding:9px;border-color:#3c4540;border-radius:2px;background:linear-gradient(155deg,#202725,#171e1c);box-shadow:none}
+.window-engineer .engineer-card>header{gap:7px;margin-bottom:7px;padding-bottom:6px;border-color:#343c37}
+.window-engineer .engineer-card>header>span{width:20px;height:20px;border-color:#785d31;border-radius:50%;color:var(--m6-amber);font-size:7px}
+.window-engineer .engineer-card h2{margin:1px 0 0;font-size:11px;color:var(--m6-ink)}
+.window-engineer .engineer-card header code{font-size:6px}
+.window-engineer .engineer-card p{font-size:8px;line-height:1.35}
+.window-engineer .incident-track{gap:4px}
+.window-engineer .incident-track>div{grid-template-columns:25px 7px 1fr;gap:5px}
+.window-engineer .incident-track b,.window-engineer .incident-track strong,.window-engineer .incident-track span{font-size:6px}
+.window-engineer .engineer-card>footer{gap:3px;margin-top:6px}
+.window-engineer .engineer-card>footer span{padding:3px 4px;font-size:5px}
+.window-engineer .provider-route{gap:4px}
+.window-engineer .route-node{padding:6px;border-radius:2px}
+.window-engineer .route-node b,.window-engineer .route-node span{font-size:6px}
+.window-engineer .fault-row{gap:4px;margin:6px 0}
+.window-engineer .fault-row button{padding:4px 6px;border-radius:2px;font-size:6px}
+.window-engineer .attempt-list{max-height:92px;gap:3px}
+.window-engineer .attempt-list>div{grid-template-columns:48px 1fr auto;padding:4px;font-size:6px}
+.window-engineer .tool-grid{gap:3px}
+.window-engineer .tool-grid>div{padding:4px;grid-template-columns:12px 1fr}
+.window-engineer .tool-grid b,.window-engineer .tool-grid small{font-size:6px}
+.window-engineer .citation-list{grid-template-columns:1fr 1fr;gap:3px}
+.window-engineer .citation-list>div{padding:5px;border-radius:2px}
+.window-engineer .citation-list p,.window-engineer .citation-list b,.window-engineer .citation-list code{font-size:6px}
+.window-engineer .flywheel{gap:3px;margin-bottom:6px}
+.window-engineer .flywheel span{padding:4px 5px;font-size:6px}
+.window-engineer .candidate{padding:6px}
+.window-engineer .candidate ul{margin:4px 0;font-size:6px;line-height:1.45}
+.window-engineer .eval-results{gap:3px;margin-top:4px}
+.window-engineer .eval-results>div{grid-template-columns:45px 1fr 38px auto;padding:4px;font-size:6px}
+.window-engineer .waterfall{gap:3px}
+.window-engineer .waterfall>div{grid-template-columns:55px 1fr 1fr 38px;gap:4px;font-size:6px}
+.window-engineer .engineer-action{position:absolute;left:12px;right:12px;bottom:8px;max-width:none;padding:7px 9px;border-color:#5d5037;border-radius:2px;background:#171e1df5;box-shadow:0 8px 22px #0007}
+.window-engineer .engineer-action strong{font-size:8px}
+.window-engineer .engineer-action span{font-size:6px}
+.window-engineer .engineer-action button{padding:8px 12px;border-radius:2px;background:var(--m6-amber);color:#17130d;font-size:8px}
+
+/* Cutaway uses the same graphite/amber console language and fits its default window. */
+.window-cutaway .cutaway{position:relative!important;inset:auto!important;box-sizing:border-box;width:100%;height:100%;overflow:hidden;padding:8px 10px;background:radial-gradient(circle at 45% 0,#e5a23a10,transparent 34%),linear-gradient(180deg,#151c1c,#101616);color:var(--m6-ink)}
+.window-cutaway .mission-strip{height:27px;gap:10px;padding:0 8px;border-color:#3d4540;border-radius:2px;background:#1b2220;font-size:6px}
+.window-cutaway .mission-strip>span:first-child,.window-cutaway .mission-strip i{color:var(--m6-amber)}
+.window-cutaway .cutaway-head{margin:8px 1px 7px;align-items:center}
+.window-cutaway .cutaway-head small,.window-cutaway .pipeline-stage header small,.window-cutaway .workers-stage header small{color:var(--m6-amber);font-size:6px}
+.window-cutaway .cutaway-head h1{margin:2px 0;font:600 19px/1 Georgia,serif;color:var(--m6-ink)}
+.window-cutaway .cutaway-head p{margin:2px 0;font-size:8px}
+.window-cutaway .run-controls{gap:4px}
+.window-cutaway .run-controls button,.window-cutaway .evidence-row button{padding:6px 8px;border-radius:2px;background:var(--m6-amber);color:#17130d;font-size:7px}
+.window-cutaway .run-controls button+button{background:#252c29;color:#d8d5cb;border-color:#505750}
+.window-cutaway .metric-ribbon{border-color:#3c4540;border-radius:2px;background:#1b2220}
+.window-cutaway .metric-ribbon>div{padding:6px 8px;border-color:#363e39}
+.window-cutaway .metric-ribbon small{font-size:5px}
+.window-cutaway .metric-ribbon strong{margin:2px 0;font-size:14px}
+.window-cutaway .metric-ribbon span{font-size:6px;color:#92978f}
+.window-cutaway .pipeline{grid-template-columns:1fr 42px 1.05fr 42px 1.35fr 42px 1.1fr;min-height:0;height:230px;margin:7px 0}
+.window-cutaway .pipeline-stage,.window-cutaway .workers-stage{padding:7px;border-color:#3b4540;border-radius:2px;background:linear-gradient(160deg,#202725,#171e1c);box-shadow:none}
+.window-cutaway .pipeline-stage h2{margin:6px 0 7px;font-size:10px}
+.window-cutaway .pipeline-stage>strong{font-size:21px}
+.window-cutaway .pipeline-stage>span{margin-bottom:7px;font-size:7px}
+.window-cutaway .pipeline-stage>small{margin-top:6px;font-size:6px}
+.window-cutaway .outbox{margin-top:7px;padding:5px;font-size:6px}
+.window-cutaway .partition-grid{gap:2px;margin:5px 0}
+.window-cutaway .partition-grid i{height:15px;font-size:6px}
+.window-cutaway .flow{font-size:5px}
+.window-cutaway .workers-stage article{margin-bottom:3px;padding:4px;grid-template-columns:1fr .7fr .8fr;font-size:6px}
+.window-cutaway .workers-stage b{font-size:7px}
+.window-cutaway .workers-stage small{font-size:5px}
+.window-cutaway .pipeline-stage li{padding:3px 0;font-size:6px}
+.window-cutaway .evidence-row{grid-template-columns:1.2fr 1fr 1fr;gap:6px}
+.window-cutaway .evidence-row>section{min-height:84px;padding:7px;border-color:#3c4540;border-radius:2px;background:#1b2220}
+.window-cutaway .evidence-row header,.window-cutaway .evidence-row p{font-size:6px}
+.window-cutaway .accounting{gap:5px;margin-top:7px;font-size:6px}
+.window-cutaway .accounting b{font-size:10px}
+.window-cutaway .cutaway-foot{margin-top:5px;font-size:6px}
+
+@media(max-width:1050px){
+  .window-engineer .engineer-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr))}
+  .window-engineer .engineer-hero p{display:none}
+}

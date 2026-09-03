@@ -80,15 +80,20 @@ test.afterEach(async ({ page }) => {
   await restoreFixtureGroups(page);
 });
 
-test("map-first workspace exposes the persistent 48-vessel operating picture", async ({ page }) => {
+test("map-first workspace exposes the persistent operating picture without header clutter", async ({ page }) => {
   const rasterRequests: string[] = [];
   page.on("request", request => {
     if (request.url().includes("/assets/maps/noaa/")) rasterRequests.push(request.url());
   });
   await page.goto("/");
   await expect(page.getByText("KEELMESH", { exact: true })).toBeVisible();
-  await expect(page.getByText("48 VESSELS", { exact: true })).toBeVisible();
-  await expect(page.getByText("8 GROUPS", { exact: true })).toBeVisible();
+  const fleet = await (await page.request.get("/api/v2/fleet")).json();
+  expect(fleet.vessels).toHaveLength(48);
+  expect(fleet.groups).toHaveLength(8);
+  await expect(page.getByText("48 VESSELS", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Fleet Arena" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Resilience" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Quiet Fleet" })).toHaveCount(0);
   await expect(page.locator(".operations-map .maplibregl-canvas")).toBeVisible();
   await expect(page.getByText("NOAA-DERIVED FIXTURE", { exact: true })).toBeVisible();
   await expect(page.getByText("SIMULATION ONLY", { exact: true })).toBeVisible();
@@ -104,6 +109,8 @@ test("map-first workspace exposes the persistent 48-vessel operating picture", a
   await expect(overlays.getByRole("button", { name: /CURRENT/ })).toHaveClass(/on/);
   await expect(overlays.getByRole("button", { name: /WIND/ })).toHaveClass(/on/);
   await expect(overlays.getByRole("button", { name: /DEPTH/ })).toHaveClass(/on/);
+  await page.getByRole("button", { name: "Fleet", exact: true }).hover();
+  await expect(page.getByRole("tooltip")).toContainText("Show or hide fleet");
   await overlays.getByRole("button", { name: /WIND/ }).click();
   await expect(overlays.getByRole("button", { name: /WIND/ })).not.toHaveClass(/on/);
   expect(rasterRequests).toEqual([]);
@@ -128,11 +135,26 @@ test("new mission opens as an empty planning workspace and accepts assets afterw
   await planner.getByLabel("ASSIGNED ASSETS").selectOption(blockGuard!);
   await expect(planner.getByText(/6 frozen assets/)).toBeVisible();
   await expect(planner.getByText("6 assigned", { exact: true })).toBeVisible();
+
+  const defaultOptionsSize = await planner.locator(".planner-options-pane").evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(defaultOptionsSize.scrollHeight).toBeLessThanOrEqual(defaultOptionsSize.clientHeight + 1);
+
+  const frame = await planner.boundingBox();
+  expect(frame).not.toBeNull();
+  await page.mouse.move(frame!.x + frame!.width - 2, frame!.y + frame!.height - 2);
+  await page.mouse.down();
+  await page.mouse.move(frame!.x + frame!.width - 2, frame!.y + 292, { steps: 5 });
+  await page.mouse.up();
+  await expect(planner.locator(".planner-options-pane")).toBeHidden();
+  await expect(planner.getByLabel("Message mission AI")).toBeVisible();
 });
 
 test("fictional surface traffic moves on stable identified routes", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("12 CONTACTS", { exact: true })).toBeVisible();
+  await expect(page.getByText(/12 moving surface contacts/)).toBeVisible();
   const first = await (await page.request.get("/api/v2/fleet")).json();
   expect(first.surface_contacts).toHaveLength(12);
   expect(new Set(first.surface_contacts.map((contact: { boat_id: string }) => contact.boat_id)).size).toBe(12);
@@ -155,7 +177,6 @@ test("pirate watch changes nomenclature, agent voice, and returns cleanly to nav
   await expect(page.getByText("PIRATE FLEET COMMAND", { exact: true })).toBeVisible();
   await expect(page.locator("img[src='/assets/vessels/pirate-kestrel.png']").first()).toBeVisible();
   await expect.poll(() => pirateRequests.length).toBeGreaterThan(0);
-  await expect(page.getByRole("button", { name: /High Seas/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Return to navy mode" })).toBeVisible();
 
   const pirateFleet = page.getByRole("region", { name: "Flotilla / Crews" });
@@ -163,11 +184,6 @@ test("pirate watch changes nomenclature, agent voice, and returns cleanly to nav
   await page.getByRole("button", { name: "New voyage" }).click();
   const piratePlanner = page.getByRole("region", { name: /Voyage Plotter/ });
   await expect(piratePlanner.getByRole("combobox", { name: "AI voice" })).toHaveValue("barbossa");
-
-  await page.getByRole("button", { name: /High Seas/ }).click();
-  const arena = page.getByRole("region", { name: /High Seas/ });
-  await arena.getByRole("button", { name: /ASK BARBOSSA, ARR!/ }).click();
-  await expect(arena.locator(".arena-agent p")).toContainText("Arrr, Captain");
 
   await expect(page.evaluate(() => localStorage.getItem("keelmesh.theme"))).resolves.toBe("pirate");
   await page.getByRole("button", { name: "Return to navy mode" }).click();
@@ -247,6 +263,8 @@ test("mission planner owns map authoring and manual route generation bypasses AI
   await expect(planner.getByTitle("Return to floating").locator("svg")).toHaveClass(/lucide-panel-right-open/);
   await planner.getByTitle("Return to floating").click();
   await expect(planner.getByText("MAP AUTHORING", { exact: true })).toBeVisible();
+  await planner.locator("details.objective-section > summary").click();
+  await planner.locator("details.map-authoring > summary").click();
   await planner.getByLabel("MISSION TYPE").selectOption("transit");
   await planner.getByRole("button", { name: "Waypoint", exact: true }).click();
   await expect(planner).toContainText("WAYPOINT TOOL ACTIVE · ESC TO CANCEL");
@@ -329,6 +347,7 @@ test("dragged geometry follows deterministic planning and the preview boundary",
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await expect(planner).toBeVisible();
 
+  await planner.locator("details.map-authoring > summary").click();
   await planner.getByRole("button", { name: "Operating", exact: true }).click();
   await expect(planner.getByRole("button", { name: "Operating", exact: true })).toHaveClass(/active/);
   await expect(planner).toContainText("INCLUDE TOOL ACTIVE · ESC TO CANCEL");
@@ -388,6 +407,9 @@ test("mission numbering, direct controls, window restore, and confirmed draft de
   await page.getByRole("dialog", { name: "Delete Mission 1?" }).getByRole("button", { name: "Delete mission" }).click();
   await expect(first).toHaveCount(0);
   await expect(second).toBeVisible();
+  await expect(planner.getByText("Mission 2", { exact: true })).toBeVisible();
+  await second.locator(".mission-tab-main").click();
+  await expect(planner).toBeHidden();
   await second.locator(".mission-tab-main").click();
   await expect(planner.getByText("Mission 2", { exact: true })).toBeVisible();
   await planner.getByRole("button", { name: "Delete Mission 2" }).click();
@@ -396,10 +418,14 @@ test("mission numbering, direct controls, window restore, and confirmed draft de
   await expect(planner).toBeHidden();
 });
 
-test("workspace windows move, minimize, restore, dock, and retain legacy tools", async ({ page }) => {
+test("workspace windows move, minimize, restore, dock, and top navigation toggles", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Engineer" }).click();
   const engineer = page.getByRole("region", { name: "Autonomy Engineer", exact: true });
+  await expect(engineer).toBeVisible();
+  await page.getByRole("button", { name: "Engineer" }).click();
+  await expect(engineer).toBeHidden();
+  await page.getByRole("button", { name: "Engineer" }).click();
   await expect(engineer).toBeVisible();
   await engineer.focus();
   const before = await engineer.boundingBox();
@@ -435,11 +461,12 @@ test("workspace windows move, minimize, restore, dock, and retain legacy tools",
   await vessel.getByTitle("Close").click();
   await expect(vessel).not.toBeVisible();
   await page.getByRole("button", { name: "Cutaway" }).click();
-  await expect(page.getByRole("region", { name: "Live Infrastructure Cutaway", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Resilience" }).click();
-  await expect(page.getByRole("region", { name: "Resilience Drill" })).toBeVisible();
-  await page.getByRole("button", { name: "Quiet Fleet" }).click();
-  await expect(page.getByRole("region", { name: "Quiet Fleet", exact: true })).toBeVisible();
+  const cutaway = page.getByRole("region", { name: "Live Infrastructure Cutaway", exact: true });
+  await expect(cutaway).toBeVisible();
+  await page.getByRole("button", { name: "Cutaway" }).click();
+  await expect(cutaway).toBeHidden();
+  await page.getByRole("button", { name: "Cutaway" }).click();
+  await expect(cutaway).toBeVisible();
 });
 
 test("single-vessel intent uses the real advisor boundary and never offers fleet formations", async ({ page }) => {
@@ -577,6 +604,7 @@ test("beach intent resolves a depth-aware one-nautical-mile coastal patrol", asy
   await planner.getByRole("button", { name: "Send to mission AI" }).click();
 
   await expect(planner.locator(".mission-advisor")).toBeVisible({ timeout: 25_000 });
+  await planner.locator("details.map-authoring > summary").click();
   await expect(planner.getByText("1 operating", { exact: true })).toBeVisible();
   await expect(planner.getByText("13 waypoints", { exact: true })).toBeVisible();
   await expect(planner.getByText("INTENT-DERIVED GEOMETRY", { exact: true })).toBeVisible();

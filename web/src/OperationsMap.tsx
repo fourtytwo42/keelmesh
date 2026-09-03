@@ -371,6 +371,13 @@ export function OperationsMap({
       depth: true,
     }),
     [contextMenu, setContextMenu] = useState<ContextMenu | null>(null),
+    [mapHover, setMapHover] = useState<{
+      x: number;
+      y: number;
+      title: string;
+      detail: string;
+      accent?: string;
+    } | null>(null),
     [dragMarker, setDragMarker] = useState<{ x: number; y: number; color: string } | null>(null);
   fleetRef.current = fleet;
   const selectedGroup = useMemo(() => {
@@ -1294,6 +1301,7 @@ export function OperationsMap({
     };
     const move = (e: MapMouseEvent) => {
       if (dragTarget.current) {
+        setMapHover(null);
         setDragMarker((current) => ({
           x: e.point.x,
           y: e.point.y,
@@ -1301,7 +1309,51 @@ export function OperationsMap({
         }));
         return;
       }
-      if (!selectionMode.current || !boxStart.current) return;
+      if (!selectionMode.current || !boxStart.current) {
+        const feature = map.queryRenderedFeatures(e.point, {
+          layers: [
+            "mission-waypoint-numbers",
+            "mission-poi-labels",
+            "group-assembly-labels",
+            "vessel-symbols",
+            "surface-contact-symbols",
+            "current-vectors",
+            "wind-vectors",
+          ],
+        })[0];
+        const properties = feature?.properties;
+        let next: typeof mapHover = null;
+        if (properties?.id && feature.layer.id === "vessel-symbols") {
+          const vessel = fleetRef.current.vessels.find((item) => item.id === String(properties.id));
+          if (vessel) next = {
+            x: e.point.x,
+            y: e.point.y,
+            title: `${vessel.callsign} · ${vessel.designation}`,
+            detail: `${vessel.group_code || "UNASSIGNED"} · ${vessel.class.name} · ${Math.round(vessel.telemetry.reserve * 100)}% reserve · ${vessel.telemetry.speed_mps.toFixed(1)} m/s · ${vessel.telemetry.mode.replaceAll("_", " ")}`,
+            accent: vessel.group_color,
+          };
+        } else if (properties?.id && feature.layer.id === "surface-contact-symbols") {
+          const contact = fleetRef.current.surface_contacts.find((item) => item.id === String(properties.id));
+          if (contact) next = {
+            x: e.point.x,
+            y: e.point.y,
+            title: `${contact.name} · ${contact.boat_id}`,
+            detail: `${contact.class} · ${contact.speed_knots.toFixed(1)} kn · heading ${Math.round(contact.heading_deg)}° · neutral simulated contact`,
+            accent: contact.color,
+          };
+        } else if (feature?.layer.id === "mission-waypoint-numbers") {
+          next = { x: e.point.x, y: e.point.y, title: `Waypoint ${properties?.sequence ?? ""}`, detail: `${properties?.ownerGroup ? "Group-owned route point" : "Mission route point"} · drag while editing to reposition`, accent: String(properties?.color ?? "#e9a93f") };
+        } else if (feature?.layer.id === "mission-poi-labels") {
+          next = { x: e.point.x, y: e.point.y, title: String(properties?.name ?? "Mission point"), detail: `${String(properties?.poiKind ?? "point").replaceAll("_", " ")} · mission geometry`, accent: "#e9a93f" };
+        } else if (feature?.layer.id === "group-assembly-labels") {
+          next = { x: e.point.x, y: e.point.y, title: `${properties?.code ?? "Group"} hold point`, detail: `${String(properties?.formation ?? "formation").replaceAll("_", " ")} · ${properties?.spacing ?? "—"} m spacing · drag to relocate`, accent: String(properties?.color ?? "#e9a93f") };
+        } else if (feature?.layer.id === "current-vectors" || feature?.layer.id === "wind-vectors") {
+          next = { x: e.point.x, y: e.point.y, title: feature.layer.id === "wind-vectors" ? "Wind field" : "Surface current", detail: `${Number(properties?.speed ?? 0).toFixed(feature.layer.id === "wind-vectors" ? 1 : 2)} m/s · bearing ${Math.round(Number(properties?.bearing ?? 0))}° · NOAA-derived simulation fixture`, accent: feature.layer.id === "wind-vectors" ? "#d2c05d" : "#62c5a8" };
+        }
+        setMapHover(next);
+        return;
+      }
+      setMapHover(null);
       const s = boxStart.current;
       setBox({
         x: Math.min(s.x, e.point.x),
@@ -1415,7 +1467,7 @@ export function OperationsMap({
       ? fleet.surface_contacts.find((contact) => contact.id === contextMenu.contact)
       : undefined;
   return (
-    <div className="operations-map" ref={host}>
+    <div className="operations-map" ref={host} onPointerLeave={() => setMapHover(null)}>
       {box && (
         <div
           className="selection-box"
@@ -1427,6 +1479,19 @@ export function OperationsMap({
           className="map-drag-marker"
           style={{ left: dragMarker.x, top: dragMarker.y, borderColor: dragMarker.color }}
         />
+      )}
+      {mapHover && !contextMenu && (
+        <div
+          className="map-hover-help"
+          style={{
+            left: Math.min(mapHover.x + 14, (host.current?.clientWidth ?? 320) - 250),
+            top: Math.min(mapHover.y + 14, (host.current?.clientHeight ?? 180) - 78),
+            borderColor: mapHover.accent,
+          }}
+        >
+          <strong>{mapHover.title}</strong>
+          <span>{mapHover.detail}</span>
+        </div>
       )}
       {contextMenu?.kind === "vessel" && (
         <div
@@ -1599,6 +1664,7 @@ export function OperationsMap({
         <div>
           <button
             className={overlays.current ? "on" : ""}
+            title="Toggle the time-varying simulated surface-current field"
             onClick={() => setOverlays((v) => ({ ...v, current: !v.current }))}
           >
             <i className="current" />
@@ -1606,6 +1672,7 @@ export function OperationsMap({
           </button>
           <button
             className={overlays.wind ? "on" : ""}
+            title="Toggle the time-varying simulated wind field"
             onClick={() => setOverlays((v) => ({ ...v, wind: !v.wind }))}
           >
             <i className="wind" />
@@ -1613,6 +1680,7 @@ export function OperationsMap({
           </button>
           <button
             className={overlays.depth ? "on" : ""}
+            title="Toggle local bathymetry contours and depth labels"
             onClick={() => setOverlays((v) => ({ ...v, depth: !v.depth }))}
           >
             <i className="depth" />

@@ -23,6 +23,7 @@ import type {
 } from "./types";
 import { OperationsMap, type WaypointColor } from "./OperationsMap";
 import { WindowManager, type WindowDefinition } from "./WindowManager";
+import { HoverHelp } from "./HoverHelp";
 import { EngineerView } from "./EngineerView";
 import { PlatformCutaway } from "./PlatformCutaway";
 import { ResilienceDrill } from "./ResilienceDrill";
@@ -141,6 +142,9 @@ export function FleetWorkspace() {
   const [inspectVesselID, setInspectVesselID] = useState(""),
     [inspectContactID, setInspectContactID] = useState(""),
     [windowActivations, setWindowActivations] = useState<
+      Record<string, number>
+    >({}),
+    [windowToggleActivations, setWindowToggleActivations] = useState<
       Record<string, number>
     >({});
   const [pirate, setPirate] = useState(
@@ -286,6 +290,16 @@ export function FleetWorkspace() {
       [id]: (current[id] ?? 0) + 1,
     }));
   }, []);
+  const toggleWindow = useCallback((id: string) => {
+    if (!windows.has(id)) {
+      open(id);
+      return;
+    }
+    setWindowToggleActivations((current) => ({
+      ...current,
+      [id]: (current[id] ?? 0) + 1,
+    }));
+  }, [open, windows]);
   useEffect(() => {
     setTool("select");
     setGeometryFocus(null);
@@ -1183,6 +1197,9 @@ export function FleetWorkspace() {
       title: pirate ? "Flotilla / Crews" : "Fleet / Groups",
       icon: <Ship />,
       activation: windowActivations.fleet,
+      toggleActivation: windowToggleActivations.fleet,
+      minWidth: 245,
+      minHeight: 180,
       initial: { x: 10, y: 92, width: 320, height: 600 },
       content: (
         <FleetRail
@@ -1218,6 +1235,8 @@ export function FleetWorkspace() {
       id: "group-manager",
       kind: "context",
       activation: windowActivations["group-manager"],
+      minWidth: 300,
+      minHeight: 240,
       title: `${pirate ? "Crew" : "Group"} · ${activeGroup.code}`,
       icon: <Users />,
       initial: { x: 350, y: 120, width: 340, height: 390 },
@@ -1236,6 +1255,8 @@ export function FleetWorkspace() {
       id: "inspector",
       kind: "context",
       activation: windowActivations.inspector,
+      minWidth: 310,
+      minHeight: 300,
       title: inspectedVessel.display_name,
       icon: <Eye />,
       initial: { x: 350, y: 92, width: 350, height: 590 },
@@ -1254,6 +1275,8 @@ export function FleetWorkspace() {
       id: "contact-inspector",
       kind: "context",
       activation: windowActivations["contact-inspector"],
+      minWidth: 310,
+      minHeight: 300,
       title: inspectedContact.name,
       icon: <Ship />,
       initial: { x: 370, y: 105, width: 360, height: 540 },
@@ -1267,9 +1290,13 @@ export function FleetWorkspace() {
       preferredDock: "right",
       onVisibilityChange: (visible) => setPlannerVisible(visible),
       activation: windowActivations.planner,
+      toggleActivation: windowToggleActivations.planner,
+      autoSize: false,
+      minWidth: 350,
+      minHeight: 245,
       title: pirate ? "Voyage Plotter" : "Mission Planner",
       icon: <Route />,
-      initial: { x: window.innerWidth - 470, y: 92, width: 450, height: 640 },
+      initial: { x: window.innerWidth - 480, y: 92, width: 460, height: 680 },
       content: (
         <Planner
           pirate={pirate}
@@ -1348,6 +1375,8 @@ export function FleetWorkspace() {
       id: "constraints",
       kind: "context",
       activation: windowActivations.constraints,
+      minWidth: 320,
+      minHeight: 340,
       title: pirate ? "Captain's Standing Orders" : "Effective Constraints",
       icon: <SlidersHorizontal />,
       initial: { x: 410, y: 130, width: 360, height: 570 },
@@ -1363,13 +1392,18 @@ export function FleetWorkspace() {
       id: "engineer",
       kind: "primary",
       activation: windowActivations.engineer,
+      toggleActivation: windowToggleActivations.engineer,
+      autoSize: false,
+      maximizable: true,
+      minWidth: 760,
+      minHeight: 540,
       title: pirate ? "Fleet Shipwright" : "Autonomy Engineer",
       icon: <Bot />,
       initial: {
-        x: 120,
+        x: 70,
         y: 82,
-        width: Math.min(1000, window.innerWidth - 180),
-        height: Math.min(650, window.innerHeight - 150),
+        width: Math.min(1140, window.innerWidth - 120),
+        height: Math.min(740, window.innerHeight - 146),
       },
       content: (
         <EngineerView value={agent} onChange={setAgent} onError={setError} />
@@ -1380,13 +1414,18 @@ export function FleetWorkspace() {
       id: "cutaway",
       kind: "primary",
       activation: windowActivations.cutaway,
+      toggleActivation: windowToggleActivations.cutaway,
+      autoSize: false,
+      maximizable: true,
+      minWidth: 900,
+      minHeight: 520,
       title: pirate ? "Below Deck Systems" : "Live Infrastructure Cutaway",
       icon: <Network />,
       initial: {
         x: 80,
         y: 82,
-        width: Math.min(1180, window.innerWidth - 130),
-        height: Math.min(650, window.innerHeight - 150),
+        width: Math.min(1220, window.innerWidth - 100),
+        height: Math.min(590, window.innerHeight - 146),
       },
       content: (
         <PlatformCutaway
@@ -1401,6 +1440,7 @@ export function FleetWorkspace() {
       id: "resilience",
       kind: "primary",
       activation: windowActivations.resilience,
+      toggleActivation: windowToggleActivations.resilience,
       title: pirate ? "Storm Drill" : "Resilience Drill",
       icon: <ShieldCheck />,
       initial: { x: 370, y: 110, width: 370, height: 580 },
@@ -1426,6 +1466,7 @@ export function FleetWorkspace() {
       id: "quiet",
       kind: "primary",
       activation: windowActivations.quiet,
+      toggleActivation: windowToggleActivations.quiet,
       title: pirate ? "Silent Running" : "Quiet Fleet",
       icon: <Radio />,
       initial: { x: 420, y: 120, width: 390, height: 530 },
@@ -1451,6 +1492,7 @@ export function FleetWorkspace() {
       id: "arena",
       kind: "primary",
       activation: windowActivations.arena,
+      toggleActivation: windowToggleActivations.arena,
       title: pirate
         ? "High Seas · Distributed Fleet"
         : "Fleet Arena · Distributed Node Fabric",
@@ -1480,46 +1522,20 @@ export function FleetWorkspace() {
             <small>{words.subtitle}</small>
           </span>
         </div>
-        <div className="status-cluster">
-          <span className="sim">{words.simulation}</span>
-          <span>
-            {fleet.vessels.length} {words.vessels}
-          </span>
-          <span>
-            {fleet.groups.length} {words.groups}
-          </span>
-          <span>{fleet.surface_contacts.length} CONTACTS</span>
-          <span>
-            {fleet.missions.filter((m) => m.status === "executing").length}{" "}
-            {words.active}
-          </span>
-        </div>
         <nav>
-          <button onClick={revealFleet}>
+          <button title="Show or hide fleet and operational groups" onClick={() => toggleWindow("fleet")}>
             <Ship />
             {words.fleet}
           </button>
-          <button onClick={() => open("planner")}>
+          <button title="Show or hide the active mission planner" onClick={() => toggleWindow("planner")}>
             <Route />
             {words.mission}
           </button>
-          <button className="arena-nav" onClick={() => open("arena")}>
-            <Swords />
-            {words.arena}
-          </button>
-          <button onClick={() => open("resilience")}>
-            <ShieldCheck />
-            {words.resilience}
-          </button>
-          <button onClick={() => open("quiet")}>
-            <Radio />
-            {words.quiet}
-          </button>
-          <button onClick={() => open("engineer")}>
+          <button title="Show or hide autonomy incident investigation" onClick={() => toggleWindow("engineer")}>
             <Bot />
             {words.engineer}
           </button>
-          <button onClick={() => open("cutaway")}>
+          <button title="Show or hide the live infrastructure cutaway" onClick={() => toggleWindow("cutaway")}>
             <Network />
             {words.cutaway}
           </button>
@@ -1559,14 +1575,17 @@ export function FleetWorkspace() {
             <button
               className="mission-tab-main"
               onClick={() => {
+                const sameMission = m.id === mission?.id;
                 setActiveMissionID(m.id);
                 setPlannerContactSeed(null);
                 setPlans([]);
                 setDraft(null);
                 setPreview(null);
                 setLease(null);
-                open("planner");
+                if (sameMission) toggleWindow("planner");
+                else open("planner");
               }}
+              title={`Show or hide ${m.name}`}
             >
               <i className={m.status} />
               <span>{m.name}</span>
@@ -1700,6 +1719,7 @@ export function FleetWorkspace() {
         </div>
       )}
       <WindowManager windows={defs} />
+      <HoverHelp />
       <footer className="ops-status">
         <span>
           <i className="green" />
@@ -3273,7 +3293,7 @@ function Planner({
           <button aria-label="Dismiss contact planning context" onClick={onClearContactSeed}><X /></button>
         </div>
       )}
-      <details className="planner-section objective-section" open>
+      <details className="planner-section objective-section">
         <summary>OBJECTIVE &amp; MISSION TYPE</summary>
         <label>
           MISSION TYPE
@@ -3292,7 +3312,7 @@ function Planner({
           <textarea value={manualObjective} onChange={(event) => setManualObjective(event.target.value)} onBlur={() => { if (manualObjective.trim() && manualObjective.trim() !== mission.objective) onObjective(manualObjective.trim()); }} />
         </label>
       </details>
-      <details className="planner-section map-authoring" open>
+      <details className="planner-section map-authoring">
         <summary>MAP AUTHORING</summary>
         <div className="authoring-status">
           <b>{mission.name.toUpperCase()}</b>
