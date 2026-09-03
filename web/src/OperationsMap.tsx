@@ -56,6 +56,7 @@ type Props = {
   onToolDone: () => void;
   sceneAnnotations: SceneMapAnnotationV1[];
   sceneCamera?: { center: Point; zoom: number; bearing: number; pitch: number };
+  sceneCameraRequest?: number;
 };
 const empty: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
@@ -562,6 +563,7 @@ export function OperationsMap({
   onToolDone,
   sceneAnnotations,
   sceneCamera,
+  sceneCameraRequest,
 }: Props) {
   const host = useRef<HTMLDivElement>(null),
     mapRef = useRef<MLMap | null>(null),
@@ -1248,9 +1250,12 @@ export function OperationsMap({
     (mapRef.current.getSource("command-scene") as GeoJSONSource)?.setData(sceneAnnotationData(sceneAnnotations));
   }, [ready, fleet, contactMissionOverlay, remainingMissionRoutes, visibleMissionGeometry, visibleHoldGroups, sceneAnnotations]);
   useEffect(() => {
-    if (!ready || !mapRef.current || !sceneCamera) return;
+    if (!ready || !mapRef.current || !sceneCamera || !sceneCameraRequest) return;
     mapRef.current.easeTo({ center: sceneCamera.center, zoom: sceneCamera.zoom, bearing: sceneCamera.bearing, pitch: sceneCamera.pitch, duration: 550 });
-  }, [ready, sceneCamera?.center[0], sceneCamera?.center[1], sceneCamera?.zoom, sceneCamera?.bearing, sceneCamera?.pitch]);
+    // Scene cameras are presentation commands, not live bindings. Fleet
+    // refreshes may update the suggested center, but must not recapture a map
+    // the operator has subsequently panned or zoomed.
+  }, [ready, sceneCameraRequest]);
   useEffect(() => {
     if (!ready || !mapRef.current || !mission || !focusedGeometry) return;
     let point: Point | undefined;
@@ -1909,6 +1914,8 @@ export function OperationsMap({
       role="application"
       aria-label="Fleet operating map. Tap to select. Long press for contextual actions."
       data-rendezvous-status={rendezvousStatus || undefined}
+      data-command-scene-annotations={sceneAnnotations.length}
+      data-command-scene-camera-request={sceneCameraRequest || undefined}
       data-visible-hold-groups={visibleHoldGroups.features.length}
       data-remaining-route-points={remainingMissionRoutes.features.reduce(
         (count, feature) => count + (feature.geometry.type === "LineString" ? feature.geometry.coordinates.length : 0),
