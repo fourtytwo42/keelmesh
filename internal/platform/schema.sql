@@ -118,6 +118,146 @@ CREATE TABLE IF NOT EXISTS operator_window_layouts (
   payload jsonb NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- M11 distributed agent memory. These projections are optional to mission
+-- authority and can be deterministically rebuilt from the memory Kafka log.
+CREATE TABLE IF NOT EXISTS memory_state (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  state_version bigint NOT NULL DEFAULT 1,
+  central_watermark bigint NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO memory_state(singleton) VALUES(true) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS memory_conversation_turns (
+  id text PRIMARY KEY,
+  actor_id text NOT NULL,
+  session_id text NOT NULL,
+  mission_id text NOT NULL DEFAULT '',
+  role text NOT NULL CHECK(role IN ('user','assistant','system')),
+  content text NOT NULL CHECK(octet_length(content)<=16000),
+  source_id text NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS memory_turn_scope_idx ON memory_conversation_turns(actor_id,session_id,mission_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS memory_items (
+  id text PRIMARY KEY,
+  scope_kind text NOT NULL CHECK(scope_kind IN ('operator','mission','vessel','group','faction','approved_global')),
+  scope_id text NOT NULL,
+  kind text NOT NULL,
+  content text NOT NULL CHECK(octet_length(content)<=24000),
+  revision integer NOT NULL,
+  source jsonb NOT NULL,
+  embedding vector(384) NOT NULL,
+  embedding_version text NOT NULL,
+  outcome_quality double precision NOT NULL CHECK(outcome_quality BETWEEN 0 AND 1),
+  inferred boolean NOT NULL DEFAULT false,
+  supersedes_id text,
+  tombstoned boolean NOT NULL DEFAULT false,
+  search tsvector GENERATED ALWAYS AS (to_tsvector('english',content)) STORED,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS memory_items_scope_idx ON memory_items(scope_kind,scope_id,updated_at DESC) WHERE NOT tombstoned;
+CREATE INDEX IF NOT EXISTS memory_items_search_idx ON memory_items USING gin(search);
+CREATE INDEX IF NOT EXISTS memory_items_embedding_idx ON memory_items USING hnsw(embedding vector_cosine_ops);
+CREATE TABLE IF NOT EXISTS memory_revisions (
+  item_id text NOT NULL REFERENCES memory_items(id),
+  revision integer NOT NULL,
+  content text NOT NULL,
+  content_hash text NOT NULL,
+  created_at timestamptz NOT NULL,
+  PRIMARY KEY(item_id,revision)
+);
+CREATE TABLE IF NOT EXISTS memory_candidates (
+  id text PRIMARY KEY,
+  scope_kind text NOT NULL,
+  scope_id text NOT NULL,
+  kind text NOT NULL,
+  content text NOT NULL,
+  candidate_hash text NOT NULL UNIQUE,
+  state text NOT NULL,
+  requires_human boolean NOT NULL,
+  source jsonb NOT NULL,
+  decided_by text,
+  created_at timestamptz NOT NULL,
+  decided_at timestamptz
+);
+CREATE TABLE IF NOT EXISTS memory_entities (
+  id text PRIMARY KEY,
+  entity_type text NOT NULL,
+  name text NOT NULL,
+  scope_kind text NOT NULL,
+  scope_id text NOT NULL,
+  version bigint NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}',
+  updated_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_edges (
+  id text PRIMARY KEY,
+  from_id text NOT NULL,
+  to_id text NOT NULL,
+  kind text NOT NULL,
+  source_id text NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_retrieval_receipts (
+  id text PRIMARY KEY,
+  turn_id text NOT NULL DEFAULT '',
+  actor_id text NOT NULL,
+  query_hash text NOT NULL,
+  mode text NOT NULL,
+  payload jsonb NOT NULL,
+  duration_ms bigint NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_context_assemblies (
+  id text PRIMARY KEY,
+  turn_id text NOT NULL,
+  actor_id text NOT NULL,
+  session_id text NOT NULL,
+  mission_id text NOT NULL DEFAULT '',
+  payload jsonb NOT NULL,
+  estimated_tokens integer NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_tombstones (
+  item_id text PRIMARY KEY,
+  actor_id text NOT NULL,
+  reason text NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_contradictions (
+  id bigserial PRIMARY KEY,
+  existing_item_id text NOT NULL,
+  candidate_id text NOT NULL,
+  resolution text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS memory_node_sync (
+  node_id text PRIMARY KEY,
+  central_watermark bigint NOT NULL DEFAULT 0,
+  local_watermark bigint NOT NULL DEFAULT 0,
+  pending_bundles integer NOT NULL DEFAULT 0,
+  state text NOT NULL DEFAULT 'ready',
+  last_receipt_at timestamptz
+);
+CREATE TABLE IF NOT EXISTS memory_bundle_receipts (
+  bundle_id text PRIMARY KEY,
+  node_id text NOT NULL,
+  content_hash text NOT NULL,
+  state text NOT NULL,
+  received_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS memory_replays (
+  id text PRIMARY KEY,
+  state text NOT NULL,
+  payload jsonb NOT NULL,
+  live_checksum text NOT NULL,
+  replay_checksum text NOT NULL,
+  matches boolean NOT NULL,
+  started_at timestamptz NOT NULL,
+  completed_at timestamptz
+);
 INSERT INTO incidents(id,title,summary,provenance,fixture,embedding) VALUES
 ('fixture-worker-rebalance','Consumer worker loss and cooperative recovery','A consumer child exited; partitions were reassigned and lag recovered after supervised restart.','deterministic M3 fixture',true,array_prepend(1::real,array_fill(0::real,ARRAY[383]))::vector),
 ('fixture-pnt-spoof','GNSS spoof rejected at the edge','A large GNSS jump was excluded while fused uncertainty increased and the vessel entered safe hold.','deterministic M2 fixture',true,array_prepend(0::real,array_prepend(1::real,array_fill(0::real,ARRAY[382])))::vector)

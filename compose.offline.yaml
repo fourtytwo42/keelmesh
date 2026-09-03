@@ -23,6 +23,8 @@ services:
     networks: [backend]
   worker-3:
     networks: [backend]
+  memory-worker:
+    networks: [backend]
   ai-index:
     networks: [backend]
   ai:

@@ -1,6 +1,8 @@
 FROM python:3.13.7-slim AS build
 RUN pip install --no-cache-dir uv==0.8.22
 WORKDIR /app
+ADD --checksum=sha256:f6041cb139310735d267939642554a0199a828a08edc37b0ddaf3b035eea5df4 https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx /models/all-MiniLM-L6-v2/model.onnx
+ADD --checksum=sha256:be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037 https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json /models/all-MiniLM-L6-v2/tokenizer.json
 COPY ai/pyproject.toml ai/uv.lock ./
 RUN uv sync --frozen --no-dev
 COPY ai/keelmesh_ai ./keelmesh_ai
@@ -9,6 +11,7 @@ FROM python:3.13.7-slim
 RUN useradd --system --uid 10001 --create-home keelmesh
 WORKDIR /app
 COPY --from=build /app /app
+COPY --from=build /models /models
 ENV PATH="/app/.venv/bin:$PATH" PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 USER 10001
 EXPOSE 8090

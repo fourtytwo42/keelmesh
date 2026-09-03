@@ -45,7 +45,7 @@ services:
     build: &app-build
       context: .
       dockerfile: Dockerfile
-    image: keelmesh/core:m7
+    image: keelmesh/core:m11
     command: ["--role", "migrate"]
     environment: &app-env
       KEELMESH_DATABASE_URL: postgres://keelmesh:keelmesh@postgres:5432/keelmesh?sslmode=disable
@@ -63,7 +63,7 @@ services:
     restart: "no"
 
   topic-init:
-    image: keelmesh/core:m7
+    image: keelmesh/core:m11
     command: ["--role", "topic-init"]
     environment: *app-env
     depends_on:
@@ -116,7 +116,7 @@ services:
 
   core:
     build: *app-build
-    image: keelmesh/core:m7
+    image: keelmesh/core:m11
     restart: unless-stopped
     environment:
       <<: *app-env
@@ -145,7 +145,7 @@ services:
       start_period: 5s
 
   player-b-ingress:
-    image: keelmesh/core:m7
+    image: keelmesh/core:m11
     entrypoint: ["/usr/local/bin/keelmesh-ingress"]
     environment:
       KEELMESH_CORE_URL: http://core:8080
@@ -158,7 +158,7 @@ services:
     restart: unless-stopped
 
   loadgen:
-    image: keelmesh/core:m7
+    image: keelmesh/core:m11
     command: ["--role", "loadgen"]
     environment: *app-env
     volumes:
@@ -171,7 +171,7 @@ services:
     restart: unless-stopped
 
   worker-1: &worker
-    image: keelmesh/core:m7
+    image: keelmesh/core:m11
     command: ["--role", "worker-supervisor"]
     environment:
       <<: *app-env
@@ -193,11 +193,20 @@ services:
       <<: *app-env
       KEELMESH_WORKER_ID: worker-3
 
+  memory-worker:
+    image: keelmesh/core:m11
+    command: ["--role", "memory-worker"]
+    environment: *app-env
+    depends_on:
+      topic-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   ai-index:
     build:
       context: .
       dockerfile: Dockerfile.ai
-    image: keelmesh/ai:m5
+    image: keelmesh/ai:m11
     command: ["python", "-m", "keelmesh_ai.index"]
     depends_on:
       ai-auth-init:
@@ -211,7 +220,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ai
-    image: keelmesh/ai:m5
+    image: keelmesh/ai:m11
     restart: unless-stopped
     environment:
       OPENAI_API_KEY_FILE: /run/keelmesh-auth/openai/token
@@ -260,6 +269,65 @@ services:
       timeout: 5s
       retries: 5
 
+  minio:
+    profiles: ["memory-lab"]
+    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: keelmesh-memory
+      MINIO_ROOT_PASSWORD: ${KEELMESH_MINIO_PASSWORD:-keelmesh-memory-lab-only}
+    volumes:
+      - memory-artifacts:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  minio-init:
+    profiles: ["memory-lab"]
+    image: quay.io/minio/mc:RELEASE.2025-05-21T01-59-54Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mc alias set memory http://minio:9000 keelmesh-memory '$${KEELMESH_MINIO_PASSWORD:-keelmesh-memory-lab-only}' && mc mb --ignore-existing memory/keelmesh-memory && mc anonymous set none memory/keelmesh-memory"]
+    environment:
+      KEELMESH_MINIO_PASSWORD: ${KEELMESH_MINIO_PASSWORD:-keelmesh-memory-lab-only}
+    restart: "no"
+
+  mlflow:
+    profiles: ["memory-lab"]
+    build:
+      context: .
+      dockerfile: Dockerfile.memory-lab
+    image: keelmesh/memory-lab:m11
+    command: ["mlflow", "server", "--host", "0.0.0.0", "--port", "5000", "--backend-store-uri", "postgresql+psycopg2://keelmesh:keelmesh@postgres:5432/keelmesh", "--artifacts-destination", "s3://keelmesh-memory"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: keelmesh-memory
+      AWS_SECRET_ACCESS_KEY: ${KEELMESH_MINIO_PASSWORD:-keelmesh-memory-lab-only}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  dagster:
+    profiles: ["memory-lab"]
+    image: keelmesh/memory-lab:m11
+    command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000", "-f", "/opt/keelmesh-memory-lab/memorylab/definitions.py"]
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    tmpfs:
+      - /tmp:size=128m
+    depends_on:
+      mlflow:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   kafka-data:
@@ -271,6 +339,7 @@ volumes:
   openrouter-runtime:
   openai-runtime:
   openai-core-runtime:
+  memory-artifacts:
 
 secrets:
   openrouter_api_key:

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "state_version": 14,
+  "available": true,
+  "phase": "ready",
+  "embedding_state": "ready",
+  "embedding_version": "all-MiniLM-L6-v2-onnx-v1",
+  "retrieval_mode": "hybrid",
+  "committed_items": 5,
+  "pending_candidates": 1,
+  "conversation_turns": 20,
+  "tombstones": 1,
+  "kafka_lag": 0,
+  "sync": [{"node_id":"node-a-01","central_watermark":42,"local_watermark":42,"pending_bundles":0,"last_receipt_at":"2026-09-03T12:00:00Z","state":"current"}],
+  "memory_lab": {"profile":"optional","enabled":true,"minio":"ready","dagster":"ready","mlflow":"ready"},
+  "summary": "Scoped conversation and operational memory is available.",
+  "updated_at": "2026-09-03T12:00:00Z"
+}

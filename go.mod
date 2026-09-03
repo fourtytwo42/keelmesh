@@ -36,4 +36,5 @@ require (
 	github.com/twmb/franz-go v1.21.0
 	github.com/twmb/franz-go/pkg/kadm v1.17.2
 	go.etcd.io/bbolt v1.4.3
+	modernc.org/sqlite v1.58.0
 )

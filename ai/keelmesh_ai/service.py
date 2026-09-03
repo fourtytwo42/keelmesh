@@ -20,6 +20,8 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from pydantic import BaseModel, ConfigDict, Field
 
+from .embeddings import MODEL_VERSION, MiniLMEmbedder
+
 
 OPENROUTER_MODELS = [
     "minimax/minimax-m3:free",
@@ -76,6 +78,12 @@ class InvestigateRequest(BaseModel):
 class FaultRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: str = Field(pattern=r"^fail_(cloud|local)_next$")
+
+
+class EmbedRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    texts: list[str] = Field(min_length=1, max_length=32)
+    normalize: bool = True
 
 
 class EvaluateRequest(BaseModel):
@@ -1491,6 +1499,7 @@ async def route_provider(prompt: str) -> tuple[dict[str, Any], list[dict[str, An
 
 
 app = FastAPI(title="KeelMesh AI", version="0.5.0")
+EMBEDDER: MiniLMEmbedder | None = None
 
 
 @app.get("/healthz")
@@ -1507,6 +1516,19 @@ async def health() -> dict[str, Any]:
         "mock_available": True,
         "model_pool_size": len(OPENROUTER_MODELS),
     }
+
+
+@app.post("/private/v1/embed", dependencies=[Depends(require_core)])
+def embed(request: EmbedRequest) -> dict[str, Any]:
+    global EMBEDDER
+    try:
+        if EMBEDDER is None:
+            EMBEDDER = MiniLMEmbedder()
+        return {"model": MODEL_VERSION, "dimensions": 384, "embeddings": EMBEDDER.encode(request.texts)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="embedding runtime unavailable") from exc
 
 
 @app.post("/v1/faults", dependencies=[Depends(require_core)])

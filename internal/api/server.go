@@ -19,6 +19,7 @@ import (
 	"github.com/fourtytwo42/keelmesh/internal/core"
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 	"github.com/fourtytwo42/keelmesh/internal/fleetops"
+	"github.com/fourtytwo42/keelmesh/internal/memory"
 	"github.com/fourtytwo42/keelmesh/internal/platform"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -33,6 +34,7 @@ type Server struct {
 	agent          *agent.Manager
 	fleetops       *fleetops.Manager
 	arena          *arena.Manager
+	memory         *memory.Manager
 	speechURL      string
 	metricsHandler http.Handler
 }
@@ -42,6 +44,7 @@ func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...any) *
 	var agentManager *agent.Manager
 	var fleetManager *fleetops.Manager
 	var arenaManager *arena.Manager
+	var memoryManager *memory.Manager
 	for _, value := range managers {
 		switch typed := value.(type) {
 		case *platform.Manager:
@@ -52,9 +55,11 @@ func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...any) *
 			fleetManager = typed
 		case *arena.Manager:
 			arenaManager = typed
+		case *memory.Manager:
+			memoryManager = typed
 		}
 	}
-	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager, agent: agentManager, fleetops: fleetManager, arena: arenaManager, speechURL: strings.TrimRight(os.Getenv("KEELMESH_SPEECH_URL"), "/")}
+	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager, agent: agentManager, fleetops: fleetManager, arena: arenaManager, memory: memoryManager, speechURL: strings.TrimRight(os.Getenv("KEELMESH_SPEECH_URL"), "/")}
 	if manager != nil {
 		registry := prometheus.NewRegistry()
 		gauges := []struct {
@@ -178,12 +183,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v4/scenes/{id}/actions", s.sceneActionV4)
 	mux.HandleFunc("GET /api/v4/assistant/history", s.assistantHistoryV4)
 	mux.HandleFunc("GET /api/v4/catalogs/keelmesh-operations-v1", s.sceneCatalogV4)
+	mux.HandleFunc("GET /api/v5/memory", s.memorySnapshotV5)
+	mux.HandleFunc("POST /api/v5/memory/search", s.memorySearchV5)
+	mux.HandleFunc("GET /api/v5/memory/items/{id}", s.memoryItemV5)
+	mux.HandleFunc("POST /api/v5/memory/items/{action}", s.memoryItemActionV5)
+	mux.HandleFunc("GET /api/v5/memory/candidates", s.memoryCandidatesV5)
+	mux.HandleFunc("POST /api/v5/memory/candidates/{action}", s.memoryCandidateActionV5)
+	mux.HandleFunc("GET /api/v5/memory/contexts/{turn_id}", s.memoryContextV5)
+	mux.HandleFunc("GET /api/v5/memory/entities/{id}", s.memoryEntityV5)
+	mux.HandleFunc("GET /api/v5/memory/sync", s.memorySyncV5)
+	mux.HandleFunc("POST /api/v5/memory/replays", s.memoryReplayV5)
+	mux.HandleFunc("GET /api/v5/memory/replays/{id}", s.memoryReplayResultV5)
+	mux.HandleFunc("POST /api/v5/scenarios/memory:reset", s.memoryResetV5)
 	mux.Handle("GET /", spaHandler(s.web))
 	return requestLog(s.logger, mux)
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m10", "started_at": s.startedAt.Format(time.RFC3339)})
+	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m11", "started_at": s.startedAt.Format(time.RFC3339)})
 }
 func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})

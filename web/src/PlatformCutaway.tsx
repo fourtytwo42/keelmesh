@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { api, requestID } from "./api";
-import type { FleetSnapshot, LoadRun, PlatformSnapshot, QuarantineRecord, ReplayRun } from "./types";
+import type { FleetSnapshot, LoadRun, MemorySnapshotV1, PlatformSnapshot, QuarantineRecord, ReplayRun } from "./types";
 
-type Props={value:PlatformSnapshot;fleet:FleetSnapshot;onError:(v:string)=>void};
+type Props={value:PlatformSnapshot;fleet:FleetSnapshot;memory:MemorySnapshotV1|null;onError:(v:string)=>void};
 const n=(value:number)=>new Intl.NumberFormat("en-US",{maximumFractionDigits:0}).format(value);
 const ms=(value:number)=>`${value.toFixed(value<100?1:0)} ms`;
 
-export function PlatformCutaway({value,fleet,onError}:Props){
+export function PlatformCutaway({value,fleet,memory,onError}:Props){
  const [busy,setBusy]=useState(""); const [replay,setReplay]=useState<ReplayRun|null>(null);
  async function mutate<T>(label:string,path:string,body:Record<string,unknown>){setBusy(label);onError("");try{return await api<T>(path,{method:"POST",body:JSON.stringify({request_id:requestID(label),idempotency_key:requestID(label),expected_platform_state_version:value.state_version,...body})})}catch(e){onError(e instanceof Error?e.message:String(e));throw e}finally{setBusy("")}}
  async function start(){await mutate("load","/api/v1/load/runs",{profile:"interview",seed:424242})}
@@ -21,6 +21,7 @@ export function PlatformCutaway({value,fleet,onError}:Props){
   <div className="mission-strip"><span>LIVE MISSION CONTROL</span><strong>{fleet.mission.phase.replaceAll("_"," ")}</strong><span>{fleet.vessels.length} foreground vessels</span><span className="isolation">ISOLATED FROM SCALE PLANE</span><i>{value.available?"M1/M2 healthy":"M3 degraded safely"}</i></div>
   <div className="cutaway-head"><div><small>MEASURED SINGLE-VM SCALE LAB</small><h1>The system, peeled open</h1><p>Every pulse below is driven by Kafka, PostgreSQL, and real Linux processes—not a scripted animation.</p></div><div className="run-controls">{!value.active_run||value.active_run.state!=="running"?<button onClick={start} disabled={!!busy}>Start 1,000-vessel run</button>:<button className="stop" onClick={stop} disabled={!!busy}>Stop run</button>}<button onClick={terminate} disabled={!!busy||!value.workers.some(w=>w.id==="worker-2"&&w.state==="running")}>Terminate Worker 2</button><button onClick={autoRun} disabled={!!busy}>{busy==="auto"?"Running milestones…":"Run full drill"}</button></div></div>
   <div className="metric-ribbon"><Metric label="INGRESS" value={`${n(m.events_per_second)} ev/s`} note={`${(m.bytes_per_second/1048576).toFixed(1)} MiB total`}/><Metric label="END-TO-END P95" value={ms(m.latency_p95_ms)} note={`p99 ${ms(m.latency_p99_ms)}`}/><Metric label="KAFKA LAG" value={n(m.current_lag)} note={`peak ${n(m.peak_lag)}`}/><Metric label="LOGICAL INSERTS" value={n(m.unique_inserted)} note={`${n(m.duplicates_suppressed)} duplicates blocked`}/><Metric label="REBALANCES" value={n(m.rebalance_count)} note={`${value.workers.filter(w=>w.state==="running").length}/3 workers live`}/></div>
+  <section className="memory-cutaway" aria-label="Distributed agent memory"><header><div><small>M11 · DISTRIBUTED AGENT MEMORY</small><strong>{memory?.available?"CENTRAL MEMORY READY":"DEGRADED · CURRENT TURN ONLY"}</strong></div><span>{memory?.embedding_state??"unavailable"} embedding</span><span>{memory?.retrieval_mode??"current-turn-only"} retrieval</span><span>{n(memory?.conversation_turns??0)} turns</span><span>{n(memory?.committed_items??0)} memories</span><span>{n(memory?.pending_candidates??0)} candidates</span></header><div className="memory-flow"><b>TURN</b><i>→</i><b>CONTEXT</b><i>→</i><b>MiniLM 384d</b><i>→</i><b>PGVECTOR + FTS</b><i>→</i><b>SCOPED PROMPT</b><small>{memory?.last_context?`${memory.last_context.estimated_tokens}/${memory.last_context.token_budget} tokens · ${memory.last_context.semantic_memories.length} semantic · ${memory.last_context.procedural_chunks.length} runbook · ${memory.last_context.operational_episodes.length} episode`:`Waiting for the next voice or A2UI turn · ${memory?.summary??"mission authority remains independent"}`}</small></div></section>
   <div className={`pipeline ${flowing?"flowing":""}`}>
    <Stage title="Synthetic fleet" kind="PRODUCER" status={value.active_run?.state??"idle"}><strong>{value.active_run?.vessel_count??0}</strong><span>logical vessels</span><small>seed {value.active_run?.seed??"—"}</small><div className="outbox"><i/>64 MiB durable outbox</div></Stage>
    <Flow label={`${n(m.events_per_second)} / SEC`}/>
