@@ -912,16 +912,6 @@ export function FleetWorkspace() {
     );
     await refresh();
   }
-  async function cycleGroupRoute(groupID: string) {
-    const group = fleet?.groups.find((candidate) => candidate.id === groupID);
-    if (!group) return;
-    if (group.route_mode === "once")
-      return commandGroupRoute(groupID, "enable_loop");
-    if (group.route_mode === "loop")
-      return commandGroupRoute(groupID, "pause_after_leg");
-    if (group.route_mode === "pause_pending") return;
-    return commandGroupRoute(groupID, "start_once");
-  }
   async function holdGroupAtVessel(groupID: string, vesselID: string) {
     await commandGroupRoute(groupID, "hold_at_vessel", [], vesselID);
   }
@@ -1262,8 +1252,6 @@ export function FleetWorkspace() {
           onCreateGroup={createGroup}
           onCreateGroupFromVessel={createGroupFromVessel}
           onDeleteGroup={deleteGroup}
-          mission={mission}
-          onCycleRoute={cycleGroupRoute}
           onHoldGroupAtVessel={holdGroupAtVessel}
         />
       ),
@@ -1949,8 +1937,6 @@ function FleetRail({
   onCreateGroup,
   onCreateGroupFromVessel,
   onDeleteGroup,
-  mission,
-  onCycleRoute,
   onHoldGroupAtVessel,
 }: {
   pirate: boolean;
@@ -1967,8 +1953,6 @@ function FleetRail({
   onCreateGroup: () => void;
   onCreateGroupFromVessel: (vesselID: string, name: string) => void;
   onDeleteGroup: (groupID: string) => void;
-  mission: MissionWorkspaceV2 | null;
-  onCycleRoute: (groupID: string) => void;
   onHoldGroupAtVessel: (groupID: string, vesselID: string) => void;
 }) {
   const [dropGroup, setDropGroup] = useState(""),
@@ -2020,21 +2004,7 @@ function FleetRail({
         </button>
       </div>
       <div className="group-list">
-        {fleet.groups.map((g) => {
-          const routeWaypointCount = (mission?.geometry.waypoint_details ?? []).filter(
-            (waypoint) =>
-              waypoint.owner_group_id === g.id ||
-              (!waypoint.owner_group_id && waypoint.color === g.color_name),
-          ).length;
-          const routeTitle =
-            g.route_mode === "once"
-              ? "Enable waypoint loop"
-              : g.route_mode === "loop"
-                ? "Pause after current waypoint"
-                : g.route_mode === "pause_pending"
-                  ? "Pause pending at current waypoint"
-                  : "Run waypoints once";
-          return (
+        {fleet.groups.map((g) => (
           <section
             key={g.id}
             className={dropGroup === g.id ? "drop-active" : ""}
@@ -2065,16 +2035,6 @@ function FleetRail({
                   {g.member_ids.filter((id) => selected.has(id)).length}/
                   {g.member_ids.length}
                 </small>
-              </button>
-              <button
-                className={`group-route ${g.route_mode}`}
-                aria-label={`${routeTitle} for ${g.code} ${g.name}`}
-                title={routeTitle}
-                disabled={routeWaypointCount < 2 || g.route_mode === "pause_pending"}
-                onClick={() => onCycleRoute(g.id)}
-              >
-                {g.route_mode === "pause_pending" ? <Pause /> : <Play />}
-                {g.route_mode === "loop" && <span>∞</span>}
               </button>
               <button
                 className="group-view"
@@ -2144,8 +2104,7 @@ function FleetRail({
                 </div>
               ))}
           </section>
-          );
-        })}
+        ))}
         {filtered.some((v) => !v.group_id) && (
           <section
             className={`unassigned-group ${dropGroup === "unassigned" ? "drop-active" : ""}`}

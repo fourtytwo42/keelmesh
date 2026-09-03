@@ -214,6 +214,7 @@ test("pirate watch changes nomenclature, agent voice, and returns cleanly to nav
 test("fleet rail, search, group, and filtered selection resolve exact targets", async ({ page }) => {
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
+  await expect(rail.locator(".group-route")).toHaveCount(0);
   await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
   await expectSelected(page, 6);
 
