@@ -199,18 +199,18 @@ type surfaceTrafficSpec struct {
 }
 
 var surfaceTraffic = []surfaceTrafficSpec{
-	{"surface-01", "NPC-4101", "MV Copper Horizon", "COPPER HORIZON", "container", "container service · New York to Boston", "red", "#ef6a62", "Atlantic coastwise lane", 6.4, 216, 10.8, []domain.GeoPointV2{{-71.62, 41.10}, {-71.42, 41.12}, {-71.12, 41.16}, {-70.84, 41.24}, {-71.12, 41.16}, {-71.42, 41.12}}},
-	{"surface-02", "NPC-4102", "MV Atlantic Beacon", "ATLANTIC BEACON", "container", "eastbound container service", "orange", "#ed8b47", "Rhode Island Sound eastbound", 7.1, 248, 12.1, []domain.GeoPointV2{{-71.58, 41.25}, {-71.36, 41.24}, {-71.10, 41.28}, {-70.82, 41.34}, {-71.10, 41.28}, {-71.36, 41.24}}},
-	{"surface-03", "NPC-4103", "MT Resolute Tide", "RESOLUTE TIDE", "tanker", "coastal product tanker", "yellow", "#e3c85a", "Point Judith tanker approach", 5.6, 184, 9.4, []domain.GeoPointV2{{-71.58, 41.30}, {-71.48, 41.34}, {-71.39, 41.39}, {-71.34, 41.45}, {-71.39, 41.39}, {-71.48, 41.34}}},
-	{"surface-04", "NPC-4104", "MT Silver Current", "SILVER CURRENT", "tanker", "ballast transit · simulated", "lime", "#a7cf62", "Sakonnet offshore lane", 5.1, 162, 8.7, []domain.GeoPointV2{{-71.12, 41.18}, {-71.08, 41.30}, {-71.12, 41.44}, {-71.18, 41.52}, {-71.12, 41.44}, {-71.08, 41.30}}},
-	{"surface-05", "NPC-4105", "MV Bay Courier", "BAY COURIER", "ferry", "scheduled passenger crossing", "green", "#64c982", "Newport–Block Island ferry", 8.0, 61, 3.2, []domain.GeoPointV2{{-71.34, 41.48}, {-71.38, 41.40}, {-71.46, 41.29}, {-71.56, 41.18}, {-71.46, 41.29}, {-71.38, 41.40}}},
-	{"surface-06", "NPC-4106", "MV Island Runner", "ISLAND RUNNER", "ferry", "vehicle and passenger ferry", "teal", "#55c6b0", "Point Judith–Block Island ferry", 7.4, 72, 3.6, []domain.GeoPointV2{{-71.49, 41.36}, {-71.53, 41.27}, {-71.57, 41.18}, {-71.53, 41.27}}},
-	{"surface-07", "NPC-4107", "FV North Star", "NORTH STAR", "trawler", "commercial trawling pattern", "cyan", "#5fc8dd", "Block Island fishing grounds", 2.6, 28, 2.8, []domain.GeoPointV2{{-71.62, 41.14}, {-71.67, 41.20}, {-71.63, 41.27}, {-71.55, 41.25}, {-71.52, 41.18}, {-71.58, 41.12}}},
-	{"surface-08", "NPC-4108", "FV Sea Robin", "SEA ROBIN", "trawler", "gear retrieval and slow transit", "blue", "#67aee8", "Rhode Island Sound fishing grounds", 2.2, 24, 2.4, []domain.GeoPointV2{{-71.28, 41.16}, {-71.20, 41.19}, {-71.16, 41.25}, {-71.25, 41.28}, {-71.31, 41.23}}},
-	{"surface-09", "NPC-4109", "NS Vigilant", "VIGILANT", "patrol", "fictional naval training patrol", "indigo", "#7888df", "Offshore security circuit", 6.8, 94, 4.6, []domain.GeoPointV2{{-71.02, 41.16}, {-70.90, 41.24}, {-70.94, 41.38}, {-71.08, 41.42}, {-71.16, 41.30}}},
-	{"surface-10", "NPC-4110", "NS Sentinel", "SENTINEL", "patrol", "fictional readiness exercise", "violet", "#b68bdc", "Narragansett outer patrol", 6.1, 82, 4.1, []domain.GeoPointV2{{-71.46, 41.18}, {-71.36, 41.22}, {-71.28, 41.30}, {-71.36, 41.35}, {-71.48, 41.29}}},
-	{"surface-11", "NPC-4111", "SV Wayfarer", "WAYFARER", "yacht", "recreational coastal passage", "magenta", "#df78bc", "Newport sailing circuit", 3.4, 18, 2.1, []domain.GeoPointV2{{-71.35, 41.48}, {-71.31, 41.43}, {-71.32, 41.37}, {-71.39, 41.40}}},
-	{"surface-12", "NPC-4112", "SV Blue Finch", "BLUE FINCH", "yacht", "recreational island passage", "white", "#e9e7dc", "Jamestown–Block Island passage", 3.0, 15, 1.8, []domain.GeoPointV2{{-71.40, 41.47}, {-71.44, 41.36}, {-71.51, 41.25}, {-71.57, 41.18}, {-71.51, 41.25}, {-71.44, 41.36}}},
+	{"surface-01", "NPC-4101", "MV Copper Horizon", "COPPER HORIZON", "container", "container service · New York to Boston", "red", "#ef6a62", "Atlantic coastwise lane", 2.4, 216, 10.8, []domain.GeoPointV2{{-71.62, 41.10}, {-71.42, 41.12}, {-71.12, 41.16}, {-70.84, 41.24}, {-71.12, 41.16}, {-71.42, 41.12}}},
+	{"surface-02", "NPC-4102", "MV Atlantic Beacon", "ATLANTIC BEACON", "container", "eastbound container service", "orange", "#ed8b47", "Rhode Island Sound eastbound", 2.6, 248, 12.1, []domain.GeoPointV2{{-71.58, 41.25}, {-71.36, 41.24}, {-71.10, 41.28}, {-70.82, 41.34}, {-71.10, 41.28}, {-71.36, 41.24}}},
+	{"surface-03", "NPC-4103", "MT Resolute Tide", "RESOLUTE TIDE", "tanker", "coastal product tanker", "yellow", "#e3c85a", "Point Judith tanker approach", 2.1, 184, 9.4, []domain.GeoPointV2{{-71.58, 41.30}, {-71.48, 41.34}, {-71.39, 41.39}, {-71.34, 41.45}, {-71.39, 41.39}, {-71.48, 41.34}}},
+	{"surface-04", "NPC-4104", "MT Silver Current", "SILVER CURRENT", "tanker", "ballast transit · simulated", "lime", "#a7cf62", "Sakonnet offshore lane", 2.0, 162, 8.7, []domain.GeoPointV2{{-71.12, 41.18}, {-71.08, 41.30}, {-71.12, 41.44}, {-71.18, 41.52}, {-71.12, 41.44}, {-71.08, 41.30}}},
+	{"surface-05", "NPC-4105", "MV Bay Courier", "BAY COURIER", "ferry", "scheduled passenger crossing", "green", "#64c982", "Newport–Block Island ferry", 2.8, 61, 3.2, []domain.GeoPointV2{{-71.34, 41.48}, {-71.38, 41.40}, {-71.46, 41.29}, {-71.56, 41.18}, {-71.46, 41.29}, {-71.38, 41.40}}},
+	{"surface-06", "NPC-4106", "MV Island Runner", "ISLAND RUNNER", "ferry", "vehicle and passenger ferry", "teal", "#55c6b0", "Point Judith–Block Island ferry", 2.7, 72, 3.6, []domain.GeoPointV2{{-71.49, 41.36}, {-71.53, 41.27}, {-71.57, 41.18}, {-71.53, 41.27}}},
+	{"surface-07", "NPC-4107", "FV North Star", "NORTH STAR", "trawler", "commercial trawling pattern", "cyan", "#5fc8dd", "Block Island fishing grounds", 1.4, 28, 2.8, []domain.GeoPointV2{{-71.62, 41.14}, {-71.67, 41.20}, {-71.63, 41.27}, {-71.55, 41.25}, {-71.52, 41.18}, {-71.58, 41.12}}},
+	{"surface-08", "NPC-4108", "FV Sea Robin", "SEA ROBIN", "trawler", "gear retrieval and slow transit", "blue", "#67aee8", "Rhode Island Sound fishing grounds", 1.2, 24, 2.4, []domain.GeoPointV2{{-71.28, 41.16}, {-71.20, 41.19}, {-71.16, 41.25}, {-71.25, 41.28}, {-71.31, 41.23}}},
+	{"surface-09", "NPC-4109", "NS Vigilant", "VIGILANT", "patrol", "fictional naval training patrol", "indigo", "#7888df", "Offshore security circuit", 2.5, 94, 4.6, []domain.GeoPointV2{{-71.02, 41.16}, {-70.90, 41.24}, {-70.94, 41.38}, {-71.08, 41.42}, {-71.16, 41.30}}},
+	{"surface-10", "NPC-4110", "NS Sentinel", "SENTINEL", "patrol", "fictional readiness exercise", "violet", "#b68bdc", "Narragansett outer patrol", 2.4, 82, 4.1, []domain.GeoPointV2{{-71.46, 41.18}, {-71.36, 41.22}, {-71.28, 41.30}, {-71.36, 41.35}, {-71.48, 41.29}}},
+	{"surface-11", "NPC-4111", "SV Wayfarer", "WAYFARER", "yacht", "recreational coastal passage", "magenta", "#df78bc", "Newport sailing circuit", 1.7, 18, 2.1, []domain.GeoPointV2{{-71.35, 41.48}, {-71.31, 41.43}, {-71.32, 41.37}, {-71.39, 41.40}}},
+	{"surface-12", "NPC-4112", "SV Blue Finch", "BLUE FINCH", "yacht", "recreational island passage", "white", "#e9e7dc", "Jamestown–Block Island passage", 1.6, 15, 1.8, []domain.GeoPointV2{{-71.40, 41.47}, {-71.44, 41.36}, {-71.51, 41.25}, {-71.57, 41.18}, {-71.51, 41.25}, {-71.44, 41.36}}},
 }
 
 func surfaceContactAt(spec surfaceTrafficSpec, at time.Time, offsetSeconds float64) domain.SurfaceContactV2 {
@@ -275,11 +275,11 @@ func (m *Manager) Run(ctx context.Context) {
 func classFor(slot int) domain.VesselClassV2 {
 	switch {
 	case slot < 3:
-		return domain.VesselClassV2{ID: "kestrel", Name: "Kestrel", Role: "agile scout", MaxSpeedMPS: 3.2, MinimumReserve: .22, EnduranceHours: 5.7, NominalRangeNM: 20, BatteryCapacityKWH: 18, SolarPeakKW: 4}
+		return domain.VesselClassV2{ID: "kestrel", Name: "Kestrel", Role: "agile scout", MaxSpeedMPS: 3.4, MinimumReserve: .22, EnduranceHours: 5.7, NominalRangeNM: 20, BatteryCapacityKWH: 18, SolarPeakKW: 4}
 	case slot < 5:
-		return domain.VesselClassV2{ID: "mariner", Name: "Mariner", Role: "general-purpose platform", MaxSpeedMPS: 2.5, MinimumReserve: .25, EnduranceHours: 8.6, NominalRangeNM: 30, BatteryCapacityKWH: 40, SolarPeakKW: 9}
+		return domain.VesselClassV2{ID: "mariner", Name: "Mariner", Role: "general-purpose platform", MaxSpeedMPS: 3.2, MinimumReserve: .25, EnduranceHours: 8.6, NominalRangeNM: 30, BatteryCapacityKWH: 40, SolarPeakKW: 9}
 	default:
-		return domain.VesselClassV2{ID: "atlas", Name: "Atlas", Role: "endurance, support, and communications relay", MaxSpeedMPS: 1.9, MinimumReserve: .30, EnduranceHours: 12.9, NominalRangeNM: 45, BatteryCapacityKWH: 90, SolarPeakKW: 20, CommunicationsRole: true}
+		return domain.VesselClassV2{ID: "atlas", Name: "Atlas", Role: "endurance, support, and communications relay", MaxSpeedMPS: 3.0, MinimumReserve: .30, EnduranceHours: 12.9, NominalRangeNM: 45, BatteryCapacityKWH: 90, SolarPeakKW: 20, CommunicationsRole: true}
 	}
 }
 
@@ -1561,6 +1561,21 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 		}
 	}
 	constraints := mission.Constraints
+	if contactFound {
+		// A follow/intercept draft needs enough speed authority to close on the
+		// contact, not merely match it. Cap the draft at the slowest selected
+		// vessel so every assignment remains executable as a coordinated group.
+		fleetCeiling := math.MaxFloat64
+		for _, vesselID := range targets {
+			fleetCeiling = math.Min(fleetCeiling, m.vessels[vesselID].Class.MaxSpeedMPS)
+		}
+		if fleetCeiling != math.MaxFloat64 && fleetCeiling > constraints.MaximumSpeedMPS {
+			constraints.MaximumSpeedMPS = fleetCeiling
+			mission.Constraints.MaximumSpeedMPS = fleetCeiling
+			missionChanged = true
+			notes = append(notes, fmt.Sprintf("Contact-follow speed envelope raised to %.1f m/s, above the %.1f m/s contact speed and within every selected vessel's hardware limit; exact route approval is still required.", fleetCeiling, contact.SpeedMPS))
+		}
+	}
 	if distance, ok := requestedCoastalDistance(req.Text); ok {
 		constraints.MaximumShoreDistanceM = distance
 		mission.Constraints.MaximumShoreDistanceM = distance
@@ -2356,6 +2371,20 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 	sort.Strings(targets)
 	formation := strategy.Formation
 	speed := math.Max(.35, math.Min(draft.Constraints.MaximumSpeedMPS, draft.Constraints.MaximumSpeedMPS*strategy.SpeedFactor))
+	if draft.FollowContactID != "" {
+		for _, contact := range m.surfaceContactsLocked() {
+			if contact.ID != draft.FollowContactID {
+				continue
+			}
+			// All follow candidates retain positive closure speed. Reserve-biased
+			// options use less of the available margin, but never silently produce
+			// a plan that is slower than the contact it claims to intercept.
+			headroom := math.Max(0, draft.Constraints.MaximumSpeedMPS-contact.SpeedMPS)
+			closureShare := math.Max(.25, 1-strategy.ReserveBias*.75)
+			speed = math.Min(draft.Constraints.MaximumSpeedMPS, contact.SpeedMPS+headroom*closureShare)
+			break
+		}
+	}
 	assignments := make([]domain.FleetAssignmentV2, 0, len(targets))
 	totalEnergyKWH := 0.
 	maxDistance := 0.

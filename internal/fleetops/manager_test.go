@@ -1293,6 +1293,68 @@ func TestFollowSurfaceContactCompilesPredictedTrack(t *testing.T) {
 	}
 }
 
+func TestControlledFleetCanOvertakeAndPlanAgainstFastestSurfaceContact(t *testing.T) {
+	m := New("", slog.Default())
+	fastestContact := 0.0
+	fastestID := ""
+	for _, contact := range m.Snapshot().SurfaceContacts {
+		if contact.SpeedMPS > fastestContact {
+			fastestContact, fastestID = contact.SpeedMPS, contact.ID
+		}
+	}
+	for _, slot := range []int{0, 3, 5} {
+		class := classFor(slot)
+		if class.MaxSpeedMPS <= fastestContact {
+			t.Fatalf("%s max speed %.1f cannot overtake fastest contact %.1f", class.Name, class.MaxSpeedMPS, fastestContact)
+		}
+	}
+
+	snapshot := m.Snapshot()
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation:  Mutation{RequestID: "overtake-create", IdempotencyKey: "overtake-create", ExpectedVersion: snapshot.FleetVersion},
+		Name:      "Fast Contact Watch",
+		TargetIDs: snapshot.Groups[0].MemberIDs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation:        Mutation{RequestID: "overtake-compile", IdempotencyKey: "overtake-compile", ExpectedVersion: mission.Version},
+		Text:            "Intercept and follow the fastest contact",
+		PlanningMode:    "manual",
+		GuidanceKind:    "follow_contact",
+		FollowContactID: fastestID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.Constraints.MaximumSpeedMPS <= fastestContact {
+		t.Fatalf("follow envelope %.1f does not exceed contact speed %.1f", draft.Constraints.MaximumSpeedMPS, fastestContact)
+	}
+	current := m.missions[mission.ID]
+	plans, err := m.GeneratePlans(mission.ID, PlansRequest{
+		Mutation: Mutation{RequestID: "overtake-plans", IdempotencyKey: "overtake-plans", ExpectedVersion: current.Version},
+		DraftID:  draft.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) < 2 {
+		t.Fatalf("expected multiple follow strategies, got %d", len(plans))
+	}
+	for _, plan := range plans {
+		for _, assignment := range plan.Assignments {
+			vessel := m.vessels[assignment.VesselID]
+			if assignment.SpeedMPS <= fastestContact {
+				t.Fatalf("plan %s assignment %.2f cannot close on %.2f m/s contact", plan.Name, assignment.SpeedMPS, fastestContact)
+			}
+			if assignment.SpeedMPS > vessel.Class.MaxSpeedMPS {
+				t.Fatalf("plan %s exceeds %s hardware limit: %.2f > %.2f", plan.Name, vessel.Class.Name, assignment.SpeedMPS, vessel.Class.MaxSpeedMPS)
+			}
+		}
+	}
+}
+
 func TestGroupAssemblyTranslationAndWaypointRouteState(t *testing.T) {
 	m := New("", slog.Default())
 	group := m.groups["group-01"]
