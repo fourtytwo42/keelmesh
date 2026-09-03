@@ -495,6 +495,84 @@ func TestCompileResolvesShorelineIntentWithoutDrawnGeometry(t *testing.T) {
 	}
 }
 
+func TestAICompileSelectsTargetsForEmptyMissionBeforeResolvingRelativeRoute(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation:   Mutation{RequestID: "empty-ai-mission", IdempotencyKey: "empty-ai-mission", ExpectedVersion: snapshot.FleetVersion},
+		NamingMode: "ai",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation:     Mutation{RequestID: "empty-ai-compile", IdempotencyKey: "empty-ai-compile", ExpectedVersion: mission.Version},
+		Text:         "Move a group 1 nm east and hold position.",
+		PlanningMode: "ai_assisted",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(draft.TargetIDs) != 6 || draft.TargetSelection == nil || draft.TargetSelection.Provider != "deterministic" {
+		t.Fatalf("expected a complete fallback group with receipt, got %#v", draft)
+	}
+	if len(draft.Waypoints) < 1 || draft.GuidanceKind != "hold" || draft.GeometrySource == "" {
+		t.Fatalf("relative hold route was not resolved after target selection: %#v", draft)
+	}
+	updated := m.missions[mission.ID]
+	if !sameMembers(updated.TargetIDs, draft.TargetIDs) || updated.Version <= mission.Version {
+		t.Fatalf("AI-selected roster was not persisted to the mission: %#v", updated)
+	}
+}
+
+func TestManualCompileStillRequiresExplicitTargets(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation: Mutation{RequestID: "empty-manual-mission", IdempotencyKey: "empty-manual-mission", ExpectedVersion: snapshot.FleetVersion},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.Compile(mission.ID, CompileRequest{
+		Mutation:     Mutation{RequestID: "empty-manual-compile", IdempotencyKey: "empty-manual-compile", ExpectedVersion: mission.Version},
+		Text:         "Move east.",
+		PlanningMode: "manual",
+	})
+	if typed, ok := err.(*Error); !ok || typed.Code != "TARGETS_REQUIRED" {
+		t.Fatalf("expected manual target requirement, got %v", err)
+	}
+}
+
+func TestAICompileRejectsPartialGroupSelectionFromProvider(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation: Mutation{RequestID: "partial-ai-mission", IdempotencyKey: "partial-ai-mission", ExpectedVersion: snapshot.FleetVersion},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial := domain.MissionTargetSelectionV2{
+		TargetIDs: []string{snapshot.Groups[0].MemberIDs[0]},
+		Summary:   "Provider selected only part of a requested group.",
+		Provider:  "openai",
+		Model:     "test",
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation:        Mutation{RequestID: "partial-ai-compile", IdempotencyKey: "partial-ai-compile", ExpectedVersion: mission.Version},
+		Text:            "Move a group 1 nm east and hold position.",
+		PlanningMode:    "ai_assisted",
+		TargetSelection: &partial,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(draft.TargetIDs) != 6 || draft.TargetSelection == nil || draft.TargetSelection.Provider != "deterministic" {
+		t.Fatalf("partial provider selection was not replaced safely: %#v", draft.TargetSelection)
+	}
+}
+
 func TestSingleVesselAdvisorRejectsFleetFormationsAndBuildsIndependentPlans(t *testing.T) {
 	m := New("", slog.Default())
 	snapshot := m.Snapshot()

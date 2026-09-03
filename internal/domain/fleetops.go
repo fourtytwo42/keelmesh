@@ -186,26 +186,72 @@ type MissionChatMessageV2 struct {
 }
 
 type CommandDraftV2 struct {
-	SchemaVersion       int              `json:"schema_version"`
-	ID                  string           `json:"id"`
-	MissionID           string           `json:"mission_id"`
-	SourceText          string           `json:"source_text"`
-	Objective           string           `json:"objective"`
-	TargetIDs           []string         `json:"target_ids"`
-	TargetSnapshotHash  string           `json:"target_snapshot_hash"`
-	GeometryRevision    int64            `json:"geometry_revision"`
-	FleetVersion        int64            `json:"fleet_version"`
-	Constraints         ConstraintSetV2  `json:"constraints"`
-	FormationPreference string           `json:"formation_preference"`
-	GuidanceKind        string           `json:"guidance_kind"`
-	FollowContactID     string           `json:"follow_contact_id,omitempty"`
-	PlanningMode        string           `json:"planning_mode"`
-	Waypoints           []GeoPointV2     `json:"waypoints"`
-	GeometrySource      string           `json:"geometry_source,omitempty"`
-	ResolutionNotes     []string         `json:"resolution_notes,omitempty"`
-	Ambiguities         []string         `json:"unresolved_ambiguities"`
-	Advisor             MissionAdvisorV2 `json:"advisor"`
-	ContentHash         string           `json:"content_hash"`
+	SchemaVersion       int                       `json:"schema_version"`
+	ID                  string                    `json:"id"`
+	MissionID           string                    `json:"mission_id"`
+	SourceText          string                    `json:"source_text"`
+	Objective           string                    `json:"objective"`
+	TargetIDs           []string                  `json:"target_ids"`
+	TargetSnapshotHash  string                    `json:"target_snapshot_hash"`
+	GeometryRevision    int64                     `json:"geometry_revision"`
+	FleetVersion        int64                     `json:"fleet_version"`
+	Constraints         ConstraintSetV2           `json:"constraints"`
+	FormationPreference string                    `json:"formation_preference"`
+	GuidanceKind        string                    `json:"guidance_kind"`
+	FollowContactID     string                    `json:"follow_contact_id,omitempty"`
+	PlanningMode        string                    `json:"planning_mode"`
+	Waypoints           []GeoPointV2              `json:"waypoints"`
+	GeometrySource      string                    `json:"geometry_source,omitempty"`
+	ResolutionNotes     []string                  `json:"resolution_notes,omitempty"`
+	TargetSelection     *MissionTargetSelectionV2 `json:"target_selection,omitempty"`
+	Ambiguities         []string                  `json:"unresolved_ambiguities"`
+	Advisor             MissionAdvisorV2          `json:"advisor"`
+	ContentHash         string                    `json:"content_hash"`
+}
+
+// MissionTargetSelectionV2 records the bounded target choice made before
+// route planning. It contains no authority and is validated by fleetops before
+// it can alter a mission roster.
+type MissionTargetSelectionV2 struct {
+	TargetIDs []string            `json:"target_ids"`
+	Summary   string              `json:"summary"`
+	Provider  string              `json:"provider"`
+	Model     string              `json:"model"`
+	Attempts  []ProviderAttemptV1 `json:"attempts"`
+}
+
+type MissionTargetGroupCandidateV2 struct {
+	ID        string   `json:"id"`
+	Code      string   `json:"code"`
+	Name      string   `json:"name"`
+	ColorName string   `json:"color_name"`
+	MemberIDs []string `json:"member_ids"`
+	Formation string   `json:"formation"`
+	Available bool     `json:"available"`
+}
+
+type MissionTargetVesselCandidateV2 struct {
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	Callsign       string     `json:"callsign"`
+	Designation    string     `json:"designation"`
+	Class          string     `json:"class"`
+	GroupID        string     `json:"group_id,omitempty"`
+	GroupCode      string     `json:"group_code,omitempty"`
+	GroupName      string     `json:"group_name,omitempty"`
+	GroupColorName string     `json:"group_color_name,omitempty"`
+	Position       GeoPointV2 `json:"position"`
+	Reserve        float64    `json:"reserve"`
+	Available      bool       `json:"available"`
+}
+
+type MissionTargetSelectionContextV2 struct {
+	SchemaVersion    int                              `json:"schema_version"`
+	MissionID        string                           `json:"mission_id"`
+	Intent           string                           `json:"intent"`
+	CurrentTargetIDs []string                         `json:"current_target_ids"`
+	Groups           []MissionTargetGroupCandidateV2  `json:"groups"`
+	Vessels          []MissionTargetVesselCandidateV2 `json:"vessels"`
 }
 
 // SurfaceContactV2 is fictional non-fleet traffic in the local operating

@@ -3,6 +3,7 @@ from keelmesh_ai.service import (
     OPENROUTER_MODELS,
     Circuit,
     MissionOptionsRequest,
+    MissionTargetSelectionRequest,
     deterministic_mission_options,
     digest,
     openai_response_text,
@@ -11,6 +12,7 @@ from keelmesh_ai.service import (
     parse_geometry_option_id,
     parse_mission_json,
     parse_model_json,
+    parse_target_selection,
 )
 
 
@@ -28,6 +30,61 @@ def test_openai_responses_output_text_is_extracted() -> None:
         )
         == '{"strategies":[]}'
     )
+
+
+def test_target_selection_requires_complete_group_for_generic_group_request() -> None:
+    request = MissionTargetSelectionRequest.model_validate(
+        {
+            "mission_id": "mission-1",
+            "intent": "Move a group 1 nm east and hold position.",
+            "groups": [
+                {
+                    "id": "group-1",
+                    "code": "AG",
+                    "name": "Amber Guard",
+                    "color_name": "amber",
+                    "member_ids": ["vessel-1", "vessel-2"],
+                    "formation": "column",
+                    "available": True,
+                }
+            ],
+            "vessels": [
+                {
+                    "id": "vessel-1",
+                    "name": "Gannet",
+                    "callsign": "Gannet",
+                    "designation": "KM-214",
+                    "class": "Kestrel",
+                    "position": [-71.3, 41.4],
+                    "reserve": 0.9,
+                    "available": True,
+                },
+                {
+                    "id": "vessel-2",
+                    "name": "Osprey",
+                    "callsign": "Osprey",
+                    "designation": "KM-215",
+                    "class": "Mariner",
+                    "position": [-71.31, 41.4],
+                    "reserve": 0.85,
+                    "available": True,
+                },
+            ],
+        }
+    )
+    ids, explanation = parse_target_selection(
+        '{"target_ids":["vessel-1","vessel-2"],"explanation":"Best reserve."}', request
+    )
+    assert ids == ["vessel-1", "vessel-2"]
+    assert explanation == "Best reserve."
+    try:
+        parse_target_selection(
+            '{"target_ids":["vessel-1"],"explanation":"Partial group."}', request
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a generic group request must resolve to one complete group")
 
 
 def test_model_pool_has_adaptive_final_router() -> None:

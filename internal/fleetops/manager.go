@@ -107,13 +107,14 @@ type GeometryRequest struct {
 }
 type CompileRequest struct {
 	Mutation
-	Text            string              `json:"text"`
-	TargetIDs       []string            `json:"target_ids"`
-	GuidanceKind    string              `json:"guidance_kind"`
-	FollowContactID string              `json:"follow_contact_id"`
-	PlanningMode    string              `json:"planning_mode"`
-	Waypoints       []domain.GeoPointV2 `json:"waypoints"`
-	Formation       string              `json:"formation"`
+	Text            string                           `json:"text"`
+	TargetIDs       []string                         `json:"target_ids"`
+	GuidanceKind    string                           `json:"guidance_kind"`
+	FollowContactID string                           `json:"follow_contact_id"`
+	PlanningMode    string                           `json:"planning_mode"`
+	Waypoints       []domain.GeoPointV2              `json:"waypoints"`
+	Formation       string                           `json:"formation"`
+	TargetSelection *domain.MissionTargetSelectionV2 `json:"-"`
 }
 type PlansRequest struct {
 	Mutation
@@ -1303,6 +1304,114 @@ func (m *Manager) reconcileGroupAssemblyWaypointsLocked(missionID string, waypoi
 	}
 }
 
+// TargetSelectionContext exposes only the fleet facts needed to choose a
+// mission roster. Authority, leases, opponent state, and signing material are
+// deliberately absent. Availability accounts for movement authority already
+// held by another active mission.
+func (m *Manager) TargetSelectionContext(missionID, intent string) (domain.MissionTargetSelectionContextV2, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	mission, ok := m.missions[missionID]
+	if !ok {
+		return domain.MissionTargetSelectionContextV2{}, &Error{"MISSION_NOT_FOUND", "Mission not found."}
+	}
+	selectionContext := domain.MissionTargetSelectionContextV2{SchemaVersion: 2, MissionID: missionID, Intent: intent, CurrentTargetIDs: append([]string{}, mission.TargetIDs...), Groups: []domain.MissionTargetGroupCandidateV2{}, Vessels: []domain.MissionTargetVesselCandidateV2{}}
+	for _, group := range m.groups {
+		selectionContext.Groups = append(selectionContext.Groups, domain.MissionTargetGroupCandidateV2{
+			ID: group.ID, Code: group.Code, Name: group.Name, ColorName: group.ColorName,
+			MemberIDs: cloneStrings(group.MemberIDs), Formation: group.Formation,
+			Available: len(group.MemberIDs) > 0 && len(m.conflicts(group.MemberIDs, missionID)) == 0,
+		})
+	}
+	sort.Slice(selectionContext.Groups, func(i, j int) bool { return selectionContext.Groups[i].Code < selectionContext.Groups[j].Code })
+	for _, vessel := range m.vessels {
+		groupName := "unassigned"
+		if group, ok := m.groups[vessel.GroupID]; ok {
+			groupName = group.Name
+		}
+		selectionContext.Vessels = append(selectionContext.Vessels, domain.MissionTargetVesselCandidateV2{
+			ID: vessel.ID, Name: vessel.DisplayName, Callsign: vessel.Callsign, Designation: vessel.Designation,
+			Class: vessel.Class.Name, GroupID: vessel.GroupID, GroupCode: vessel.GroupCode,
+			GroupName: groupName, GroupColorName: vessel.GroupColorName, Position: vessel.Telemetry.Position,
+			Reserve: vessel.Telemetry.Reserve, Available: vessel.Available && len(m.conflicts([]string{vessel.ID}, missionID)) == 0,
+		})
+	}
+	sort.Slice(selectionContext.Vessels, func(i, j int) bool {
+		return selectionContext.Vessels[i].Designation < selectionContext.Vessels[j].Designation
+	})
+	return selectionContext, nil
+}
+
+// DeterministicTargetSelection is the explicit degraded-mode fallback used
+// when an AI provider cannot select a roster.
+func (m *Manager) DeterministicTargetSelection(missionID, intent string) (domain.MissionTargetSelectionV2, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.resolveTargetsFromIntentLocked(missionID, intent)
+}
+
+func (m *Manager) resolveTargetsFromIntentLocked(missionID, intent string) (domain.MissionTargetSelectionV2, error) {
+	lower := strings.ToLower(intent)
+	groups := make([]domain.OperationalGroupV2, 0, len(m.groups))
+	for _, group := range m.groups {
+		if len(group.MemberIDs) > 0 && len(m.conflicts(group.MemberIDs, missionID)) == 0 {
+			groups = append(groups, group)
+		}
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].Code < groups[j].Code })
+	for _, group := range groups {
+		matched := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(group.Code) + `\b`).MatchString(intent)
+		for _, alias := range []string{strings.ToLower(group.Name), strings.ToLower(group.ColorName + " group"), strings.ToLower(group.ColorName + " team")} {
+			matched = matched || strings.Contains(lower, alias)
+		}
+		if matched {
+			return domain.MissionTargetSelectionV2{TargetIDs: cloneStrings(group.MemberIDs), Summary: fmt.Sprintf("Deterministic fallback resolved %s · %s (%s group) from the operator's wording.", group.Code, group.Name, group.ColorName), Provider: "deterministic", Model: "keelmesh-target-resolver-v1"}, nil
+		}
+	}
+	vessels := make([]domain.VesselProfileV2, 0, len(m.vessels))
+	for _, vessel := range m.vessels {
+		if vessel.Available && len(m.conflicts([]string{vessel.ID}, missionID)) == 0 {
+			vessels = append(vessels, vessel)
+		}
+	}
+	sort.Slice(vessels, func(i, j int) bool { return vessels[i].Designation < vessels[j].Designation })
+	for _, vessel := range vessels {
+		if strings.Contains(lower, strings.ToLower(vessel.Callsign)) || strings.Contains(lower, strings.ToLower(vessel.Designation)) {
+			return domain.MissionTargetSelectionV2{TargetIDs: []string{vessel.ID}, Summary: fmt.Sprintf("Deterministic fallback resolved %s from the operator's wording.", vessel.DisplayName), Provider: "deterministic", Model: "keelmesh-target-resolver-v1"}, nil
+		}
+	}
+	if strings.Contains(lower, "all vessels") || strings.Contains(lower, "entire fleet") || strings.Contains(lower, "whole fleet") {
+		ids := make([]string, 0, len(vessels))
+		for _, vessel := range vessels {
+			ids = append(ids, vessel.ID)
+		}
+		if len(ids) > 0 {
+			return domain.MissionTargetSelectionV2{TargetIDs: ids, Summary: fmt.Sprintf("Deterministic fallback selected all %d available vessels requested by the operator.", len(ids)), Provider: "deterministic", Model: "keelmesh-target-resolver-v1"}, nil
+		}
+	}
+	if len(groups) > 0 {
+		group := groups[0]
+		return domain.MissionTargetSelectionV2{TargetIDs: cloneStrings(group.MemberIDs), Summary: fmt.Sprintf("AI target selection was unavailable, so the deterministic fallback selected the first complete available group: %s · %s (%s).", group.Code, group.Name, group.ColorName), Provider: "deterministic", Model: "keelmesh-target-resolver-v1"}, nil
+	}
+	if len(vessels) > 0 {
+		return domain.MissionTargetSelectionV2{TargetIDs: []string{vessels[0].ID}, Summary: "AI target selection was unavailable; the deterministic fallback selected " + vessels[0].DisplayName + ".", Provider: "deterministic", Model: "keelmesh-target-resolver-v1"}, nil
+	}
+	return domain.MissionTargetSelectionV2{}, &Error{"TARGETS_UNAVAILABLE", "No uncommitted vessel or complete group is available for this mission."}
+}
+
+func requestsSingleGroup(intent string) bool {
+	return regexp.MustCompile(`(?i)\b(?:a|one|this|the)\s+(?:available\s+)?(?:group|team)\b`).MatchString(intent)
+}
+
+func (m *Manager) matchesCompleteAvailableGroupLocked(missionID string, ids []string) bool {
+	for _, group := range m.groups {
+		if len(group.MemberIDs) > 0 && len(m.conflicts(group.MemberIDs, missionID)) == 0 && sameMembers(group.MemberIDs, ids) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1313,15 +1422,55 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	if err := m.check(req.Mutation, mission.Version); err != nil {
 		return domain.CommandDraftV2{}, err
 	}
+	planningMode := req.PlanningMode
+	if planningMode == "" {
+		planningMode = "ai_assisted"
+	}
+	if planningMode != "manual" && planningMode != "ai_assisted" {
+		return domain.CommandDraftV2{}, &Error{"INVALID_PLANNING_MODE", "Planning mode must be manual or ai_assisted."}
+	}
+	notes := []string{}
+	missionChanged := false
 	targets := mission.TargetIDs
 	if len(req.TargetIDs) > 0 {
 		targets = unique(req.TargetIDs)
 	}
 	if len(targets) == 0 {
-		return domain.CommandDraftV2{}, &Error{"TARGETS_REQUIRED", "Select at least one vessel or group."}
+		if planningMode == "manual" {
+			return domain.CommandDraftV2{}, &Error{"TARGETS_REQUIRED", "Select at least one vessel or group for manual planning."}
+		}
+		selection := req.TargetSelection
+		if selection == nil || len(selection.TargetIDs) == 0 {
+			fallback, fallbackErr := m.resolveTargetsFromIntentLocked(id, req.Text)
+			if fallbackErr != nil {
+				return domain.CommandDraftV2{}, fallbackErr
+			}
+			selection = &fallback
+		}
+		if selection.Provider != "deterministic" && requestsSingleGroup(req.Text) && !m.matchesCompleteAvailableGroupLocked(id, selection.TargetIDs) {
+			fallback, fallbackErr := m.resolveTargetsFromIntentLocked(id, req.Text)
+			if fallbackErr != nil {
+				return domain.CommandDraftV2{}, fallbackErr
+			}
+			fallback.Summary = "The provider's target proposal failed complete-group validation. " + fallback.Summary
+			selection = &fallback
+		}
+		targets = unique(selection.TargetIDs)
+		req.TargetSelection = selection
 	}
 	if err := m.validTargets(targets); err != nil {
 		return domain.CommandDraftV2{}, err
+	}
+	if conflicts := m.conflicts(targets, id); len(conflicts) > 0 {
+		return domain.CommandDraftV2{}, &Error{"MOVEMENT_AUTHORITY_CONFLICT", "Movement authority is already held for: " + strings.Join(conflicts, ", ")}
+	}
+	if !sameMembers(targets, mission.TargetIDs) {
+		mission.TargetIDs = cloneStrings(targets)
+		mission.TargetSnapshotHash = hashAny(targets)
+		missionChanged = true
+	}
+	if req.TargetSelection != nil {
+		notes = append(notes, req.TargetSelection.Summary)
 	}
 	formation := req.Formation
 	if formation == "" {
@@ -1336,7 +1485,6 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 		wps = mission.Geometry.Waypoints
 	}
 	geometrySource := ""
-	notes := []string{}
 	if (kind == "hold" || kind == "orbit") && len(req.Waypoints) == 0 {
 		for i := len(mission.Geometry.POIs) - 1; i >= 0; i-- {
 			poi := mission.Geometry.POIs[i]
@@ -1388,7 +1536,6 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 			notes = append(notes, fmt.Sprintf("Selected %d %s waypoints in numbered order from the active mission.", len(wps), selectedWaypointColor))
 		}
 	}
-	missionChanged := false
 	if len(wps) == 0 && len(mission.Geometry.IncludedAreas) == 0 {
 		if polygon, route, source, ok := m.resolveNamedGeometry(req.Text, targets); ok {
 			mission.Geometry.Revision++
@@ -1443,14 +1590,7 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	if len(wps) == 0 && len(mission.Geometry.IncludedAreas) == 0 {
 		amb = append(amb, "Choose an area or waypoint before route generation.")
 	}
-	planningMode := req.PlanningMode
-	if planningMode == "" {
-		planningMode = "ai_assisted"
-	}
-	if planningMode != "manual" && planningMode != "ai_assisted" {
-		return domain.CommandDraftV2{}, &Error{"INVALID_PLANNING_MODE", "Planning mode must be manual or ai_assisted."}
-	}
-	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, FollowContactID: followContactID, PlanningMode: planningMode, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, Ambiguities: amb}
+	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, FollowContactID: followContactID, PlanningMode: planningMode, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, TargetSelection: req.TargetSelection, Ambiguities: amb}
 	draft.ContentHash = hashWithout(draft)
 	m.drafts[draft.ID] = draft
 	messageID := "message-" + shortHash(req.IdempotencyKey)

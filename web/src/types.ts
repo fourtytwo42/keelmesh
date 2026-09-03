@@ -815,6 +815,13 @@ export type CommandDraftV2 = {
   waypoints: Point[];
   geometry_source?: string;
   resolution_notes?: string[];
+  target_selection?: {
+    target_ids: string[];
+    summary: string;
+    provider: string;
+    model: string;
+    attempts: ProviderAttempt[];
+  };
   unresolved_ambiguities: string[];
   advisor: MissionAdvisorV2;
   content_hash: string;

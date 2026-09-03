@@ -70,3 +70,36 @@ func TestMissionOptionsFallsBackToDirectOpenAIWithSingleVesselSchema(t *testing.
 		}
 	}
 }
+
+func TestSelectMissionTargetsUsesBoundedAvailableFleet(t *testing.T) {
+	keyFile := filepath.Join(t.TempDir(), "openai-key")
+	if err := os.WriteFile(keyFile, []byte("test-key\n"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request["model"] != "gpt-5.6-luna" || request["store"] != false {
+			t.Fatalf("unexpected target selection request: %#v", request)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"target_ids\":[\"vessel-1\",\"vessel-2\"],\"explanation\":\"Amber group has the strongest reserve margin for the eastbound hold.\"}"}]}]}`))
+	}))
+	defer provider.Close()
+	manager := NewManager(Config{OpenAIKeyFile: keyFile, OpenAIModel: "gpt-5.6-luna", OpenAIURL: provider.URL}, slog.Default())
+	selection, err := manager.SelectMissionTargets(context.Background(), domain.MissionTargetSelectionContextV2{
+		SchemaVersion: 2,
+		MissionID:     "mission-1",
+		Intent:        "Move a group 1 nm east and hold position.",
+		Groups:        []domain.MissionTargetGroupCandidateV2{{ID: "group-1", Code: "AG", Name: "Amber Guard", ColorName: "amber", MemberIDs: []string{"vessel-1", "vessel-2"}, Available: true}},
+		Vessels:       []domain.MissionTargetVesselCandidateV2{{ID: "vessel-1", Available: true}, {ID: "vessel-2", Available: true}, {ID: "vessel-locked", Available: false}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection.Provider != "openai" || len(selection.TargetIDs) != 2 || selection.TargetIDs[0] != "vessel-1" || len(selection.Attempts) != 1 {
+		t.Fatalf("unexpected target selection: %#v", selection)
+	}
+}

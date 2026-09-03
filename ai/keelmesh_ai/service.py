@@ -170,6 +170,43 @@ class MissionOptionsRequest(BaseModel):
     follow_contact: SurfaceContact | None = None
 
 
+class MissionTargetGroup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    code: str
+    name: str
+    color_name: str
+    member_ids: list[str] = Field(min_length=1, max_length=48)
+    formation: str
+    available: bool
+
+
+class MissionTargetVessel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    name: str
+    callsign: str
+    designation: str
+    class_: str = Field(alias="class")
+    group_id: str = ""
+    group_code: str = ""
+    group_name: str = ""
+    group_color_name: str = ""
+    position: tuple[float, float]
+    reserve: float = Field(ge=0, le=1)
+    available: bool
+
+
+class MissionTargetSelectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: int = 2
+    mission_id: str
+    intent: str = Field(min_length=1, max_length=1600)
+    current_target_ids: list[str] = Field(default_factory=list, max_length=48)
+    groups: list[MissionTargetGroup] = Field(default_factory=list, max_length=48)
+    vessels: list[MissionTargetVessel] = Field(default_factory=list, max_length=48)
+
+
 ALLOWED_FORMATIONS = {
     "independent",
     "column",
@@ -598,6 +635,104 @@ def openai_response_text(data: dict[str, Any]) -> str:
                 if isinstance(value, str) and value.strip():
                     return value
     raise ValueError("OpenAI response contained no output_text")
+
+
+def target_selection_format(request: MissionTargetSelectionRequest) -> dict[str, Any]:
+    available = sorted(vessel.id for vessel in request.vessels if vessel.available)
+    if not available:
+        raise ValueError("no available mission targets")
+    return {
+        "name": "keelmesh_target_selection",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["target_ids", "explanation"],
+            "properties": {
+                "target_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 48,
+                    "items": {"type": "string", "enum": available},
+                },
+                "explanation": {"type": "string", "minLength": 1, "maxLength": 320},
+            },
+        },
+    }
+
+
+def parse_target_selection(
+    text: str, request: MissionTargetSelectionRequest
+) -> tuple[list[str], str]:
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE)
+    value = json.loads(cleaned)
+    ids = value.get("target_ids") if isinstance(value, dict) else None
+    explanation = value.get("explanation") if isinstance(value, dict) else None
+    if not isinstance(ids, list) or not ids or not isinstance(explanation, str) or not explanation.strip():
+        raise ValueError("provider returned no valid target selection")
+    available = {vessel.id for vessel in request.vessels if vessel.available}
+    normalized = [str(identifier) for identifier in ids]
+    if len(normalized) != len(set(normalized)) or any(identifier not in available for identifier in normalized):
+        raise ValueError("provider selected an unavailable or duplicate vessel")
+    if re.search(r"\b(?:a|one|this|the)\s+(?:available\s+)?(?:group|team)\b", request.intent, re.I):
+        complete_groups = {
+            tuple(sorted(group.member_ids)) for group in request.groups if group.available
+        }
+        if tuple(sorted(normalized)) not in complete_groups:
+            raise ValueError("provider must select one complete group for a singular group request")
+    return normalized, explanation.strip()[:320]
+
+
+async def openai_target_selection_attempt(
+    request: MissionTargetSelectionRequest,
+) -> tuple[list[str], str, int]:
+    response_format = target_selection_format(request)
+    payload = {
+        "model": STATE.openai_model,
+        "instructions": (
+            "Choose mission targets only from the supplied available fleet. Resolve callsigns, "
+            "designations, group names, codes, and color names from the operator intent. If the "
+            "operator requests a group without naming one, choose exactly one complete available "
+            "operational group using its location, reserve, class mix, and the requested maneuver. "
+            "Explain the concrete choice. Never return unavailable IDs, partial group membership, "
+            "coordinates, routes, policy, or authority."
+        ),
+        "input": json.dumps(request.model_dump(by_alias=True), sort_keys=True)[:20000],
+        "reasoning": {"effort": "none"},
+        "text": {"format": {"type": "json_schema", **response_format}, "verbosity": "low"},
+        "max_output_tokens": 500,
+        "store": False,
+    }
+    headers = {"Authorization": f"Bearer {STATE.openai_key}", "Content-Type": "application/json"}
+    timeout = httpx.Timeout(10.0, connect=4.0, read=10.0, write=4.0, pool=4.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post("https://api.openai.com/v1/responses", headers=headers, json=payload)
+    response.raise_for_status()
+    target_ids, explanation = parse_target_selection(openai_response_text(response.json()), request)
+    return target_ids, explanation, response.status_code
+
+
+def deterministic_target_selection(
+    request: MissionTargetSelectionRequest,
+) -> tuple[list[str], str]:
+    lower = request.intent.lower()
+    groups = sorted((group for group in request.groups if group.available), key=lambda group: group.code)
+    for group in groups:
+        aliases = (group.name.lower(), group.code.lower(), f"{group.color_name} group", f"{group.color_name} team")
+        if any(re.search(rf"\b{re.escape(alias)}\b", lower) for alias in aliases):
+            return list(group.member_ids), f"Resolved {group.code} · {group.name} from the operator wording."
+    vessels = sorted((vessel for vessel in request.vessels if vessel.available), key=lambda vessel: vessel.designation)
+    for vessel in vessels:
+        if vessel.callsign.lower() in lower or vessel.designation.lower() in lower:
+            return [vessel.id], f"Resolved {vessel.name} from the operator wording."
+    if any(phrase in lower for phrase in ("all vessels", "entire fleet", "whole fleet")) and vessels:
+        return [vessel.id for vessel in vessels], f"Selected all {len(vessels)} available vessels."
+    if groups:
+        group = groups[0]
+        return list(group.member_ids), f"Selected the first complete available group, {group.code} · {group.name}."
+    if vessels:
+        return [vessels[0].id], f"Selected the first available vessel, {vessels[0].name}."
+    raise ValueError("no available mission targets")
 
 
 async def openai_mission_attempt(
@@ -1210,6 +1345,62 @@ async def health() -> dict[str, Any]:
 async def fault(command: FaultRequest) -> dict[str, str]:
     setattr(STATE, command.kind, True)
     return {"state": "armed", "kind": command.kind}
+
+
+@app.post("/v1/mission-targets", dependencies=[Depends(require_core)])
+async def mission_targets(request: MissionTargetSelectionRequest) -> dict[str, Any]:
+    attempts: list[dict[str, Any]] = []
+    with TRACER.start_as_current_span("mission.targets") as span:
+        if STATE.provider_mode == "connected" and STATE.openai_key and not STATE.fail_cloud_next:
+            started_iso, started = now(), time.monotonic()
+            try:
+                target_ids, explanation, status = await openai_target_selection_attempt(request)
+                attempts.append(
+                    {
+                        "provider": "openai",
+                        "model": STATE.openai_model,
+                        "state": "accepted",
+                        "started_at": started_iso,
+                        "latency_ms": int((time.monotonic() - started) * 1000),
+                        "status_code": status,
+                    }
+                )
+                span.set_attribute("provider.selected", "openai")
+                span.set_attribute("mission.target_count", len(target_ids))
+                return {
+                    "target_ids": target_ids,
+                    "summary": f"OpenAI selected the mission roster: {explanation}",
+                    "provider": "openai",
+                    "model": STATE.openai_model,
+                    "attempts": attempts,
+                }
+            except Exception as exc:
+                error_code = type(exc).__name__
+                if isinstance(exc, httpx.HTTPStatusError):
+                    error_code = f"HTTP_{exc.response.status_code}:{exc.response.text[:140]}"
+                attempts.append(
+                    {
+                        "provider": "openai",
+                        "model": STATE.openai_model,
+                        "state": "failed",
+                        "started_at": started_iso,
+                        "latency_ms": int((time.monotonic() - started) * 1000),
+                        "error_code": error_code,
+                        "error_detail": str(exc)[:180],
+                    }
+                )
+        elif STATE.fail_cloud_next:
+            STATE.fail_cloud_next = False
+        target_ids, explanation = deterministic_target_selection(request)
+        span.set_attribute("provider.selected", "deterministic")
+        span.set_attribute("mission.target_count", len(target_ids))
+        return {
+            "target_ids": target_ids,
+            "summary": f"AI providers were unavailable; deterministic target fallback: {explanation}",
+            "provider": "deterministic",
+            "model": "keelmesh-target-resolver-v1",
+            "attempts": attempts,
+        }
 
 
 @app.post("/v1/mission-options", dependencies=[Depends(require_core)])

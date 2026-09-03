@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -170,7 +171,31 @@ func (s *Server) compileV2(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	v, err := s.fleetops.Compile(r.PathValue("id"), req)
+	missionID := r.PathValue("id")
+	planningMode := req.PlanningMode
+	if planningMode == "" {
+		planningMode = "ai_assisted"
+	}
+	if planningMode == "ai_assisted" && len(req.TargetIDs) == 0 {
+		if selectionContext, contextErr := s.fleetops.TargetSelectionContext(missionID, req.Text); contextErr == nil && len(selectionContext.CurrentTargetIDs) == 0 {
+			var selection domain.MissionTargetSelectionV2
+			var selectionErr error
+			if s.agent != nil {
+				selection, selectionErr = s.agent.SelectMissionTargets(r.Context(), selectionContext)
+			} else {
+				selectionErr = fmt.Errorf("agent unavailable")
+			}
+			if selectionErr != nil {
+				s.logger.Warn("mission target selector degraded to deterministic fallback", "error", selectionErr)
+				selection, selectionErr = s.fleetops.DeterministicTargetSelection(missionID, req.Text)
+			}
+			if selectionErr == nil {
+				req.TargetIDs = selection.TargetIDs
+				req.TargetSelection = &selection
+			}
+		}
+	}
+	v, err := s.fleetops.Compile(missionID, req)
 	if err == nil {
 		manual := v.PlanningMode == "manual"
 		reason := "AI service unavailable"

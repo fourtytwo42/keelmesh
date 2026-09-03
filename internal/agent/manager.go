@@ -161,6 +161,149 @@ func (m *Manager) MissionOptions(ctx context.Context, planning domain.MissionPla
 	return advisor, nil
 }
 
+// SelectMissionTargets asks the model to choose only from the bounded fleet
+// projection supplied by core. The result is advisory until fleetops validates
+// availability, conflicts, and mission state during compilation.
+func (m *Manager) SelectMissionTargets(ctx context.Context, selectionContext domain.MissionTargetSelectionContextV2) (domain.MissionTargetSelectionV2, error) {
+	selection, serviceErr := m.missionTargetSelectionService(ctx, selectionContext)
+	err := serviceErr
+	if serviceErr != nil {
+		selection, err = m.openAITargetSelection(ctx, selectionContext)
+	}
+	if err != nil {
+		return domain.MissionTargetSelectionV2{}, problem("AI_UNAVAILABLE", fmt.Sprintf("AI service: %v; direct provider: %v", serviceErr, err))
+	}
+	m.mu.Lock()
+	m.snapshot.Provider.Attempts = append([]domain.ProviderAttemptV1(nil), selection.Attempts...)
+	m.snapshot.Provider.Selected = selection.Provider + ":" + selection.Model
+	m.snapshot.StateVersion++
+	m.snapshot.Summary = "Mission target selection completed; deterministic fleet validation remains authoritative."
+	m.broadcastLocked()
+	m.mu.Unlock()
+	return selection, nil
+}
+
+func (m *Manager) missionTargetSelectionService(ctx context.Context, selectionContext domain.MissionTargetSelectionContextV2) (domain.MissionTargetSelectionV2, error) {
+	body, err := json.Marshal(selectionContext)
+	if err != nil {
+		return domain.MissionTargetSelectionV2{}, problem("TOOL_ARGUMENT_INVALID", err.Error())
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.AIURL+"/v1/mission-targets", bytes.NewReader(body))
+	if err != nil {
+		return domain.MissionTargetSelectionV2{}, problem("AI_UNAVAILABLE", err.Error())
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if token := readSecret(m.cfg.CoreTokenFile); token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := m.http.Do(httpReq)
+	if err != nil {
+		return domain.MissionTargetSelectionV2{}, problem("AI_UNAVAILABLE", err.Error())
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 128<<10))
+	if resp.StatusCode != http.StatusOK {
+		return domain.MissionTargetSelectionV2{}, problem("AI_UNAVAILABLE", fmt.Sprintf("mission target selector returned %d: %.600s", resp.StatusCode, raw))
+	}
+	var selection domain.MissionTargetSelectionV2
+	if err := json.Unmarshal(raw, &selection); err != nil || len(selection.TargetIDs) == 0 {
+		return domain.MissionTargetSelectionV2{}, problem("MODEL_SCHEMA_INVALID", "mission target selector returned no valid targets")
+	}
+	return selection, nil
+}
+
+func (m *Manager) openAITargetSelection(ctx context.Context, selectionContext domain.MissionTargetSelectionContextV2) (domain.MissionTargetSelectionV2, error) {
+	key := readSecret(m.cfg.OpenAIKeyFile)
+	if key == "" {
+		return domain.MissionTargetSelectionV2{}, problem("AI_UNAVAILABLE", "node OpenAI credential is not configured")
+	}
+	allowed := map[string]bool{}
+	for _, vessel := range selectionContext.Vessels {
+		if vessel.Available {
+			allowed[vessel.ID] = true
+		}
+	}
+	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"target_ids", "explanation"}, "properties": map[string]any{
+		"target_ids":  map[string]any{"type": "array", "minItems": 1, "maxItems": 48, "items": map[string]any{"type": "string", "enum": mapKeys(allowed)}},
+		"explanation": map[string]any{"type": "string", "minLength": 1, "maxLength": 320},
+	}}
+	contextJSON, _ := json.Marshal(selectionContext)
+	payload := map[string]any{
+		"model":        m.cfg.OpenAIModel,
+		"instructions": "Choose the mission targets from the supplied available fleet only. Resolve vessel callsigns/designations and group names/codes/colors from the operator intent. If the operator asks for a group without naming one, choose exactly one complete available operational group using position, reserve, class mix, and mission intent, and explain the choice. If they ask for the fleet, choose all available vessels. Never return unavailable IDs, partial membership for a requested group, coordinates, routes, policy, or authority. Return only the schema.",
+		"input":        string(contextJSON), "reasoning": map[string]any{"effort": "none"},
+		"text":              map[string]any{"verbosity": "low", "format": map[string]any{"type": "json_schema", "name": "keelmesh_target_selection", "strict": true, "schema": schema}},
+		"max_output_tokens": 500, "store": false,
+	}
+	body, _ := json.Marshal(payload)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.OpenAIURL, bytes.NewReader(body))
+	if err != nil {
+		return domain.MissionTargetSelectionV2{}, problem("AI_UNAVAILABLE", err.Error())
+	}
+	request.Header.Set("Authorization", "Bearer "+key)
+	request.Header.Set("Content-Type", "application/json")
+	started := time.Now().UTC()
+	response, err := m.http.Do(request)
+	latency := time.Since(started).Milliseconds()
+	if err != nil {
+		return domain.MissionTargetSelectionV2{}, problem("AI_UNAVAILABLE", err.Error())
+	}
+	defer response.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(response.Body, 128<<10))
+	if response.StatusCode != http.StatusOK {
+		return domain.MissionTargetSelectionV2{}, problem("AI_UNAVAILABLE", fmt.Sprintf("OpenAI target selector returned %d", response.StatusCode))
+	}
+	output := responseOutputText(raw)
+	var proposed struct {
+		TargetIDs   []string `json:"target_ids"`
+		Explanation string   `json:"explanation"`
+	}
+	if output == "" || json.Unmarshal([]byte(output), &proposed) != nil || len(proposed.TargetIDs) == 0 || strings.TrimSpace(proposed.Explanation) == "" {
+		return domain.MissionTargetSelectionV2{}, problem("MODEL_SCHEMA_INVALID", "OpenAI returned no valid target selection")
+	}
+	seen := map[string]bool{}
+	for _, id := range proposed.TargetIDs {
+		if !allowed[id] || seen[id] {
+			return domain.MissionTargetSelectionV2{}, problem("MODEL_SCHEMA_INVALID", "OpenAI selected an unavailable or duplicate vessel")
+		}
+		seen[id] = true
+	}
+	attempt := domain.ProviderAttemptV1{Provider: "openai", Model: m.cfg.OpenAIModel, State: "accepted", StartedAt: started, LatencyMS: latency, StatusCode: response.StatusCode}
+	result := domain.MissionTargetSelectionV2{TargetIDs: proposed.TargetIDs, Summary: "OpenAI selected the mission roster: " + strings.TrimSpace(proposed.Explanation), Provider: "openai", Model: m.cfg.OpenAIModel, Attempts: []domain.ProviderAttemptV1{attempt}}
+	return result, nil
+}
+
+func mapKeys(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func responseOutputText(raw []byte) string {
+	var wire struct {
+		Output []struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"output"`
+	}
+	if json.Unmarshal(raw, &wire) != nil {
+		return ""
+	}
+	for _, item := range wire.Output {
+		for _, content := range item.Content {
+			if content.Type == "output_text" && strings.TrimSpace(content.Text) != "" {
+				return content.Text
+			}
+		}
+	}
+	return ""
+}
+
 func (m *Manager) missionOptionsService(ctx context.Context, planning domain.MissionPlanningContextV2) (domain.MissionAdvisorV2, error) {
 	body, err := json.Marshal(planning)
 	if err != nil {

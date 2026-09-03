@@ -246,7 +246,7 @@ export function FleetWorkspace() {
   const selectedKey = useMemo(() => [...selected].sort().join(","), [selected]);
   const missionTargetKey = useMemo(
     () => [...(mission?.target_ids ?? [])].sort().join(","),
-    [mission?.target_snapshot_hash, mission?.id],
+    [mission?.target_snapshot_hash, mission?.id, mission?.target_ids],
   );
   const pendingDeleteMission =
     fleet?.missions.find((item) => item.id === pendingDeleteID) ?? null;
@@ -259,7 +259,7 @@ export function FleetWorkspace() {
     const marker = `${mission.id}:${missionTargetKey}`;
     missionSelectionSync.current = marker;
     setSelected(new Set(mission.target_ids));
-  }, [plannerVisible, mission?.id]);
+  }, [plannerVisible, mission?.id, missionTargetKey]);
   useEffect(() => {
     if (!plannerVisible || !mission) return;
     const marker = `${mission.id}:${missionTargetKey}`;
