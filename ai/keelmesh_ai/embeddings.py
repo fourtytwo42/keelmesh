@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
+from typing import cast
 
 import numpy as np
-import onnxruntime as ort
-from tokenizers import Tokenizer
+import onnxruntime as ort  # type: ignore[import-untyped]
+from tokenizers import Tokenizer  # type: ignore[import-untyped]
 
 
 MODEL_VERSION = "all-MiniLM-L6-v2-onnx-v1"
@@ -46,4 +47,4 @@ class MiniLMEmbedder:
         pooled /= np.clip(np.linalg.norm(pooled, axis=1, keepdims=True), 1e-12, None)
         if pooled.shape[1] != 384:
             raise RuntimeError(f"unexpected embedding width {pooled.shape[1]}")
-        return pooled.astype(np.float32).tolist()
+        return cast(list[list[float]], pooled.astype(np.float32).tolist())
