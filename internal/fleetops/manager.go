@@ -3287,6 +3287,13 @@ func (m *Manager) advanceEnergy(vessel domain.VesselProfileV2, speed float64, mi
 	profile := energyProfile(vessel)
 	solar := profile.solarPeakKW * 1000 * solarFactor(missionTick)
 	load := profile.baseW + profile.propulsionWPerMPS3*math.Pow(speed, 3)
+	// Solar extends underway range, but propulsion always consumes stored
+	// energy. Without this bound the deliberately generous demo solar arrays
+	// can exceed cruise load and pin every moving vessel at 100% all day. A
+	// stationary vessel may still use the full array to recharge quickly.
+	if speed > .05 {
+		solar = math.Min(solar, load*.65)
+	}
 	delta := (solar - load) * seconds / 3_600_000 / profile.batteryKWH
 	return math.Max(0, math.Min(1, vessel.Telemetry.Reserve+delta))
 }

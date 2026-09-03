@@ -1611,8 +1611,16 @@ func TestNominalRangeAndDaylightSolarRecharge(t *testing.T) {
 		t.Fatalf("full-sun stationary recharge too slow: %.3f", charged)
 	}
 	cruising := m.advanceEnergy(kestrel, nominalCruiseMPS, noonTick, 3600)
-	if cruising <= kestrel.Telemetry.Reserve {
-		t.Fatalf("full-sun cruise should extend range, reserve %.3f", cruising)
+	if cruising >= kestrel.Telemetry.Reserve {
+		t.Fatalf("full-sun cruise must consume stored energy, reserve %.3f", cruising)
+	}
+	nightCruising := m.advanceEnergy(kestrel, nominalCruiseMPS, int64(16*60*60), 3600)
+	if cruising <= nightCruising {
+		t.Fatalf("daylight should extend underway range: daylight %.3f night %.3f", cruising, nightCruising)
+	}
+	fast := m.advanceEnergy(kestrel, nominalCruiseMPS*1.5, noonTick, 3600)
+	if fast >= cruising {
+		t.Fatalf("higher speed should consume more stored energy: fast %.3f cruise %.3f", fast, cruising)
 	}
 
 	full := kestrel
