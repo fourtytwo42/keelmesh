@@ -14,7 +14,7 @@ test.describe("touch-first responsive workspace", () => {
     await expect(page.getByRole("button", { name: "Mission", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Engineer", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Cutaway", exact: true })).toBeVisible();
-    const fleetWindow = page.getByRole("region", { name: "Fleet / Groups" });
+    const fleetWindow = page.getByRole("region", { name: "Fleet" });
     await expect(fleetWindow).toBeVisible();
     const bounds = await fleetWindow.boundingBox();
     expect(bounds).not.toBeNull();
@@ -75,7 +75,7 @@ test.describe("touch-first responsive workspace", () => {
   test("phone navigation toggles a viewport-safe planner", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "New mission" }).click();
-    const planner = page.getByRole("region", { name: "Mission Canvas" });
+    const planner = page.getByRole("region", { name: "Mission" });
     await expect(planner).toBeVisible();
     const bounds = await planner.boundingBox();
     expect(bounds).not.toBeNull();
@@ -86,7 +86,7 @@ test.describe("touch-first responsive workspace", () => {
     await planner.getByRole("button", { name: "Minimize" }).click();
     await expect(planner).toHaveCount(0);
     await page.getByRole("button", { name: "Mission", exact: true }).click();
-    await expect(page.getByRole("region", { name: "Mission Canvas" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Mission" })).toBeVisible();
   });
 });
 
@@ -97,7 +97,7 @@ test("tablet and desktop preserve bounded docking and keyboard access", async ({
   ]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
-    const fleetWindow = page.getByRole("region", { name: "Fleet / Groups" });
+    const fleetWindow = page.getByRole("region", { name: "Fleet" });
     await expect(fleetWindow).toBeVisible();
     const bounds = await fleetWindow.boundingBox();
     expect(bounds).not.toBeNull();
