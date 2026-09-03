@@ -683,10 +683,16 @@ func spaHandler(web fs.FS) http.Handler {
 			path = "index.html"
 		}
 		if _, err := fs.Stat(web, path); err != nil {
+			w.Header().Set("Cache-Control", "no-store")
 			r2 := r.Clone(r.Context())
 			r2.URL.Path = "/"
 			files.ServeHTTP(w, r2)
 			return
+		}
+		if path == "index.html" {
+			w.Header().Set("Cache-Control", "no-store")
+		} else if strings.HasPrefix(path, "assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		}
 		files.ServeHTTP(w, r)
 	})
