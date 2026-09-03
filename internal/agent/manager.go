@@ -183,6 +183,143 @@ func (m *Manager) SelectMissionTargets(ctx context.Context, selectionContext dom
 	return selection, nil
 }
 
+// InterpretMissionCommand resolves natural language into bounded planner
+// variables before route compilation. It cannot supply coordinates or carry
+// authority; core validates every returned enum, contact ID, and limit.
+func (m *Manager) InterpretMissionCommand(ctx context.Context, commandContext domain.MissionCommandInterpretationContextV2) (domain.MissionCommandInterpretationV2, error) {
+	interpretation, serviceErr := m.missionCommandService(ctx, commandContext)
+	err := serviceErr
+	if serviceErr != nil {
+		interpretation, err = m.openAIMissionCommand(ctx, commandContext)
+	}
+	if err != nil {
+		return domain.MissionCommandInterpretationV2{}, problem("AI_UNAVAILABLE", fmt.Sprintf("AI service: %v; direct provider: %v", serviceErr, err))
+	}
+	if err := validateMissionCommand(interpretation, commandContext); err != nil {
+		return domain.MissionCommandInterpretationV2{}, err
+	}
+	m.mu.Lock()
+	m.snapshot.Provider.Attempts = append([]domain.ProviderAttemptV1(nil), interpretation.Attempts...)
+	m.snapshot.Provider.Selected = interpretation.Provider + ":" + interpretation.Model
+	m.snapshot.StateVersion++
+	m.snapshot.Summary = "Natural-language intent was compiled into bounded planner variables; deterministic policy and exact approval remain authoritative."
+	m.broadcastLocked()
+	m.mu.Unlock()
+	return interpretation, nil
+}
+
+func (m *Manager) missionCommandService(ctx context.Context, commandContext domain.MissionCommandInterpretationContextV2) (domain.MissionCommandInterpretationV2, error) {
+	body, err := json.Marshal(commandContext)
+	if err != nil {
+		return domain.MissionCommandInterpretationV2{}, problem("TOOL_ARGUMENT_INVALID", err.Error())
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.AIURL+"/v1/mission-command", bytes.NewReader(body))
+	if err != nil {
+		return domain.MissionCommandInterpretationV2{}, problem("AI_UNAVAILABLE", err.Error())
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token := readSecret(m.cfg.CoreTokenFile); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := m.http.Do(req)
+	if err != nil {
+		return domain.MissionCommandInterpretationV2{}, problem("AI_UNAVAILABLE", err.Error())
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 128<<10))
+	if resp.StatusCode != http.StatusOK {
+		return domain.MissionCommandInterpretationV2{}, problem("AI_UNAVAILABLE", fmt.Sprintf("mission command interpreter returned %d: %.600s", resp.StatusCode, raw))
+	}
+	var result domain.MissionCommandInterpretationV2
+	if json.Unmarshal(raw, &result) != nil {
+		return domain.MissionCommandInterpretationV2{}, problem("MODEL_SCHEMA_INVALID", "mission command interpreter returned invalid JSON")
+	}
+	return result, nil
+}
+
+func (m *Manager) openAIMissionCommand(ctx context.Context, commandContext domain.MissionCommandInterpretationContextV2) (domain.MissionCommandInterpretationV2, error) {
+	key := readSecret(m.cfg.OpenAIKeyFile)
+	if key == "" {
+		return domain.MissionCommandInterpretationV2{}, problem("AI_UNAVAILABLE", "node OpenAI credential is not configured")
+	}
+	contactIDs := []string{""}
+	for _, contact := range commandContext.SurfaceContacts {
+		contactIDs = append(contactIDs, contact.ID)
+	}
+	schema := missionCommandSchema(contactIDs)
+	contextJSON, _ := json.Marshal(commandContext)
+	payload := map[string]any{
+		"model":        m.cfg.OpenAIModel,
+		"instructions": missionCommandInstructions(),
+		"input":        string(contextJSON), "reasoning": map[string]any{"effort": "none"},
+		"text":              map[string]any{"verbosity": "low", "format": map[string]any{"type": "json_schema", "name": "keelmesh_mission_command", "strict": true, "schema": schema}},
+		"max_output_tokens": 700, "store": false,
+	}
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.OpenAIURL, bytes.NewReader(body))
+	if err != nil {
+		return domain.MissionCommandInterpretationV2{}, problem("AI_UNAVAILABLE", err.Error())
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	started := time.Now().UTC()
+	resp, err := m.http.Do(req)
+	latency := time.Since(started).Milliseconds()
+	if err != nil {
+		return domain.MissionCommandInterpretationV2{}, problem("AI_UNAVAILABLE", err.Error())
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 128<<10))
+	if resp.StatusCode != http.StatusOK {
+		return domain.MissionCommandInterpretationV2{}, problem("AI_UNAVAILABLE", fmt.Sprintf("OpenAI mission command interpreter returned %d", resp.StatusCode))
+	}
+	var result domain.MissionCommandInterpretationV2
+	if output := responseOutputText(raw); output == "" || json.Unmarshal([]byte(output), &result) != nil {
+		return domain.MissionCommandInterpretationV2{}, problem("MODEL_SCHEMA_INVALID", "OpenAI returned no valid mission command")
+	}
+	result.Provider, result.Model = "openai", m.cfg.OpenAIModel
+	result.Attempts = []domain.ProviderAttemptV1{{Provider: "openai", Model: m.cfg.OpenAIModel, State: "accepted", StartedAt: started, LatencyMS: latency, StatusCode: resp.StatusCode}}
+	return result, nil
+}
+
+func missionCommandInstructions() string {
+	return "Interpret the operator's maritime-simulation command into typed planner variables using only supplied targets and surface contacts. A named contact may be resolved by name, callsign, boat_id, class, activity, or unique color. Follow, shadow, trail, intercept, approach, go to, observe, orbit, encircle, and surround a contact must return its exact contact_id and dynamic_target=true; never collapse a contact objective into fixed coordinates. Use contact_behavior follow, intercept, approach, observe, or surround. Use 0 for an unspecified numeric limit. Choose ring for a multi-vessel surround; independent for one target. Return no route, coordinates, authority, or invented identity."
+}
+
+func missionCommandSchema(contactIDs []string) map[string]any {
+	return map[string]any{"type": "object", "additionalProperties": false, "required": []string{"guidance_kind", "contact_id", "contact_behavior", "dynamic_target", "formation", "standoff_m", "minimum_reserve", "maximum_speed_mps", "hold_at_end", "summary"}, "properties": map[string]any{
+		"guidance_kind":     map[string]any{"type": "string", "enum": []string{"transit", "patrol", "search", "follow_contact", "approach_contact", "orbit_contact", "hold", "waypoints"}},
+		"contact_id":        map[string]any{"type": "string", "enum": contactIDs},
+		"contact_behavior":  map[string]any{"type": "string", "enum": []string{"none", "follow", "intercept", "approach", "observe", "surround"}},
+		"dynamic_target":    map[string]any{"type": "boolean"},
+		"formation":         map[string]any{"type": "string", "enum": []string{"independent", "column", "line_abreast", "wedge", "echelon_left", "echelon_right", "parallel_columns", "dispersed_screen", "ring", "search_grid"}},
+		"standoff_m":        map[string]any{"type": "number", "minimum": 0, "maximum": 5000},
+		"minimum_reserve":   map[string]any{"type": "number", "minimum": 0, "maximum": 1},
+		"maximum_speed_mps": map[string]any{"type": "number", "minimum": 0, "maximum": 10},
+		"hold_at_end":       map[string]any{"type": "boolean"},
+		"summary":           map[string]any{"type": "string", "minLength": 1, "maxLength": 480},
+	}}
+}
+
+func validateMissionCommand(value domain.MissionCommandInterpretationV2, context domain.MissionCommandInterpretationContextV2) error {
+	allowedGuidance := map[string]bool{"transit": true, "patrol": true, "search": true, "follow_contact": true, "approach_contact": true, "orbit_contact": true, "hold": true, "waypoints": true}
+	allowedBehavior := map[string]bool{"none": true, "follow": true, "intercept": true, "approach": true, "observe": true, "surround": true}
+	allowedContact := value.ContactID == ""
+	for _, contact := range context.SurfaceContacts {
+		allowedContact = allowedContact || contact.ID == value.ContactID
+	}
+	if !allowedGuidance[value.GuidanceKind] || !allowedBehavior[value.ContactBehavior] || !allowedContact || strings.TrimSpace(value.Summary) == "" {
+		return problem("MODEL_SCHEMA_INVALID", "mission command contains unsupported values")
+	}
+	if value.ContactID != "" && (!value.DynamicTarget || value.ContactBehavior == "none") {
+		return problem("MODEL_SCHEMA_INVALID", "contact objectives must remain dynamic and identify a behavior")
+	}
+	if value.ContactID == "" && value.DynamicTarget {
+		return problem("MODEL_SCHEMA_INVALID", "dynamic target requires an exact supplied contact ID")
+	}
+	return nil
+}
+
 func (m *Manager) missionTargetSelectionService(ctx context.Context, selectionContext domain.MissionTargetSelectionContextV2) (domain.MissionTargetSelectionV2, error) {
 	body, err := json.Marshal(selectionContext)
 	if err != nil {

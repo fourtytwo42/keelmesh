@@ -727,6 +727,8 @@ export type MissionWorkspaceV2 = {
   formation: string;
   loop: boolean;
   follow_contact_id?: string;
+  contact_behavior?: string;
+  contact_standoff_m?: number;
   plan_ids: string[];
   authorized_plan_id?: string;
   conversation: MissionChatMessageV2[];
@@ -815,12 +817,29 @@ export type CommandDraftV2 = {
   formation_preference: string;
   guidance_kind: string;
   follow_contact_id?: string;
+  contact_behavior?: string;
+  contact_standoff_m?: number;
   planning_mode: "manual" | "ai_assisted";
   waypoints: Point[];
   geometry_source?: string;
   resolution_notes?: string[];
   target_selection?: {
     target_ids: string[];
+    summary: string;
+    provider: string;
+    model: string;
+    attempts: ProviderAttempt[];
+  };
+  command_interpretation?: {
+    guidance_kind: string;
+    contact_id?: string;
+    contact_behavior: string;
+    dynamic_target: boolean;
+    formation: string;
+    standoff_m: number;
+    minimum_reserve: number;
+    maximum_speed_mps: number;
+    hold_at_end: boolean;
     summary: string;
     provider: string;
     model: string;
@@ -869,6 +888,8 @@ export type FleetPlanV2 = {
   advisor_model?: string;
   maneuvers: string[];
   follow_contact_id?: string;
+  contact_behavior?: string;
+  contact_standoff_m?: number;
   continuous_tracking?: boolean;
   replan_interval_seconds?: number;
   prediction_horizon_seconds?: number;

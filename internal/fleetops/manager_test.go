@@ -1328,6 +1328,37 @@ func TestFollowSurfaceContactCompilesPredictedTrack(t *testing.T) {
 	}
 }
 
+func TestAIInterpretedSurroundCompilesWithoutManualGeometry(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation: Mutation{RequestID: "surround-create", IdempotencyKey: "surround-create", ExpectedVersion: snapshot.FleetVersion},
+		Name:     "Safe Haven Watch", TargetIDs: snapshot.Groups[0].MemberIDs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	interpretation := domain.MissionCommandInterpretationV2{
+		GuidanceKind: "orbit_contact", ContactID: "surface-16", ContactBehavior: "surround",
+		DynamicTarget: true, Formation: "ring", StandoffM: 120, HoldAtEnd: true,
+		Summary: "OpenAI bound Safe Haven to the live tanker contact.", Provider: "openai", Model: "gpt-5.6-luna",
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation: Mutation{RequestID: "surround-compile", IdempotencyKey: "surround-compile", ExpectedVersion: mission.Version},
+		Text:     "approach and surround Safe Haven", PlanningMode: "ai_assisted", CommandInterpretation: &interpretation,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(draft.Ambiguities) != 0 || draft.FollowContactID != "surface-16" || draft.ContactBehavior != "surround" || draft.FormationPreference != "ring" || len(draft.Waypoints) == 0 {
+		t.Fatalf("AI semantic contact objective did not compile: %#v", draft)
+	}
+	context, err := m.PlanningContext(draft.ID)
+	if err != nil || context.FollowContact == nil || context.FollowContact.ID != "surface-16" {
+		t.Fatalf("live contact identity was not retained: %#v, %v", context.FollowContact, err)
+	}
+}
+
 func TestControlledFleetCanOvertakeAndPlanAgainstFastestSurfaceContact(t *testing.T) {
 	m := New("", slog.Default())
 	fastestContact := 0.0

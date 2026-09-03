@@ -103,3 +103,27 @@ func TestSelectMissionTargetsUsesBoundedAvailableFleet(t *testing.T) {
 		t.Fatalf("unexpected target selection: %#v", selection)
 	}
 }
+
+func TestInterpretMissionCommandBindsDynamicSurfaceContact(t *testing.T) {
+	keyFile := filepath.Join(t.TempDir(), "openai-key")
+	if err := os.WriteFile(keyFile, []byte("test-key\n"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"guidance_kind\":\"orbit_contact\",\"contact_id\":\"surface-16\",\"contact_behavior\":\"surround\",\"dynamic_target\":true,\"formation\":\"ring\",\"standoff_m\":120,\"minimum_reserve\":0,\"maximum_speed_mps\":0,\"hold_at_end\":true,\"summary\":\"Approach and surround the identified tanker.\"}"}]}]}`))
+	}))
+	defer provider.Close()
+	manager := NewManager(Config{AIURL: "http://127.0.0.1:1", OpenAIKeyFile: keyFile, OpenAIModel: "gpt-5.6-luna", OpenAIURL: provider.URL}, slog.Default())
+	result, err := manager.InterpretMissionCommand(context.Background(), domain.MissionCommandInterpretationContextV2{
+		SchemaVersion: 2, MissionID: "mission-1", Intent: "approach and surround Safe Haven",
+		TargetIDs: []string{"vessel-1", "vessel-2"}, CurrentFormation: "column",
+		SurfaceContacts: []domain.SurfaceContactV2{{ID: "surface-16", Name: "MT Safe Haven", Callsign: "SAFE HAVEN", BoatID: "NPC-4116"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ContactID != "surface-16" || !result.DynamicTarget || result.ContactBehavior != "surround" || result.Formation != "ring" || result.Provider != "openai" {
+		t.Fatalf("unexpected semantic interpretation: %#v", result)
+	}
+}

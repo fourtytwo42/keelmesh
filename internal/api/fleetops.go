@@ -195,6 +195,15 @@ func (s *Server) compileV2(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if planningMode == "ai_assisted" && s.agent != nil {
+		if commandContext, contextErr := s.fleetops.CommandInterpretationContext(missionID, req.Text, req.TargetIDs); contextErr == nil {
+			if interpretation, interpretationErr := s.agent.InterpretMissionCommand(r.Context(), commandContext); interpretationErr == nil {
+				req.CommandInterpretation = &interpretation
+			} else {
+				s.logger.Warn("mission command interpreter degraded to deterministic parsing", "error", interpretationErr)
+			}
+		}
+	}
 	v, err := s.fleetops.Compile(missionID, req)
 	if err == nil {
 		manual := v.PlanningMode == "manual"

@@ -107,14 +107,15 @@ type GeometryRequest struct {
 }
 type CompileRequest struct {
 	Mutation
-	Text            string                           `json:"text"`
-	TargetIDs       []string                         `json:"target_ids"`
-	GuidanceKind    string                           `json:"guidance_kind"`
-	FollowContactID string                           `json:"follow_contact_id"`
-	PlanningMode    string                           `json:"planning_mode"`
-	Waypoints       []domain.GeoPointV2              `json:"waypoints"`
-	Formation       string                           `json:"formation"`
-	TargetSelection *domain.MissionTargetSelectionV2 `json:"-"`
+	Text                  string                                 `json:"text"`
+	TargetIDs             []string                               `json:"target_ids"`
+	GuidanceKind          string                                 `json:"guidance_kind"`
+	FollowContactID       string                                 `json:"follow_contact_id"`
+	PlanningMode          string                                 `json:"planning_mode"`
+	Waypoints             []domain.GeoPointV2                    `json:"waypoints"`
+	Formation             string                                 `json:"formation"`
+	TargetSelection       *domain.MissionTargetSelectionV2       `json:"-"`
+	CommandInterpretation *domain.MissionCommandInterpretationV2 `json:"-"`
 }
 type PlansRequest struct {
 	Mutation
@@ -1343,6 +1344,25 @@ func (m *Manager) TargetSelectionContext(missionID, intent string) (domain.Missi
 	return selectionContext, nil
 }
 
+// CommandInterpretationContext returns the bounded world vocabulary the
+// language model may resolve before deterministic route compilation.
+func (m *Manager) CommandInterpretationContext(missionID, intent string, targetIDs []string) (domain.MissionCommandInterpretationContextV2, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	mission, ok := m.missions[missionID]
+	if !ok {
+		return domain.MissionCommandInterpretationContextV2{}, &Error{"MISSION_NOT_FOUND", "Mission not found."}
+	}
+	if len(targetIDs) == 0 {
+		targetIDs = mission.TargetIDs
+	}
+	return domain.MissionCommandInterpretationContextV2{
+		SchemaVersion: 2, MissionID: missionID, Intent: intent,
+		TargetIDs: cloneStrings(targetIDs), CurrentFormation: mission.Formation,
+		Constraints: mission.Constraints, SurfaceContacts: m.surfaceContactsLocked(),
+	}, nil
+}
+
 // DeterministicTargetSelection is the explicit degraded-mode fallback used
 // when an AI provider cannot select a roster.
 func (m *Manager) DeterministicTargetSelection(missionID, intent string) (domain.MissionTargetSelectionV2, error) {
@@ -1473,6 +1493,18 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	if req.TargetSelection != nil {
 		notes = append(notes, req.TargetSelection.Summary)
 	}
+	if interpretation := req.CommandInterpretation; interpretation != nil {
+		notes = append(notes, interpretation.Summary)
+		if req.GuidanceKind == "" {
+			req.GuidanceKind = interpretation.GuidanceKind
+		}
+		if req.FollowContactID == "" {
+			req.FollowContactID = interpretation.ContactID
+		}
+		if req.Formation == "" {
+			req.Formation = interpretation.Formation
+		}
+	}
 	formation := req.Formation
 	if formation == "" {
 		formation = inferFormation(req.Text, mission.Formation)
@@ -1498,6 +1530,7 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 		}
 	}
 	followContactID := ""
+	contactBehavior, contactStandoffM := "", 0.0
 	contactSpec, contact, contactFound := surfaceTrafficSpec{}, domain.SurfaceContactV2{}, false
 	if req.FollowContactID != "" {
 		for _, spec := range surfaceTraffic {
@@ -1515,14 +1548,27 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 		contactSpec, contact, contactFound = resolveSurfaceContact(req.Text, time.UnixMilli(m.simulationEpochMS+m.simTickMS).UTC())
 	}
 	if contactFound {
-		wps = make([]domain.GeoPointV2, 0, 12)
-		for seconds := 60.0; seconds <= 720; seconds += 60 {
-			wps = append(wps, surfaceContactAt(contactSpec, contact.UpdatedAt, seconds).Position)
+		behavior := inferContactBehavior(req.Text)
+		standoffM := math.Max(80, mission.Constraints.MinimumObjectSeparationM+30)
+		if req.CommandInterpretation != nil {
+			if req.CommandInterpretation.ContactBehavior != "none" && req.CommandInterpretation.ContactBehavior != "" {
+				behavior = req.CommandInterpretation.ContactBehavior
+			}
+			if req.CommandInterpretation.StandoffM > 0 {
+				standoffM = math.Max(standoffM, req.CommandInterpretation.StandoffM)
+			}
 		}
-		kind = "follow_contact"
+		wps = contactObjectiveWaypoints(contactSpec, contact, behavior, standoffM, len(targets), 720)
+		if kind == "" || kind == "waypoints" {
+			kind = "follow_contact"
+		}
+		if behavior == "surround" && len(targets) > 1 {
+			formation = "ring"
+		}
 		followContactID = contact.ID
+		contactBehavior, contactStandoffM = behavior, standoffM
 		geometrySource = "intent:surface-contact:" + contact.ID
-		notes = append(notes, fmt.Sprintf("Resolved %s (%s, %s contact) and generated a twelve-minute predicted track. Fleet routes remain policy-validated and may be revised as the simulated contact moves.", contact.Name, contact.BoatID, contact.ColorName))
+		notes = append(notes, fmt.Sprintf("Bound the %s objective to live contact %s (%s, %s contact) with %.0f m stand-off. The route tracks the contact identity and may be revised as it moves.", behavior, contact.Name, contact.BoatID, contact.ColorName, standoffM))
 	}
 	selectedWaypointColor := requestedWaypointColor(req.Text)
 	if selectedWaypointColor != "" {
@@ -1565,7 +1611,30 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 		mission.FollowContactID = followContactID
 		missionChanged = true
 	}
+	if followContactID != "" {
+		if mission.ContactBehavior != contactBehavior || mission.ContactStandoffM != contactStandoffM {
+			mission.ContactBehavior = contactBehavior
+			mission.ContactStandoffM = contactStandoffM
+			missionChanged = true
+		}
+	} else if followContactID == "" && (mission.ContactBehavior != "" || mission.ContactStandoffM != 0) {
+		mission.ContactBehavior = ""
+		mission.ContactStandoffM = 0
+		missionChanged = true
+	}
 	constraints := mission.Constraints
+	if req.CommandInterpretation != nil {
+		if requested := req.CommandInterpretation.MinimumReserve; requested > constraints.MinimumReserve {
+			constraints.MinimumReserve = requested
+			mission.Constraints.MinimumReserve = requested
+			missionChanged = true
+		}
+		if requested := req.CommandInterpretation.MaximumSpeedMPS; requested > 0 && requested < constraints.MaximumSpeedMPS {
+			constraints.MaximumSpeedMPS = requested
+			mission.Constraints.MaximumSpeedMPS = requested
+			missionChanged = true
+		}
+	}
 	if contactFound {
 		// A follow/intercept draft needs enough speed authority to close on the
 		// contact, not merely match it. Cap the draft at the slowest selected
@@ -1610,7 +1679,7 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	if len(wps) == 0 && len(mission.Geometry.IncludedAreas) == 0 {
 		amb = append(amb, "Choose an area or waypoint before route generation.")
 	}
-	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, FollowContactID: followContactID, PlanningMode: planningMode, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, TargetSelection: req.TargetSelection, Ambiguities: amb}
+	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, FollowContactID: followContactID, ContactBehavior: contactBehavior, ContactStandoffM: contactStandoffM, PlanningMode: planningMode, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, TargetSelection: req.TargetSelection, CommandInterpretation: req.CommandInterpretation, Ambiguities: amb}
 	draft.ContentHash = hashWithout(draft)
 	m.drafts[draft.ID] = draft
 	messageID := "message-" + shortHash(req.IdempotencyKey)
@@ -1843,7 +1912,7 @@ func normalizeWaypointColor(color string) string {
 func resolveSurfaceContact(text string, at time.Time) (surfaceTrafficSpec, domain.SurfaceContactV2, bool) {
 	lower := strings.ToLower(text)
 	wantsFollow := false
-	for _, verb := range []string{"follow", "shadow", "trail", "escort", "track", "keep pace with", "stay with"} {
+	for _, verb := range []string{"follow", "shadow", "trail", "escort", "track", "keep pace with", "stay with", "approach", "go to", "intercept", "observe", "orbit", "surround", "encircle"} {
 		if strings.Contains(lower, verb) {
 			wantsFollow = true
 			break
@@ -1868,6 +1937,23 @@ func resolveSurfaceContact(text string, at time.Time) (surfaceTrafficSpec, domai
 		}
 	}
 	return surfaceTrafficSpec{}, domain.SurfaceContactV2{}, false
+}
+
+func inferContactBehavior(text string) string {
+	lower := strings.ToLower(text)
+	if strings.Contains(lower, "surround") || strings.Contains(lower, "encircle") || strings.Contains(lower, "orbit") {
+		return "surround"
+	}
+	if strings.Contains(lower, "intercept") {
+		return "intercept"
+	}
+	if strings.Contains(lower, "observe") {
+		return "observe"
+	}
+	if strings.Contains(lower, "approach") || strings.Contains(lower, "go to") {
+		return "approach"
+	}
+	return "follow"
 }
 
 func (m *Manager) resolveNamedGeometry(text string, targets []string) ([][]float64, []domain.GeoPointV2, string, bool) {
@@ -2375,6 +2461,12 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 	targets := cloneStrings(draft.TargetIDs)
 	sort.Strings(targets)
 	formation := strategy.Formation
+	if draft.ContactBehavior == "surround" && len(targets) > 1 {
+		// Strategy prose may vary approach speed and sequencing, but it cannot
+		// weaken the operator's semantic objective. A multi-vessel surround is
+		// always materialized as a ring around the live contact.
+		formation = "ring"
+	}
 	speed := math.Max(.35, math.Min(draft.Constraints.MaximumSpeedMPS, draft.Constraints.MaximumSpeedMPS*strategy.SpeedFactor))
 	if draft.FollowContactID != "" {
 		for _, contact := range m.surfaceContactsLocked() {
@@ -2402,7 +2494,11 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 			reference = sweepLane(mission.Geometry.IncludedAreas[0], i, len(targets))
 		}
 		for _, p := range reference {
-			off := formationOffset(formation, i, len(targets), draft.Constraints.FormationSpacingM, p[1])
+			spacing := draft.Constraints.FormationSpacingM
+			if draft.ContactBehavior == "surround" && draft.ContactStandoffM > 0 {
+				spacing = draft.ContactStandoffM
+			}
+			off := formationOffset(formation, i, len(targets), spacing, p[1])
 			route = append(route, domain.GeoPointV2{p[0] + off[0], p[1] + off[1]})
 		}
 		dist := routeDistance(route)
@@ -2455,7 +2551,7 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 		status = "prohibited"
 		reasons = append(reasons, "MAXIMUM_DURATION_VIOLATION")
 	}
-	p := domain.FleetPlanV2{SchemaVersion: 2, ID: fmt.Sprintf("plan-%s-%d", shortHash(draft.ContentHash), index+1), MissionID: mission.ID, DraftID: draft.ID, Name: strategy.Name, Description: strategy.Description, Formation: formation, AdvisorSource: draft.Advisor.Provider, AdvisorModel: draft.Advisor.Model, Maneuvers: cloneStrings(strategy.Maneuvers), FollowContactID: draft.FollowContactID, ContinuousTracking: draft.FollowContactID != "", ReplanIntervalS: 60, PredictionHorizonS: 180, Assignments: assignments, CoveragePercent: coverage, MinimumReserve: minReserve, DurationMinutes: duration, EnergyKWH: totalEnergyKWH, LinkExposureSeconds: duration * 60 * .08 * float64(index+1), MinimumSeparationM: minSep, PolicyStatus: status, ReasonCodes: reasons, SourceMissionVersion: mission.Version}
+	p := domain.FleetPlanV2{SchemaVersion: 2, ID: fmt.Sprintf("plan-%s-%d", shortHash(draft.ContentHash), index+1), MissionID: mission.ID, DraftID: draft.ID, Name: strategy.Name, Description: strategy.Description, Formation: formation, AdvisorSource: draft.Advisor.Provider, AdvisorModel: draft.Advisor.Model, Maneuvers: cloneStrings(strategy.Maneuvers), FollowContactID: draft.FollowContactID, ContactBehavior: draft.ContactBehavior, ContactStandoffM: draft.ContactStandoffM, ContinuousTracking: draft.FollowContactID != "", ReplanIntervalS: 60, PredictionHorizonS: 180, Assignments: assignments, CoveragePercent: coverage, MinimumReserve: minReserve, DurationMinutes: duration, EnergyKWH: totalEnergyKWH, LinkExposureSeconds: duration * 60 * .08 * float64(index+1), MinimumSeparationM: minSep, PolicyStatus: status, ReasonCodes: reasons, SourceMissionVersion: mission.Version}
 	p.ContentHash = hashWithout(p)
 	return p
 }
@@ -2707,7 +2803,7 @@ func (m *Manager) refreshContinuousFollowLocked(mission domain.MissionWorkspaceV
 			break
 		}
 	}
-	if !found || spec.SpeedMPS <= 0 {
+	if !found {
 		return program, false
 	}
 	activationTick := ((currentTick + 29) / 10) * 10
@@ -2723,12 +2819,24 @@ func (m *Manager) refreshContinuousFollowLocked(mission domain.MissionWorkspaceV
 			return program, false
 		}
 		route := []domain.GeoPointV2{vessel.Telemetry.Position}
+		behavior := plan.ContactBehavior
+		if behavior == "" {
+			behavior = "follow"
+		}
+		standoffM := math.Max(80, mission.Constraints.MinimumObjectSeparationM+30)
+		if plan.ContactStandoffM > 0 {
+			standoffM = math.Max(standoffM, plan.ContactStandoffM)
+		}
 		for seconds := 30; seconds <= horizon; seconds += 30 {
 			predictionSeconds := float64(activationTick - currentTick + int64(seconds))
 			contact := surfaceContactAt(spec, time.UnixMilli(m.simulationEpochMS+m.simTickMS).UTC(), predictionSeconds)
-			trailCenter := pointAtBearing(contact.Position, contact.HeadingDeg+180, math.Max(80, mission.Constraints.MinimumObjectSeparationM+30))
-			offset := formationOffset(plan.Formation, index, len(plan.Assignments), mission.Constraints.FormationSpacingM, trailCenter[1])
-			point := domain.GeoPointV2{trailCenter[0] + offset[0], trailCenter[1] + offset[1]}
+			center := contactReferencePoint(contact, behavior, standoffM, seconds, len(plan.Assignments))
+			spacing := mission.Constraints.FormationSpacingM
+			if behavior == "surround" {
+				spacing = standoffM
+			}
+			offset := formationOffset(plan.Formation, index, len(plan.Assignments), spacing, center[1])
+			point := domain.GeoPointV2{center[0] + offset[0], center[1] + offset[1]}
 			if !withinMapBounds(point) {
 				return program, false
 			}
@@ -2762,6 +2870,36 @@ func pointAtBearing(start domain.GeoPointV2, bearingDeg, distanceM float64) doma
 	latDelta := math.Cos(bearing) * distanceM / 111_000
 	lonDelta := math.Sin(bearing) * distanceM / (111_000 * math.Max(.2, math.Cos(start[1]*math.Pi/180)))
 	return domain.GeoPointV2{start[0] + lonDelta, start[1] + latDelta}
+}
+
+func contactObjectiveWaypoints(spec surfaceTrafficSpec, current domain.SurfaceContactV2, behavior string, standoffM float64, targetCount, horizonS int) []domain.GeoPointV2 {
+	if horizonS <= 0 {
+		horizonS = 720
+	}
+	if behavior == "" || behavior == "none" {
+		behavior = "follow"
+	}
+	points := make([]domain.GeoPointV2, 0, horizonS/60)
+	for seconds := 60; seconds <= horizonS; seconds += 60 {
+		contact := surfaceContactAt(spec, current.UpdatedAt, float64(seconds))
+		points = append(points, contactReferencePoint(contact, behavior, standoffM, seconds, targetCount))
+	}
+	return points
+}
+
+func contactReferencePoint(contact domain.SurfaceContactV2, behavior string, standoffM float64, seconds, targetCount int) domain.GeoPointV2 {
+	if standoffM <= 0 {
+		standoffM = 80
+	}
+	if behavior == "surround" && targetCount == 1 {
+		// A single vessel cannot form a ring. Give it a bounded orbit around the
+		// live contact instead, still keyed to that contact's identity.
+		return pointAtBearing(contact.Position, float64((seconds/30)*45%360), standoffM)
+	}
+	if behavior == "surround" {
+		return contact.Position
+	}
+	return pointAtBearing(contact.Position, contact.HeadingDeg+180, standoffM)
 }
 
 // releaseMissionVesselsLocked holds released assets around their actual current

@@ -210,6 +210,17 @@ class MissionTargetSelectionRequest(BaseModel):
     vessels: list[MissionTargetVessel] = Field(default_factory=list, max_length=48)
 
 
+class MissionCommandRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: int = 2
+    mission_id: str
+    intent: str = Field(min_length=1, max_length=1600)
+    target_ids: list[str] = Field(default_factory=list, max_length=48)
+    current_formation: str
+    constraints: dict[str, Any]
+    surface_contacts: list[SurfaceContact] = Field(default_factory=list, max_length=32)
+
+
 ALLOWED_FORMATIONS = {
     "independent",
     "column",
@@ -661,6 +672,118 @@ def target_selection_format(request: MissionTargetSelectionRequest) -> dict[str,
                 "explanation": {"type": "string", "minLength": 1, "maxLength": 320},
             },
         },
+    }
+
+
+def mission_command_format(request: MissionCommandRequest) -> dict[str, Any]:
+    contact_ids = [""] + sorted(contact.id for contact in request.surface_contacts)
+    return {
+        "name": "keelmesh_mission_command",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "guidance_kind", "contact_id", "contact_behavior", "dynamic_target",
+                "formation", "standoff_m", "minimum_reserve", "maximum_speed_mps",
+                "hold_at_end", "summary",
+            ],
+            "properties": {
+                "guidance_kind": {"type": "string", "enum": [
+                    "transit", "patrol", "search", "follow_contact", "approach_contact",
+                    "orbit_contact", "hold", "waypoints",
+                ]},
+                "contact_id": {"type": "string", "enum": contact_ids},
+                "contact_behavior": {"type": "string", "enum": [
+                    "none", "follow", "intercept", "approach", "observe", "surround",
+                ]},
+                "dynamic_target": {"type": "boolean"},
+                "formation": {"type": "string", "enum": sorted(ALLOWED_FORMATIONS)},
+                "standoff_m": {"type": "number", "minimum": 0, "maximum": 5000},
+                "minimum_reserve": {"type": "number", "minimum": 0, "maximum": 1},
+                "maximum_speed_mps": {"type": "number", "minimum": 0, "maximum": 10},
+                "hold_at_end": {"type": "boolean"},
+                "summary": {"type": "string", "minLength": 1, "maxLength": 480},
+            },
+        },
+    }
+
+
+def parse_mission_command(text: str, request: MissionCommandRequest) -> dict[str, Any]:
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE)
+    value = json.loads(cleaned)
+    if not isinstance(value, dict):
+        raise ValueError("provider returned no mission command object")
+    required = set(mission_command_format(request)["schema"]["required"])
+    if set(value) != required or not str(value.get("summary", "")).strip():
+        raise ValueError("provider returned an incomplete mission command")
+    contacts = {contact.id for contact in request.surface_contacts}
+    contact_id = str(value["contact_id"])
+    if contact_id and contact_id not in contacts:
+        raise ValueError("provider selected an unavailable surface contact")
+    if contact_id and (not value["dynamic_target"] or value["contact_behavior"] == "none"):
+        raise ValueError("contact objective must remain identity-bound and dynamic")
+    if not contact_id and value["dynamic_target"]:
+        raise ValueError("dynamic target requires an exact contact id")
+    if len(request.target_ids) == 1:
+        value["formation"] = "independent"
+    return value
+
+
+async def openai_mission_command_attempt(request: MissionCommandRequest) -> tuple[dict[str, Any], int]:
+    payload = {
+        "model": STATE.openai_model,
+        "instructions": (
+            "Interpret the operator's maritime-simulation command into typed planner variables "
+            "using only supplied targets and surface contacts. Resolve a named contact by name, "
+            "callsign, boat_id, class, activity, or unique color. Follow, shadow, trail, intercept, "
+            "approach, go to, observe, orbit, encircle, and surround a contact must return its exact "
+            "contact_id and dynamic_target=true; never turn a contact objective into fixed coordinates. "
+            "Use contact_behavior follow, intercept, approach, observe, or surround. Use 0 for an "
+            "unspecified numeric limit. Choose ring for a multi-vessel surround and independent for a "
+            "single vessel. Return no route, coordinates, authority, or invented identity."
+        ),
+        "input": json.dumps(request.model_dump(by_alias=True), sort_keys=True)[:20000],
+        "reasoning": {"effort": "none"},
+        "text": {"format": {"type": "json_schema", **mission_command_format(request)}, "verbosity": "low"},
+        "max_output_tokens": 700,
+        "store": False,
+    }
+    headers = {"Authorization": f"Bearer {STATE.openai_key}", "Content-Type": "application/json"}
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=4.0)) as client:
+        response = await client.post("https://api.openai.com/v1/responses", headers=headers, json=payload)
+    response.raise_for_status()
+    return parse_mission_command(openai_response_text(response.json()), request), response.status_code
+
+
+def deterministic_mission_command(request: MissionCommandRequest) -> dict[str, Any]:
+    lower = request.intent.lower()
+    contact = next((item for item in request.surface_contacts if any(alias.lower() in lower for alias in (item.name, item.callsign, item.boat_id))), None)
+    behavior = "none"
+    guidance = "waypoints"
+    if contact is not None:
+        if any(word in lower for word in ("surround", "encircle")):
+            behavior, guidance = "surround", "orbit_contact"
+        elif any(word in lower for word in ("approach", "go to", "goto")):
+            behavior, guidance = "approach", "approach_contact"
+        elif "observe" in lower:
+            behavior, guidance = "observe", "approach_contact"
+        elif "intercept" in lower:
+            behavior, guidance = "intercept", "follow_contact"
+        else:
+            behavior, guidance = "follow", "follow_contact"
+    formation = "independent" if len(request.target_ids) == 1 else ("ring" if behavior == "surround" else request.current_formation or "column")
+    return {
+        "guidance_kind": guidance,
+        "contact_id": contact.id if contact else "",
+        "contact_behavior": behavior,
+        "dynamic_target": contact is not None,
+        "formation": formation,
+        "standoff_m": 120 if behavior == "surround" else (80 if contact else 0),
+        "minimum_reserve": 0,
+        "maximum_speed_mps": 0,
+        "hold_at_end": any(phrase in lower for phrase in ("hold position", "then hold", "and hold")),
+        "summary": "Deterministic degraded-mode interpretation; review all generated geometry before authorization.",
     }
 
 
@@ -1404,6 +1527,37 @@ async def mission_targets(request: MissionTargetSelectionRequest) -> dict[str, A
             "model": "keelmesh-target-resolver-v1",
             "attempts": attempts,
         }
+
+
+@app.post("/v1/mission-command", dependencies=[Depends(require_core)])
+async def mission_command(request: MissionCommandRequest) -> dict[str, Any]:
+    attempts: list[dict[str, Any]] = []
+    with TRACER.start_as_current_span("mission.command") as span:
+        if STATE.provider_mode == "connected" and STATE.openai_key and not STATE.fail_cloud_next:
+            started_iso, started = now(), time.monotonic()
+            try:
+                result, status = await openai_mission_command_attempt(request)
+                attempts.append({
+                    "provider": "openai", "model": STATE.openai_model, "state": "accepted",
+                    "started_at": started_iso,
+                    "latency_ms": int((time.monotonic() - started) * 1000),
+                    "status_code": status,
+                })
+                span.set_attribute("provider.selected", "openai")
+                span.set_attribute("mission.dynamic_target", bool(result["dynamic_target"]))
+                return {**result, "provider": "openai", "model": STATE.openai_model, "attempts": attempts}
+            except Exception as exc:
+                attempts.append({
+                    "provider": "openai", "model": STATE.openai_model, "state": "failed",
+                    "started_at": started_iso,
+                    "latency_ms": int((time.monotonic() - started) * 1000),
+                    "error_code": type(exc).__name__, "error_detail": str(exc)[:180],
+                })
+        elif STATE.fail_cloud_next:
+            STATE.fail_cloud_next = False
+        result = deterministic_mission_command(request)
+        span.set_attribute("provider.selected", "deterministic")
+        return {**result, "provider": "deterministic", "model": "keelmesh-command-resolver-v1", "attempts": attempts}
 
 
 @app.post("/v1/mission-options", dependencies=[Depends(require_core)])

@@ -173,6 +173,8 @@ type MissionWorkspaceV2 struct {
 	Formation          string                      `json:"formation"`
 	Loop               bool                        `json:"loop"`
 	FollowContactID    string                      `json:"follow_contact_id,omitempty"`
+	ContactBehavior    string                      `json:"contact_behavior,omitempty"`
+	ContactStandoffM   float64                     `json:"contact_standoff_m,omitempty"`
 	PlanIDs            []string                    `json:"plan_ids"`
 	AuthorizedPlanID   string                      `json:"authorized_plan_id,omitempty"`
 	Conversation       []MissionChatMessageV2      `json:"conversation"`
@@ -190,27 +192,30 @@ type MissionChatMessageV2 struct {
 }
 
 type CommandDraftV2 struct {
-	SchemaVersion       int                       `json:"schema_version"`
-	ID                  string                    `json:"id"`
-	MissionID           string                    `json:"mission_id"`
-	SourceText          string                    `json:"source_text"`
-	Objective           string                    `json:"objective"`
-	TargetIDs           []string                  `json:"target_ids"`
-	TargetSnapshotHash  string                    `json:"target_snapshot_hash"`
-	GeometryRevision    int64                     `json:"geometry_revision"`
-	FleetVersion        int64                     `json:"fleet_version"`
-	Constraints         ConstraintSetV2           `json:"constraints"`
-	FormationPreference string                    `json:"formation_preference"`
-	GuidanceKind        string                    `json:"guidance_kind"`
-	FollowContactID     string                    `json:"follow_contact_id,omitempty"`
-	PlanningMode        string                    `json:"planning_mode"`
-	Waypoints           []GeoPointV2              `json:"waypoints"`
-	GeometrySource      string                    `json:"geometry_source,omitempty"`
-	ResolutionNotes     []string                  `json:"resolution_notes,omitempty"`
-	TargetSelection     *MissionTargetSelectionV2 `json:"target_selection,omitempty"`
-	Ambiguities         []string                  `json:"unresolved_ambiguities"`
-	Advisor             MissionAdvisorV2          `json:"advisor"`
-	ContentHash         string                    `json:"content_hash"`
+	SchemaVersion         int                             `json:"schema_version"`
+	ID                    string                          `json:"id"`
+	MissionID             string                          `json:"mission_id"`
+	SourceText            string                          `json:"source_text"`
+	Objective             string                          `json:"objective"`
+	TargetIDs             []string                        `json:"target_ids"`
+	TargetSnapshotHash    string                          `json:"target_snapshot_hash"`
+	GeometryRevision      int64                           `json:"geometry_revision"`
+	FleetVersion          int64                           `json:"fleet_version"`
+	Constraints           ConstraintSetV2                 `json:"constraints"`
+	FormationPreference   string                          `json:"formation_preference"`
+	GuidanceKind          string                          `json:"guidance_kind"`
+	FollowContactID       string                          `json:"follow_contact_id,omitempty"`
+	ContactBehavior       string                          `json:"contact_behavior,omitempty"`
+	ContactStandoffM      float64                         `json:"contact_standoff_m,omitempty"`
+	PlanningMode          string                          `json:"planning_mode"`
+	Waypoints             []GeoPointV2                    `json:"waypoints"`
+	GeometrySource        string                          `json:"geometry_source,omitempty"`
+	ResolutionNotes       []string                        `json:"resolution_notes,omitempty"`
+	TargetSelection       *MissionTargetSelectionV2       `json:"target_selection,omitempty"`
+	CommandInterpretation *MissionCommandInterpretationV2 `json:"command_interpretation,omitempty"`
+	Ambiguities           []string                        `json:"unresolved_ambiguities"`
+	Advisor               MissionAdvisorV2                `json:"advisor"`
+	ContentHash           string                          `json:"content_hash"`
 }
 
 // MissionTargetSelectionV2 records the bounded target choice made before
@@ -256,6 +261,36 @@ type MissionTargetSelectionContextV2 struct {
 	CurrentTargetIDs []string                         `json:"current_target_ids"`
 	Groups           []MissionTargetGroupCandidateV2  `json:"groups"`
 	Vessels          []MissionTargetVesselCandidateV2 `json:"vessels"`
+}
+
+// MissionCommandInterpretationV2 is bounded semantic model output. It turns
+// operator language into typed planner inputs but carries no route, lease, or
+// command authority. Contact objectives remain bound to a contact identity so
+// deterministic planning can follow its live state instead of a stale point.
+type MissionCommandInterpretationV2 struct {
+	GuidanceKind    string              `json:"guidance_kind"`
+	ContactID       string              `json:"contact_id,omitempty"`
+	ContactBehavior string              `json:"contact_behavior"`
+	DynamicTarget   bool                `json:"dynamic_target"`
+	Formation       string              `json:"formation"`
+	StandoffM       float64             `json:"standoff_m"`
+	MinimumReserve  float64             `json:"minimum_reserve"`
+	MaximumSpeedMPS float64             `json:"maximum_speed_mps"`
+	HoldAtEnd       bool                `json:"hold_at_end"`
+	Summary         string              `json:"summary"`
+	Provider        string              `json:"provider"`
+	Model           string              `json:"model"`
+	Attempts        []ProviderAttemptV1 `json:"attempts"`
+}
+
+type MissionCommandInterpretationContextV2 struct {
+	SchemaVersion    int                `json:"schema_version"`
+	MissionID        string             `json:"mission_id"`
+	Intent           string             `json:"intent"`
+	TargetIDs        []string           `json:"target_ids"`
+	CurrentFormation string             `json:"current_formation"`
+	Constraints      ConstraintSetV2    `json:"constraints"`
+	SurfaceContacts  []SurfaceContactV2 `json:"surface_contacts"`
 }
 
 // SurfaceContactV2 is fictional non-fleet traffic in the local operating
@@ -373,6 +408,8 @@ type FleetPlanV2 struct {
 	AdvisorModel         string              `json:"advisor_model,omitempty"`
 	Maneuvers            []string            `json:"maneuvers"`
 	FollowContactID      string              `json:"follow_contact_id,omitempty"`
+	ContactBehavior      string              `json:"contact_behavior,omitempty"`
+	ContactStandoffM     float64             `json:"contact_standoff_m,omitempty"`
 	ContinuousTracking   bool                `json:"continuous_tracking,omitempty"`
 	ReplanIntervalS      int                 `json:"replan_interval_seconds,omitempty"`
 	PredictionHorizonS   int                 `json:"prediction_horizon_seconds,omitempty"`
