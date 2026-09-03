@@ -148,7 +148,6 @@ export function FleetWorkspace() {
     [planID, setPlanID] = useState(""),
     [preview, setPreview] = useState<FleetPreviewV2 | null>(null),
     [lease, setLease] = useState<FleetLeaseV2 | null>(null),
-    [reachability, setReachability] = useState<ReachabilityV2 | null>(null),
     [windows, setWindows] = useState<Set<string>>(
       () =>
         new Set(
@@ -173,9 +172,7 @@ export function FleetWorkspace() {
     stopRequested = useRef(false),
     geometryHistory = useRef<Record<string, MissionWorkspaceV2["geometry"][]>>({}),
     missionSelectionSync = useRef("");
-  const [inspectVesselID, setInspectVesselID] = useState(""),
-    [inspectContactID, setInspectContactID] = useState(""),
-    [windowActivations, setWindowActivations] = useState<
+  const [windowActivations, setWindowActivations] = useState<
       Record<string, number>
     >({}),
     [windowToggleActivations, setWindowToggleActivations] = useState<
@@ -416,6 +413,16 @@ export function FleetWorkspace() {
       [id]: (current[id] ?? 0) + 1,
     }));
   }, [open, windows]);
+  const openGroupManager = useCallback((id: string) => {
+    setActiveGroupID(id);
+    open(`group-manager-${id}`);
+  }, [open]);
+  const openVesselInspector = useCallback((id: string) => {
+    open(`inspector-${id}`);
+  }, [open]);
+  const openContactInspector = useCallback((id: string) => {
+    open(`contact-inspector-${id}`);
+  }, [open]);
   useEffect(() => {
     setTool("select");
     setGeometryFocus(null);
@@ -474,21 +481,6 @@ export function FleetWorkspace() {
       ) ?? []
     );
   }, [fleet, search]);
-  const inspectedVessel = inspectVesselID
-    ? vesselsByID.get(inspectVesselID)
-    : undefined;
-  const inspectedContact = inspectContactID
-    ? fleet?.surface_contacts.find((contact) => contact.id === inspectContactID)
-    : undefined;
-  useEffect(() => {
-    if (!inspectedVessel) {
-      setReachability(null);
-      return;
-    }
-    api<ReachabilityV2>(`/api/v2/vessels/${inspectedVessel.id}/reachability`)
-      .then(setReachability)
-      .catch(() => setReachability(null));
-  }, [inspectedVessel]);
   async function mutate<T>(fn: () => Promise<T>) {
     setBusy(true);
     setError("");
@@ -588,11 +580,11 @@ export function FleetWorkspace() {
   }
   async function createGroup() {
     const g = await createGroupFor([...selected]);
-    if (g) open("group-manager");
+    if (g) openGroupManager(g.id);
   }
   async function createGroupFromVessel(vesselID: string, name: string) {
     const g = await createGroupFor([vesselID], name);
-    if (g) open("group-manager");
+    if (g) openGroupManager(g.id);
   }
   async function patchGroup(
     id: string,
@@ -645,14 +637,12 @@ export function FleetWorkspace() {
         }),
       }),
     );
-    if (activeGroupID === id) {
-      setActiveGroupID("");
-      setWindows((value) => {
-        const next = new Set(value);
-        next.delete("group-manager");
-        return next;
-      });
-    }
+    if (activeGroupID === id) setActiveGroupID("");
+    setWindows((value) => {
+      const next = new Set(value);
+      next.delete(`group-manager-${id}`);
+      return next;
+    });
     await refresh();
   }
   async function renameVessel(id: string, callsign: string) {
@@ -1398,24 +1388,15 @@ export function FleetWorkspace() {
     }
     if (action.kind === "inspect_group") {
       const group = resolveGroup(action.target);
-      if (group) {
-        setActiveGroupID(group.id);
-        open("group-manager");
-      }
+      if (group) openGroupManager(group.id);
     }
     if (action.kind === "inspect_vessel") {
       const vessel = resolveVessel(action.target);
-      if (vessel) {
-        setInspectVesselID(vessel.id);
-        open("inspector");
-      }
+      if (vessel) openVesselInspector(vessel.id);
     }
     if (action.kind === "inspect_contact") {
       const contact = resolveContact(action.target);
-      if (contact) {
-        setInspectContactID(contact.id);
-        open("contact-inspector");
-      }
+      if (contact) openContactInspector(contact.id);
     }
     if (action.kind === "set_theme") setPirate(action.target.toLowerCase() === "pirate");
     if (action.kind === "set_simulation_rate") {
@@ -1626,13 +1607,9 @@ export function FleetWorkspace() {
           onSelect={select}
           onGroup={selectGroup}
           onManage={(id) => {
-            setActiveGroupID(id);
-            open("group-manager");
+            openGroupManager(id);
           }}
-          onInspect={(id) => {
-            setInspectVesselID(id);
-            open("inspector");
-          }}
+          onInspect={openVesselInspector}
           onMove={moveVessel}
           onCreateGroup={createGroup}
           onCreateGroupFromVessel={createGroupFromVessel}
@@ -1641,58 +1618,56 @@ export function FleetWorkspace() {
         />
       ),
     });
-  const activeGroup = fleet.groups.find((g) => g.id === activeGroupID);
-  if (windows.has("group-manager") && activeGroup)
+  for (const [index, group] of fleet.groups.filter((item) => windows.has(`group-manager-${item.id}`)).entries())
     defs.push({
-      id: "group-manager",
+      id: `group-manager-${group.id}`,
       kind: "context",
-      activation: windowActivations["group-manager"],
+      activation: windowActivations[`group-manager-${group.id}`],
       minWidth: 300,
       minHeight: 240,
-      title: `${pirate ? "Crew" : "Group"} · ${activeGroup.code}`,
+      title: `${pirate ? "Crew" : "Group"} · ${group.code}`,
       icon: <Users />,
-      initial: { x: 350, y: 120, width: 340, height: 390 },
+      initial: { x: 300 + (index % 5) * 28, y: 105 + (index % 5) * 24, width: 340, height: 390 },
       content: (
         <GroupManager
-          key={`${activeGroup.id}-${activeGroup.revision}`}
-          group={activeGroup}
+          key={`${group.id}-${group.revision}`}
+          group={group}
           vessels={vesselsByID}
-          onSave={(v) => patchGroup(activeGroup.id, v)}
-          onDelete={() => deleteGroup(activeGroup.id)}
+          onSave={(v) => patchGroup(group.id, v)}
+          onDelete={() => deleteGroup(group.id)}
         />
       ),
     });
-  if (windows.has("inspector") && inspectedVessel)
+  for (const [index, vessel] of fleet.vessels.filter((item) => windows.has(`inspector-${item.id}`)).entries())
     defs.push({
-      id: "inspector",
+      id: `inspector-${vessel.id}`,
       kind: "context",
-      activation: windowActivations.inspector,
+      activation: windowActivations[`inspector-${vessel.id}`],
       minWidth: 310,
       minHeight: 300,
-      title: inspectedVessel.display_name,
+      title: vessel.display_name,
       icon: <Eye />,
-      initial: { x: 350, y: 92, width: 350, height: 590 },
+      initial: { x: 330 + (index % 7) * 26, y: 92 + (index % 7) * 22, width: 350, height: 590 },
       content: (
-        <VesselInspector
+        <VesselInspectorWindow
           pirate={pirate}
-          vessel={inspectedVessel}
-          reachability={reachability}
+          vessel={vessel}
           lookup={vesselsByID}
-          onRename={(name) => renameVessel(inspectedVessel.id, name)}
+          onRename={(name) => renameVessel(vessel.id, name)}
         />
       ),
     });
-  if (windows.has("contact-inspector") && inspectedContact)
+  for (const [index, contact] of fleet.surface_contacts.filter((item) => windows.has(`contact-inspector-${item.id}`)).entries())
     defs.push({
-      id: "contact-inspector",
+      id: `contact-inspector-${contact.id}`,
       kind: "context",
-      activation: windowActivations["contact-inspector"],
+      activation: windowActivations[`contact-inspector-${contact.id}`],
       minWidth: 310,
       minHeight: 300,
-      title: inspectedContact.name,
+      title: contact.name,
       icon: <Ship />,
-      initial: { x: 370, y: 105, width: 360, height: 540 },
-      content: <SurfaceContactInspector contact={inspectedContact} />,
+      initial: { x: 370 + (index % 6) * 25, y: 105 + (index % 6) * 22, width: 360, height: 540 },
+      content: <SurfaceContactInspector contact={contact} />,
     });
   if (windows.has("planner"))
     defs.push({
@@ -2058,15 +2033,9 @@ export function FleetWorkspace() {
           select(ids, mode);
         }}
         onGroup={selectGroup}
-        onVessel={(id) => {
-          setInspectVesselID(id);
-          open("inspector");
-        }}
+        onVessel={openVesselInspector}
         onOpenFleet={revealFleet}
-        onContact={(id) => {
-          setInspectContactID(id);
-          open("contact-inspector");
-        }}
+        onContact={openContactInspector}
         onPlanContact={planSurfaceContact}
         onGeometryFocus={(kind, index) => {
           setGeometryFocus({ kind, index });
@@ -3113,6 +3082,28 @@ function GroupManager({
       </button>
     </div>
   );
+}
+function VesselInspectorWindow({
+  pirate,
+  vessel,
+  lookup,
+  onRename,
+}: {
+  pirate: boolean;
+  vessel: VesselProfileV2;
+  lookup: Map<string, VesselProfileV2>;
+  onRename: (name: string) => void;
+}) {
+  const [reachability, setReachability] = useState<ReachabilityV2 | null>(null);
+  useEffect(() => {
+    let active = true;
+    setReachability(null);
+    void api<ReachabilityV2>(`/api/v2/vessels/${vessel.id}/reachability`)
+      .then((value) => { if (active) setReachability(value); })
+      .catch(() => { if (active) setReachability(null); });
+    return () => { active = false; };
+  }, [vessel.id]);
+  return <VesselInspector pirate={pirate} vessel={vessel} reachability={reachability} lookup={lookup} onRename={onRename} />;
 }
 function VesselInspector({
   pirate,
