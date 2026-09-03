@@ -21,6 +21,7 @@ func (s *Server) assistantTurnV4(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.memory != nil {
+		s.memory.SyncFleet(r.Context(), s.fleetops.Snapshot())
 		request.MemoryContext = ptrContext(s.memory.Assemble(r.Context(), request.RequestID, request.ActorIdentity, request.SessionID, request.ActiveMissionID, request.Text))
 	}
 	value, err := s.agent.CreateAssistantTurn(r.Context(), request, s.fleetops.Snapshot())

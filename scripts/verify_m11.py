@@ -45,7 +45,7 @@ search = post(
 )
 assert search["receipt"]["mode"] in {"hybrid", "keyword"}, search
 assert len(search["hits"]) >= 1, search
-assert all(hit["source_ids"] for hit in search["hits"]), search
+assert all(hit["source_id"] for hit in search["hits"]), search
 
 version = get("/api/v5/memory")["state_version"]
 stamp = time.time_ns()
@@ -60,7 +60,7 @@ replay = post(
 )
 assert replay["matches"], replay
 assert replay["live_checksum"] == replay["replay_checksum"], replay
-assert len(replay["live_checksum"]) == 64, replay
+assert replay["live_checksum"].startswith("sha256:") and len(replay["live_checksum"]) == 71, replay
 
 canonical = json.dumps(
     {
@@ -77,7 +77,7 @@ result = {
     "retrieval_mode": search["receipt"]["mode"],
     "committed_items": snapshot["committed_items"],
     "retrieval_hits": len(search["hits"]),
-    "replay_items": replay["item_count"],
+    "replay_items": replay["projected_items"],
     "replay_checksum": replay["replay_checksum"],
     "evidence_checksum": hashlib.sha256(canonical).hexdigest(),
 }
