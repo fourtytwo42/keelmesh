@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: fictional surface traffic and AI follow-target planning are implemented on VM 214 and all twelve vessel nodes; final commit/push is the remaining handoff step.
+- Current task: fictional surface traffic and AI follow-target planning are complete, deployed, and pushed at commit `dc61c84`.
 - Last meaningful change: twelve stable, moving, non-commandable surface contacts now use six original generated sprite classes, looped tracks, distinct colors/Boat IDs, map inspection, and exact-name/color-aware follow planning. Pirate mode intentionally does not alter these neutral contacts.
-- Next step: commit and push the verified surface-traffic vertical slice, then resume the adaptive group-autonomy follow-ups.
+- Next step: resume the adaptive group-autonomy follow-ups or add receding-horizon contact tracking if the demo needs indefinite pursuit.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
 ## Current State
