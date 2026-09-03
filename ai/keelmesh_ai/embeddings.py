@@ -19,7 +19,7 @@ class MiniLMEmbedder:
         root = Path(model_dir)
         self._tokenizer = Tokenizer.from_file(str(root / "tokenizer.json"))
         self._tokenizer.enable_truncation(max_length=256)
-        self._tokenizer.enable_padding(length=None, pad_id=0, pad_token="[PAD]")
+        self._tokenizer.enable_padding(length=None, pad_id=0, pad_token="[PAD]")  # nosec B106
         options = ort.SessionOptions()
         options.intra_op_num_threads = 2
         options.inter_op_num_threads = 1
