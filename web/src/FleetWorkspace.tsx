@@ -23,6 +23,7 @@ import type {
   WorkspaceAssistantResponseV1,
   AssistantTurnV2,
   CommandSceneV1,
+  ConversationTurnV1,
   MemorySnapshotV1,
 } from "./types";
 import { KeelMeshA2UISurface } from "./A2UISurface";
@@ -47,6 +48,7 @@ import {
   GripVertical,
   ListFilter,
   MapPinned,
+  MessageCircle,
   Mic,
   MousePointer2,
   Network,
@@ -160,7 +162,9 @@ export function FleetWorkspace() {
     [pendingPlanID, setPendingPlanID] = useState(""),
     [commandScenes, setCommandScenes] = useState<CommandSceneV1[]>([]),
     [activeSceneID, setActiveSceneID] = useState(""),
-    [historyVisible, setHistoryVisible] = useState(false);
+    [assistantTurns, setAssistantTurns] = useState<ConversationTurnV1[]>([]),
+    [assistantChatInput, setAssistantChatInput] = useState(""),
+    [assistantChatBusy, setAssistantChatBusy] = useState(false);
   const audio = useRef<HTMLAudioElement | null>(null),
     speechAbort = useRef<AbortController | null>(null),
     recorder = useRef<MediaRecorder | null>(null),
@@ -244,9 +248,10 @@ export function FleetWorkspace() {
       api<AgentSnapshot>("/api/v1/ai").then(setAgent),
       api<ArenaSnapshotV1>("/api/v3/arena?faction=A").then(setArena),
       api<MemorySnapshotV1>("/api/v5/memory").then(setMemory),
-      api<{ scenes: CommandSceneV1[] }>(`/api/v4/scenes?actor_identity=demo-operator&session_id=${encodeURIComponent(sceneSessionID)}`).then((value) => {
+      api<{ scenes: CommandSceneV1[]; turns?: ConversationTurnV1[] }>(`/api/v4/assistant/history?actor_identity=demo-operator&session_id=${encodeURIComponent(sceneSessionID)}`).then((value) => {
         const visible = value.scenes.filter((scene) => scene.state === "active" || scene.pinned);
         setCommandScenes(value.scenes);
+        setAssistantTurns(value.turns ?? []);
         setActiveSceneID(visible[0]?.id ?? "");
         const hasMissionCanvas = visible.some((scene) => scene.type === "mission_canvas");
         setWindows((current) => new Set([...current, ...(hasMissionCanvas ? ["planner"] : []), ...visible.filter((scene) => scene.type !== "mission_canvas").map((scene) => `scene-${scene.id}`)]));
@@ -261,9 +266,10 @@ export function FleetWorkspace() {
         .then(setArena)
         .catch(() => {});
       api<MemorySnapshotV1>("/api/v5/memory").then(setMemory).catch(() => {});
-      api<{ scenes: CommandSceneV1[] }>(`/api/v4/scenes?actor_identity=demo-operator&session_id=${encodeURIComponent(sceneSessionID)}`)
+      api<{ scenes: CommandSceneV1[]; turns?: ConversationTurnV1[] }>(`/api/v4/assistant/history?actor_identity=demo-operator&session_id=${encodeURIComponent(sceneSessionID)}`)
         .then((value) => {
           setCommandScenes(value.scenes);
+          setAssistantTurns(value.turns ?? []);
           const active = value.scenes.find((scene) => scene.critical && scene.state === "active");
           if (active) {
             setActiveSceneID(active.id);
@@ -1428,7 +1434,7 @@ export function FleetWorkspace() {
     }));
   }
 
-  async function askWorkspaceAssistant(text: string) {
+  async function askWorkspaceAssistant(text: string, presentScene = true) {
     const turn = await api<AssistantTurnV2>("/api/v4/assistant/turns", {
       method: "POST",
       body: JSON.stringify({
@@ -1449,7 +1455,7 @@ export function FleetWorkspace() {
     setCommandScenes((current) => [turn.scene, ...current.map((scene) => scene.state === "active" && !scene.pinned && !scene.critical && !scene.pending_approval ? { ...scene, state: "replaced" } : scene).filter((scene) => scene.id !== turn.scene.id)].slice(0, 50));
     setActiveSceneID(turn.scene.id);
     if (turn.scene.type === "mission_canvas") open("planner");
-    else open(`scene-${turn.scene.id}`);
+    else if (presentScene) open(`scene-${turn.scene.id}`);
     return turn.assistant;
   }
 
@@ -1557,6 +1563,36 @@ export function FleetWorkspace() {
 
   async function beginGlobalTranscription() {
     await captureTranscription(handleGlobalTranscript, true);
+  }
+  async function handleGlobalTypedMessage(text: string) {
+    const value = text.trim();
+    if (!value || assistantChatBusy) return;
+    setAssistantChatBusy(true);
+    setAssistantChatInput("");
+    setError("");
+    try {
+      const response = await askWorkspaceAssistant(value, false);
+      const choice = response.actions.map(chosenPlan).find((candidate) => candidate !== null);
+      if (choice) {
+        await enactPlan(choice);
+      } else {
+        for (const action of response.actions) {
+          if (action.kind !== "create_mission" && action.kind !== "none")
+            await applyAssistantAction(action);
+        }
+        if (response.mode === "mission") {
+          const intent = response.mission_intent.trim() || value;
+          const created = await createMissionFor([], "ai", intent);
+          if (created) await createPlans(created, intent, "ai_assisted", "", "", true);
+        }
+      }
+      const history = await api<{ turns?: ConversationTurnV1[] }>(`/api/v4/assistant/history?actor_identity=demo-operator&session_id=${encodeURIComponent(sceneSessionID)}`);
+      setAssistantTurns(history.turns ?? []);
+    } catch (reason) {
+      setError(reason instanceof KeelMeshError ? `${reason.code}: ${reason.message}` : String(reason));
+    } finally {
+      setAssistantChatBusy(false);
+    }
   }
   if (!fleet)
     return (
@@ -1885,11 +1921,11 @@ export function FleetWorkspace() {
       content: <SceneArtifact scene={scene} onAction={(action) => void applySceneAction(scene, action)} onPin={() => void mutateScene(scene, scene.pinned ? "unpin" : "pin")} onDismiss={() => void mutateScene(scene, "dismiss")} />,
     });
   }
-  if (historyVisible && windows.has("assistant-history"))
+  if (windows.has("assistant-chat"))
     defs.push({
-      id: "assistant-history", kind: "context", title: pirate ? "Captain's Log" : "Assistant History", icon: <History />,
-      initial: { x: Math.max(20, window.innerWidth - 500), y: 100, width: 460, height: 560 }, minWidth: 320, minHeight: 260,
-      content: <SceneHistory scenes={commandScenes} onOpen={(scene) => { setActiveSceneID(scene.id); if (scene.type === "mission_canvas") open("planner"); else open(`scene-${scene.id}`); }} />,
+      id: "assistant-chat", kind: "context", title: pirate ? "Ship's Intelligence" : "KeelMesh Assistant", icon: <MessageCircle />,
+      initial: { x: Math.max(20, window.innerWidth - 470), y: Math.max(90, window.innerHeight - 620), width: 430, height: 520 }, minWidth: 310, minHeight: 260,
+      content: <AssistantChat turns={assistantTurns} value={assistantChatInput} busy={assistantChatBusy} pirate={pirate} onChange={setAssistantChatInput} onSend={(text) => void handleGlobalTypedMessage(text)} onOpenScene={(scene) => { setActiveSceneID(scene.id); if (scene.type === "mission_canvas") open("planner"); else open(`scene-${scene.id}`); }} scenes={commandScenes} />,
     });
   return (
     <main className="m6-shell">
@@ -2049,7 +2085,7 @@ export function FleetWorkspace() {
         sceneAnnotations={commandScenes.find((scene) => scene.id === activeSceneID && scene.state === "active")?.map_annotations ?? []}
         sceneCamera={commandScenes.find((scene) => scene.id === activeSceneID && scene.state === "active")?.map_camera}
       />
-      <button className="scene-history-trigger" aria-label="Open assistant scene history" title="Assistant scene and audit history" onClick={() => { setHistoryVisible(true); open("assistant-history"); }}><History /></button>
+      <button className="assistant-chat-trigger" aria-label="Open text chat with KeelMesh AI" title="Open secondary text chat" onClick={() => toggleWindow("assistant-chat")}><MessageCircle /></button>
       {pendingDeleteMission && (
         <div className="mission-delete-backdrop">
           <section
@@ -3770,6 +3806,41 @@ function SceneArtifact({ scene, onAction, onPin, onDismiss }: { scene: CommandSc
 
 function SceneHistory({ scenes, onOpen }: { scenes: CommandSceneV1[]; onOpen: (scene: CommandSceneV1) => void }) {
   return <div className="scene-history"><header><History /><span><b>COMMAND HISTORY</b><small>Provider turns, trusted surfaces, bindings, and receipts</small></span></header>{scenes.length === 0 ? <p>No command scenes have been composed in this session.</p> : scenes.map((scene) => <button key={scene.id} onClick={() => onOpen(scene)}><Sparkles /><span><b>{scene.title}</b><small>{scene.summary}</small></span><em>{scene.pinned ? "PINNED" : scene.state}</em></button>)}</div>;
+}
+
+function AssistantChat({ turns, value, busy, pirate, onChange, onSend, scenes, onOpenScene }: {
+  turns: ConversationTurnV1[];
+  value: string;
+  busy: boolean;
+  pirate: boolean;
+  onChange: (value: string) => void;
+  onSend: (value: string) => void;
+  scenes: CommandSceneV1[];
+  onOpenScene: (scene: CommandSceneV1) => void;
+}) {
+  const end = useRef<HTMLDivElement | null>(null);
+  useEffect(() => end.current?.scrollIntoView({ block: "end" }), [turns.length, busy]);
+  const recentScenes = scenes.filter((scene) => scene.state === "active" || scene.pinned).slice(0, 3);
+  return <div className="assistant-chat-window">
+    <header>
+      <MessageCircle />
+      <span><b>{pirate ? "SHIP'S INTELLIGENCE" : "TEXT CHANNEL"}</b><small>Shared memory with the primary voice assistant · text replies only</small></span>
+    </header>
+    <div className="assistant-chat-transcript" aria-live="polite">
+      {turns.length === 0 && <div className="assistant-chat-empty"><Sparkles /><b>Ask KeelMesh anything</b><span>Type here when voice is not convenient. Mission and workspace requests use the same bounded tools and approvals.</span></div>}
+      {turns.map((turn) => <article key={turn.id} className={turn.role === "assistant" ? "assistant" : "operator"}>
+        <header><b>{turn.role === "assistant" ? "KEELMESH AI" : "YOU"}</b><time>{new Date(turn.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></header>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.content}</ReactMarkdown>
+      </article>)}
+      {busy && <div className="assistant-chat-working"><Sparkles /><span>Gathering context</span><span>Composing response</span></div>}
+      <div ref={end} />
+    </div>
+    {recentScenes.length > 0 && <details className="assistant-chat-artifacts"><summary>Recent command artifacts</summary>{recentScenes.map((scene) => <button key={scene.id} onClick={() => onOpenScene(scene)}><Sparkles /><span>{scene.title}</span><em>{scene.pinned ? "PINNED" : scene.state}</em></button>)}</details>}
+    <form onSubmit={(event) => { event.preventDefault(); if (value.trim() && !busy) onSend(value.trim()); }}>
+      <textarea aria-label="Message KeelMesh AI" placeholder={pirate ? "Type an order or question…" : "Type a question or command…"} value={value} onChange={(event) => onChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (value.trim() && !busy) onSend(value.trim()); } }} />
+      <button type="submit" aria-label="Send text message" disabled={!value.trim() || busy}><Send /></button>
+    </form>
+  </div>;
 }
 function Constraints({
   mission,

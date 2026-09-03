@@ -347,6 +347,31 @@ func (m *Manager) Assemble(ctx context.Context, turnID, actor, session, mission,
 	return assembly
 }
 
+// ConversationTurns returns an actor/session-scoped transcript in chronological
+// order. It is deliberately bounded for the secondary text chat surface.
+func (m *Manager) ConversationTurns(actor, session string, limit int) []domain.ConversationTurnV1 {
+	if actor == "" {
+		actor = "demo-operator"
+	}
+	if session == "" {
+		session = "default"
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]domain.ConversationTurnV1, 0, limit)
+	for i := len(m.turns) - 1; i >= 0 && len(result) < limit; i-- {
+		turn := m.turns[i]
+		if turn.ActorID == actor && turn.SessionID == session && turn.MissionID == "" {
+			result = append(result, turn)
+		}
+	}
+	reverseTurns(result)
+	return append([]domain.ConversationTurnV1(nil), result...)
+}
+
 func (m *Manager) RecordExchange(ctx context.Context, turnID, actor, session, mission, userText, assistantText, provider string) {
 	now := time.Now().UTC()
 	values := []domain.ConversationTurnV1{{ID: stable("turn", turnID, "user"), ActorID: actor, SessionID: session, MissionID: mission, Role: "user", Content: userText, SourceID: turnID, CreatedAt: now}, {ID: stable("turn", turnID, "assistant"), ActorID: actor, SessionID: session, MissionID: mission, Role: "assistant", Content: assistantText, SourceID: turnID, CreatedAt: now.Add(time.Microsecond)}}
