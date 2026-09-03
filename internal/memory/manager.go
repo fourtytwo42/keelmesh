@@ -71,22 +71,22 @@ type CandidateMutation struct {
 }
 
 type Manager struct {
-	mu          sync.RWMutex
-	cfg         Config
-	logger      *slog.Logger
-	http        *http.Client
-	pool        *pgxpool.Pool
-	producer    *kgo.Client
-	snapshot    domain.MemorySnapshotV1
-	items       map[string]domain.MemoryItemV1
-	candidates  map[string]domain.MemoryCandidateV1
-	turns       []domain.ConversationTurnV1
-	receipts    map[string]domain.RetrievalReceiptV1
-	contexts    map[string]domain.ContextAssemblyV1
-	entities    map[string]domain.MemoryEntityV1
-	replays     map[string]domain.MemoryReplayV1
-	idempotency map[string]string
-	local       *localStore
+	mu                 sync.RWMutex
+	cfg                Config
+	logger             *slog.Logger
+	http               *http.Client
+	pool               *pgxpool.Pool
+	producer           *kgo.Client
+	snapshot           domain.MemorySnapshotV1
+	items              map[string]domain.MemoryItemV1
+	candidates         map[string]domain.MemoryCandidateV1
+	turns              []domain.ConversationTurnV1
+	receipts           map[string]domain.RetrievalReceiptV1
+	contexts           map[string]domain.ContextAssemblyV1
+	entities           map[string]domain.MemoryEntityV1
+	replays            map[string]domain.MemoryReplayV1
+	idempotency        map[string]string
+	local              *localStore
 	entityFleetVersion int64
 }
 
