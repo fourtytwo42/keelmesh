@@ -3819,7 +3819,9 @@ function AssistantChat({ turns, value, busy, pirate, onChange, onSend, scenes, o
   onOpenScene: (scene: CommandSceneV1) => void;
 }) {
   const end = useRef<HTMLDivElement | null>(null);
-  useEffect(() => end.current?.scrollIntoView({ block: "end" }), [turns.length, busy]);
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: "end" });
+  }, [turns.length, busy]);
   const recentScenes = scenes.filter((scene) => scene.state === "active" || scene.pinned).slice(0, 3);
   return <div className="assistant-chat-window">
     <header>

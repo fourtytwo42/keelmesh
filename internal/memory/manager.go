@@ -369,7 +369,7 @@ func (m *Manager) ConversationTurns(actor, session string, limit int) []domain.C
 		}
 	}
 	reverseTurns(result)
-	return append([]domain.ConversationTurnV1(nil), result...)
+	return result
 }
 
 func (m *Manager) RecordExchange(ctx context.Context, turnID, actor, session, mission, userText, assistantText, provider string) {
