@@ -2063,7 +2063,7 @@ export function FleetWorkspace() {
         sceneAnnotations={commandScenes.find((scene) => scene.id === activeSceneID && scene.state === "active")?.map_annotations ?? []}
         sceneCamera={commandScenes.find((scene) => scene.id === activeSceneID && scene.state === "active")?.map_camera}
       />
-      <button className="assistant-chat-trigger" aria-label="Toggle text chat with KeelMesh AI" title="Open or close text chat" onClick={() => toggleWindow("assistant-chat")}><MessageCircle /></button>
+      <button className="assistant-chat-trigger" aria-label="Toggle text chat with KeelMesh AI" title="Open or close text chat" onClick={() => toggleWindow("assistant-chat")}><MessageCircle /><span className="assistant-chat-dots" aria-hidden="true"><i /><i /><i /></span></button>
       {pendingDeleteMission && (
         <div className="mission-delete-backdrop">
           <section
