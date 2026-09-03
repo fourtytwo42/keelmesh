@@ -307,7 +307,10 @@ func (m *Manager) Assemble(ctx context.Context, turnID, actor, session, mission,
 	recent := []domain.ConversationTurnV1{}
 	for i := len(m.turns) - 1; i >= 0 && len(recent) < 12; i-- {
 		t := m.turns[i]
-		if t.ActorID == actor && t.SessionID == session && (mission == "" || t.MissionID == mission) {
+		// Voice, typed chat, and Mission all share one operator-session thread.
+		// Mission scope still constrains semantic retrieval, but opening a mission
+		// must not erase the exact conversational context that led to it.
+		if t.ActorID == actor && t.SessionID == session {
 			recent = append(recent, t)
 		}
 	}

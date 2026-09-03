@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
@@ -141,19 +142,48 @@ func TestWorkspaceCommandUsesModelForBoundedPresentationAction(t *testing.T) {
 		if request["model"] != "gpt-5.6-luna" || request["store"] != false {
 			t.Fatalf("unexpected workspace request: %#v", request)
 		}
+		input, _ := request["input"].(string)
+		if !strings.Contains(input, "Atlantic Beacon") || !strings.Contains(input, "conversation_history") || !strings.Contains(input, "recent_entity_references") || !strings.Contains(input, "verified_spatial_facts") || !strings.Contains(input, "Position") {
+			t.Fatalf("workspace context omitted conversation or chart facts: %s", input)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"mode\":\"workspace\",\"speech\":\"Opening Gannet's vessel status.\",\"mission_intent\":\"\",\"actions\":[{\"kind\":\"inspect_vessel\",\"target\":\"Gannet\",\"value\":0}]}"}]}]}`))
 	}))
 	defer provider.Close()
 	manager := NewManager(Config{OpenAIKeyFile: keyFile, OpenAIModel: "gpt-5.6-luna", OpenAIURL: provider.URL}, slog.Default())
-	result, err := manager.WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{Text: "Show me Gannet's status.", Persona: "navy"}, domain.FleetSnapshotV2{
-		Vessels: []domain.VesselProfileV2{{ID: "vessel-1", Callsign: "Gannet", Designation: "KM-214", DisplayName: "Gannet (KM-214)"}},
+	result, err := manager.WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{Text: "Show me Gannet's status.", Persona: "navy", MemoryContext: &domain.ContextAssemblyV1{RecentTurns: []domain.ConversationTurnV1{{Role: "user", Content: "Tell me about Atlantic Beacon."}}}}, domain.FleetSnapshotV2{
+		Vessels:         []domain.VesselProfileV2{{ID: "vessel-1", Callsign: "Gannet", Designation: "KM-214", DisplayName: "Gannet (KM-214)", Available: true, Telemetry: domain.VesselTelemetryV2{Position: domain.GeoPointV2{-71.2, 41.5}}}},
+		SurfaceContacts: []domain.SurfaceContactV2{{ID: "surface-1", Name: "MV Atlantic Beacon", Position: domain.GeoPointV2{-71.1, 41.4}}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.Provider != "openai" || result.Mode != "workspace" || len(result.Actions) != 1 || result.Actions[0].Kind != "inspect_vessel" {
 		t.Fatalf("unexpected workspace command: %#v", result)
+	}
+}
+
+func TestWorkspaceCommandUsesRecentVoiceHistoryAndVerifiedNearestVessel(t *testing.T) {
+	fleet := domain.FleetSnapshotV2{
+		Vessels: []domain.VesselProfileV2{
+			{ID: "vessel-near", Callsign: "Gannet", Designation: "KM-214", DisplayName: "Gannet (KM-214)", Available: true, Telemetry: domain.VesselTelemetryV2{Position: domain.GeoPointV2{-71.001, 41}}},
+			{ID: "vessel-far", Callsign: "Osprey", Designation: "KM-215", DisplayName: "Osprey (KM-215)", Available: true, Telemetry: domain.VesselTelemetryV2{Position: domain.GeoPointV2{-71.1, 41}}},
+		},
+		SurfaceContacts: []domain.SurfaceContactV2{{ID: "surface-1", Name: "MV Atlantic Beacon", Callsign: "ATLANTIC BEACON", Position: domain.GeoPointV2{-71, 41}}},
+	}
+	request := domain.WorkspaceAssistantRequestV1{
+		Text: "Which one of our boats is closest to that one?",
+		MemoryContext: &domain.ContextAssemblyV1{RecentTurns: []domain.ConversationTurnV1{
+			{Role: "user", Content: "Can you tell me about the Atlantic Beacon?"},
+			{Role: "assistant", Content: "MV Atlantic Beacon is a container ship."},
+		}},
+	}
+	result, err := NewManager(Config{}, slog.Default()).WorkspaceCommand(context.Background(), request, fleet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Speech, "Gannet (KM-214)") || !strings.Contains(result.Speech, "MV Atlantic Beacon") || !strings.Contains(result.Speech, "nautical miles") {
+		t.Fatalf("recent reference or verified distance was not used: %#v", result)
 	}
 }
 

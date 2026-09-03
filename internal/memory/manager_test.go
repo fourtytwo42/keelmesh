@@ -28,6 +28,17 @@ func TestConversationAssemblyKeepsLatestTwelveTurns(t *testing.T) {
 	}
 }
 
+func TestConversationAssemblyContinuesAcrossMissionContext(t *testing.T) {
+	m := testManager()
+	ctx := context.Background()
+	m.RecordExchange(ctx, "global", "demo-operator", "voice-and-chat", "", "Tell me about Atlantic Beacon.", "Atlantic Beacon is a container ship.", "mock")
+	m.RecordExchange(ctx, "mission", "demo-operator", "voice-and-chat", "mission-1", "Plan a rendezvous.", "I prepared three options.", "mock")
+	assembly := m.Assemble(ctx, "follow-up", "demo-operator", "voice-and-chat", "mission-1", "Which boat was I discussing?")
+	if len(assembly.RecentTurns) != 4 || assembly.RecentTurns[0].Content != "Tell me about Atlantic Beacon." || assembly.RecentTurns[3].Content != "I prepared three options." {
+		t.Fatalf("voice/text history did not continue across mission context: %+v", assembly.RecentTurns)
+	}
+}
+
 func TestConversationTurnsAreSessionScopedAndBounded(t *testing.T) {
 	m := testManager()
 	ctx := context.Background()
