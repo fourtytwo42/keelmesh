@@ -303,6 +303,7 @@ export function FleetWorkspace() {
     return () => window.clearTimeout(timer);
   }, [plannerVisible, mission?.id, missionTargetKey, selectedKey]);
   const activePlan =
+    plans.find((p) => p.id === mission?.authorized_plan_id) ??
     plans.find((p) => p.id === planID) ??
     plans.find((p) => p.recommended) ??
     null;

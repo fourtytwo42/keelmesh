@@ -4,8 +4,8 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: conversational three-option mission planning is implemented, verified, and deployed on VM 214 and all twelve vessel nodes.
-- Last meaningful change: Mission Planner now presents a compact chat followed by exactly three AI strategy cards. Clicking a card opens one exact-hash confirmation; saying or typing `go with option A/B/C` is itself the single approval and runs preview, authorization, and start through the existing deterministic authority boundary. Manual Objective and Map Authoring sections stay collapsed at the bottom, and route schematics plus redundant generation/voice-status controls are removed.
+- Current task: live rendezvous/follow visualization is implemented, verified, and deployed on VM 214 and all twelve vessel nodes.
+- Last meaningful change: active contact missions now draw a group-colored live path from the controlled group to the predicted contact intercept/stand-off point, update for moving contacts, and show a changing ETA/distance label. Mission-assigned groups no longer render idle `HOLD` labels. Active fleet plans and command drafts are persisted and legacy active plans are reconstructed from the signed trajectory journal after a core restart, so overlays and rolling tracking survive service restarts.
 - Next step: continue M8D automatic node-agent interruption escalation or M9 signed group adaptation from this clean checkpoint.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -150,6 +150,14 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+### 2026-09-03 - Live rendezvous ETA and restart-safe plan recovery
+
+- Context: Yellow/NG was executing a rendezvous with anchored contact `MT Safe Haven`, but the map showed neither the active relationship nor an ETA and retained a misleading idle hold state.
+- Files: `web/src/OperationsMap.tsx`, `web/src/FleetWorkspace.tsx`, `web/e2e/mission.spec.ts`, `internal/fleetops/manager.go`, and `internal/fleetops/manager_test.go`.
+- Commands/tests: strict TypeScript check, seven Vitest tests, production Vite build, full Go tests, full Go vet, Docker rebuild, non-mutating live Playwright inspection, `/healthz`, and twelve-node service/hash checks.
+- Result: the live map displayed a yellow rendezvous line and changing `ETA ... · 3.9 NM` label while the count of visible idle hold groups dropped from eight to seven. Restarted core returned the exact authorized plan for the executing mission. VM 214 and all twelve nodes are healthy on binary SHA-256 `9bc6fefb17931aa35de244694c7bfc182603c6128ecd7b2b4bdadf267bf790b1`.
+- Follow-up: the dedicated destructive E2E workflow was added but not run against the current live mission because its setup resets operator mission state; the equivalent behavior was verified non-mutating against the active mission.
 
 ### 2026-09-03 - Controlled-vessel intercept speed calibration
 

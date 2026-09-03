@@ -2339,7 +2339,55 @@ func (m *Manager) MissionPlans(id string) ([]domain.FleetPlanV2, error) {
 			out = append(out, plan)
 		}
 	}
+	if len(out) == 0 {
+		if program, exists := m.programs[id]; exists {
+			if recovered, ok := recoverFleetPlan(mission, program, m.vessels); ok {
+				out = append(out, recovered)
+			}
+		}
+	}
 	return out, nil
+}
+
+// recoverFleetPlan rebuilds the operator-visible active course from the signed
+// trajectory journal. It is used only when upgrading a deployment that
+// predates durable fleet-plan persistence; the signed revision remains the
+// source of authority.
+func recoverFleetPlan(mission domain.MissionWorkspaceV2, program domain.TrajectoryProgramV1, vessels map[string]domain.VesselProfileV2) (domain.FleetPlanV2, bool) {
+	revision, ok := program.Revisions[program.ActiveRevision]
+	if !ok || revision.PlanID == "" || revision.PlanHash == "" {
+		return domain.FleetPlanV2{}, false
+	}
+	assignments := make([]domain.FleetAssignmentV2, 0, len(revision.Segments))
+	minimumReserve := 1.0
+	for vesselID, segments := range revision.Segments {
+		if len(segments) == 0 {
+			continue
+		}
+		route := []domain.GeoPointV2{segments[0].Start}
+		for _, segment := range segments {
+			route = append(route, segment.End)
+		}
+		reserve := 1.0
+		if vessel, exists := vessels[vesselID]; exists {
+			reserve = vessel.Telemetry.ProjectedReserve
+		}
+		minimumReserve = math.Min(minimumReserve, reserve)
+		assignments = append(assignments, domain.FleetAssignmentV2{VesselID: vesselID, Route: route, SpeedMPS: segments[0].TargetSpeedMPS, DistanceKM: routeDistance(route)})
+	}
+	if len(assignments) == 0 {
+		return domain.FleetPlanV2{}, false
+	}
+	sort.Slice(assignments, func(i, j int) bool { return assignments[i].VesselID < assignments[j].VesselID })
+	return domain.FleetPlanV2{
+		SchemaVersion: 2, ID: revision.PlanID, MissionID: mission.ID, Name: mission.Name + " active course",
+		Description: "Recovered from the signed active trajectory journal after restart.", Formation: mission.Formation,
+		AdvisorSource: "signed-trajectory-journal", FollowContactID: mission.FollowContactID, ContactBehavior: mission.ContactBehavior,
+		ContactStandoffM: mission.ContactStandoffM, ContinuousTracking: mission.FollowContactID != "", ReplanIntervalS: 60,
+		PredictionHorizonS: 180, Assignments: assignments, MinimumReserve: minimumReserve,
+		DurationMinutes: float64(revision.DurationS) / 60, MinimumSeparationM: mission.Constraints.MinimumVesselSeparationM,
+		PolicyStatus: "approval_required", Recommended: true, ContentHash: revision.PlanHash, SourceMissionVersion: mission.Version,
+	}, true
 }
 func (m *Manager) Preview(mid, pid string, req PlanActionRequest) (domain.FleetPreviewV2, error) {
 	m.mu.RLock()
@@ -3623,6 +3671,14 @@ func (m *Manager) persistAsync() {
 	}
 	generation := m.persistenceGeneration.Add(1)
 	snapshot := m.snapshotLocked()
+	drafts := make([]domain.CommandDraftV2, 0, len(m.drafts))
+	for _, draft := range m.drafts {
+		drafts = append(drafts, draft)
+	}
+	plans := make([]domain.FleetPlanV2, 0, len(m.plans))
+	for _, plan := range m.plans {
+		plans = append(plans, plan)
+	}
 	go func() {
 		m.persistenceMu.Lock()
 		defer m.persistenceMu.Unlock()
@@ -3651,6 +3707,14 @@ func (m *Manager) persistAsync() {
 		for _, v := range snapshot.Missions {
 			b, _ := json.Marshal(v)
 			_, _ = pool.Exec(ctx, `INSERT INTO mission_workspaces(id,version,status,payload,updated_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET version=EXCLUDED.version,status=EXCLUDED.status,payload=EXCLUDED.payload,updated_at=EXCLUDED.updated_at`, v.ID, v.Version, v.Status, b, v.UpdatedAt)
+		}
+		for _, draft := range drafts {
+			b, _ := json.Marshal(draft)
+			_, _ = pool.Exec(ctx, `INSERT INTO mission_command_drafts(id,mission_id,content_hash,payload) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET mission_id=EXCLUDED.mission_id,content_hash=EXCLUDED.content_hash,payload=EXCLUDED.payload`, draft.ID, draft.MissionID, draft.ContentHash, b)
+		}
+		for _, plan := range plans {
+			b, _ := json.Marshal(plan)
+			_, _ = pool.Exec(ctx, `INSERT INTO fleet_plans(id,mission_id,content_hash,state,payload) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET mission_id=EXCLUDED.mission_id,content_hash=EXCLUDED.content_hash,state=EXCLUDED.state,payload=EXCLUDED.payload`, plan.ID, plan.MissionID, plan.ContentHash, plan.PolicyStatus, b)
 		}
 	}()
 }
@@ -3811,12 +3875,39 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 			m.missions[v.ID] = v
 		}
 	})
+	load(`SELECT payload FROM mission_command_drafts ORDER BY created_at`, func(b []byte) {
+		var draft domain.CommandDraftV2
+		if json.Unmarshal(b, &draft) == nil && draft.ID != "" {
+			m.drafts[draft.ID] = draft
+		}
+	})
+	load(`SELECT payload FROM fleet_plans ORDER BY created_at`, func(b []byte) {
+		var plan domain.FleetPlanV2
+		if json.Unmarshal(b, &plan) == nil && plan.ID != "" {
+			m.plans[plan.ID] = plan
+		}
+	})
 	load(`SELECT payload FROM trajectory_programs ORDER BY mission_id`, func(b []byte) {
 		var program domain.TrajectoryProgramV1
 		if json.Unmarshal(b, &program) == nil && program.MissionID != "" && trajectory.ValidateRevision(program.Revisions[program.ActiveRevision], m.secret) {
 			m.programs[program.MissionID] = program
 		}
 	})
+	for missionID, program := range m.programs {
+		mission, exists := m.missions[missionID]
+		if !exists {
+			continue
+		}
+		active, exists := program.Revisions[program.ActiveRevision]
+		if !exists {
+			continue
+		}
+		if _, exists := m.plans[active.PlanID]; !exists {
+			if recovered, ok := recoverFleetPlan(mission, program, m.vessels); ok {
+				m.plans[recovered.ID] = recovered
+			}
+		}
+	}
 	for id, group := range m.groups {
 		group.ColorName = nearestWaypointColor(group.Color)
 		if group.RouteMode == "" {

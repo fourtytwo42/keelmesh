@@ -199,6 +199,29 @@ test("fictional surface traffic moves on stable identified routes", async ({ pag
   expect(second.surface_contacts[0].position).not.toEqual(first.surface_contacts[0].position);
 });
 
+test("contact rendezvous shows a live ETA and suppresses the idle hold marker", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto("/");
+  const rail = page.getByRole("region", { name: "Fleet / Groups" });
+  await rail.getByRole("button", { name: "NG Narragansett", exact: true }).click();
+  await createSelectedMission(page);
+  const planner = page.getByRole("region", { name: "Mission Planner" });
+  await planner.getByRole("textbox", { name: "Message mission AI" }).fill(
+    "Rendezvous yellow group with Safe Haven and maintain a safe stand-off.",
+  );
+  await planner.getByRole("button", { name: "Send to mission AI" }).click();
+  await expect.poll(() => planner.locator(".candidate-list > article").count(), { timeout: 40_000 }).toBe(3);
+  await planner.locator(".candidate-select:not(:disabled)").first().click();
+  await page.getByRole("dialog").getByRole("button", { name: "Confirm and execute" }).click();
+  await expect(page.locator(".mission-tabs .mission-tab.active")).toContainText("executing", { timeout: 20_000 });
+
+  const map = page.locator(".operations-map");
+  await expect(map).toHaveAttribute("data-rendezvous-status", /ETA .* NM/);
+  await expect(map).toHaveAttribute("data-visible-hold-groups", "7");
+  const initialETA = await map.getAttribute("data-rendezvous-status");
+  await expect.poll(() => map.getAttribute("data-rendezvous-status"), { timeout: 10_000 }).not.toBe(initialETA);
+});
+
 test("pirate watch changes nomenclature, agent voice, and returns cleanly to navy mode", async ({ page }) => {
   const pirateRequests: string[] = [];
   page.on("request", request => {

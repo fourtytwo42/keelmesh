@@ -1428,6 +1428,21 @@ func TestControlledFleetCanOvertakeAndPlanAgainstFastestSurfaceContact(t *testin
 func TestContinuousFollowArmsRollingFutureRevision(t *testing.T) {
 	m := New("", slog.Default())
 	snapshot := m.Snapshot()
+	anchor := snapshot.Vessels[0].Telemetry.Position
+	followContactID := ""
+	closestDistance := math.Inf(1)
+	for _, contact := range snapshot.SurfaceContacts {
+		if contact.SpeedMPS <= 0 {
+			continue
+		}
+		if distance := geoDistanceM(anchor, contact.Position); distance < closestDistance {
+			closestDistance = distance
+			followContactID = contact.ID
+		}
+	}
+	if followContactID == "" {
+		t.Fatal("expected at least one moving surface contact")
+	}
 	mission, err := m.CreateMission(CreateMissionRequest{
 		Mutation:  Mutation{RequestID: "rolling-create", IdempotencyKey: "rolling-create", ExpectedVersion: snapshot.FleetVersion},
 		Name:      "Rolling Blue Finch Watch",
@@ -1438,10 +1453,10 @@ func TestContinuousFollowArmsRollingFutureRevision(t *testing.T) {
 	}
 	draft, err := m.Compile(mission.ID, CompileRequest{
 		Mutation:        Mutation{RequestID: "rolling-compile", IdempotencyKey: "rolling-compile", ExpectedVersion: mission.Version},
-		Text:            "Follow Blue Finch continuously",
+		Text:            "Follow the nearest moving contact continuously",
 		PlanningMode:    "manual",
 		GuidanceKind:    "follow_contact",
-		FollowContactID: "surface-12",
+		FollowContactID: followContactID,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -199,6 +199,127 @@ function routeData(
       })),
   };
 }
+
+const metresPerDegreeLatitude = 111_000;
+
+function projectPoint(point: Point, headingDeg: number, distanceM: number): Point {
+  const heading = headingDeg * Math.PI / 180;
+  const latitudeScale = Math.max(0.2, Math.cos(point[1] * Math.PI / 180));
+  return [
+    point[0] + Math.sin(heading) * distanceM / (metresPerDegreeLatitude * latitudeScale),
+    point[1] + Math.cos(heading) * distanceM / metresPerDegreeLatitude,
+  ];
+}
+
+function localVector(origin: Point, target: Point): [number, number] {
+  const latitudeScale = Math.max(0.2, Math.cos(origin[1] * Math.PI / 180));
+  return [
+    (target[0] - origin[0]) * metresPerDegreeLatitude * latitudeScale,
+    (target[1] - origin[1]) * metresPerDegreeLatitude,
+  ];
+}
+
+function geoDistanceM(origin: Point, target: Point): number {
+  const [east, north] = localVector(origin, target);
+  return Math.hypot(east, north);
+}
+
+function interceptSeconds(origin: Point, target: Point, targetHeading: number, targetSpeed: number, pursuerSpeed: number): number | null {
+  const [east, north] = localVector(origin, target);
+  const heading = targetHeading * Math.PI / 180;
+  const velocityEast = Math.sin(heading) * targetSpeed;
+  const velocityNorth = Math.cos(heading) * targetSpeed;
+  const a = velocityEast ** 2 + velocityNorth ** 2 - pursuerSpeed ** 2;
+  const b = 2 * (east * velocityEast + north * velocityNorth);
+  const c = east ** 2 + north ** 2;
+  const candidates: number[] = [];
+  if (Math.abs(a) < 1e-6) {
+    if (Math.abs(b) > 1e-6) candidates.push(-c / b);
+  } else {
+    const discriminant = b ** 2 - 4 * a * c;
+    if (discriminant >= 0) {
+      const root = Math.sqrt(discriminant);
+      candidates.push((-b - root) / (2 * a), (-b + root) / (2 * a));
+    }
+  }
+  const positive = candidates.filter((value) => Number.isFinite(value) && value >= 0).sort((left, right) => left - right)[0];
+  return positive !== undefined && positive <= 86_400 ? positive : null;
+}
+
+function formatETA(seconds: number | null): string {
+  if (seconds === null) return "NO INTERCEPT";
+  const rounded = Math.max(0, Math.ceil(seconds));
+  const hours = Math.floor(rounded / 3600);
+  const minutes = Math.floor((rounded % 3600) / 60);
+  const remainder = rounded % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
+    : `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function contactMissionOverlayData(
+  plan: FleetPlanV2 | null,
+  mission: MissionWorkspaceV2 | null,
+  fleet: FleetSnapshotV2,
+): GeoJSON.FeatureCollection {
+  if (!plan || !mission || !["authorized", "executing", "paused"].includes(mission.status) || !plan.follow_contact_id) {
+    return { type: "FeatureCollection", features: [] };
+  }
+  const contact = fleet.surface_contacts.find((item) => item.id === plan.follow_contact_id);
+  const vessels = mission.target_ids.flatMap((id) => {
+    const vessel = fleet.vessels.find((item) => item.id === id);
+    return vessel ? [vessel] : [];
+  });
+  if (!contact || vessels.length === 0) return { type: "FeatureCollection", features: [] };
+
+  const origin: Point = [
+    vessels.reduce((sum, vessel) => sum + vessel.telemetry.position[0], 0) / vessels.length,
+    vessels.reduce((sum, vessel) => sum + vessel.telemetry.position[1], 0) / vessels.length,
+  ];
+  const group = fleet.groups.find((item) => item.member_ids.some((id) => mission.target_ids.includes(id)));
+  const color = group?.color ?? "#e9a93f";
+  const standoff = Math.max(0, plan.contact_standoff_m ?? mission.contact_standoff_m ?? 0);
+  const currentRendezvous = projectPoint(contact.position, contact.heading_deg + 180, standoff);
+  let eta: number | null = 0;
+  for (const vessel of vessels) {
+    const assignment = plan.assignments.find((item) => item.vessel_id === vessel.id);
+    const speed = Math.max(0.1, assignment?.speed_mps ?? vessel.telemetry.speed_mps);
+    const vesselETA = interceptSeconds(vessel.telemetry.position, currentRendezvous, contact.heading_deg, contact.speed_mps, speed);
+    if (vesselETA === null) {
+      eta = null;
+      break;
+    }
+    eta = Math.max(eta ?? 0, vesselETA);
+  }
+  const predictedContact = eta === null
+    ? contact.position
+    : projectPoint(contact.position, contact.heading_deg, contact.speed_mps * eta);
+  const destination = projectPoint(predictedContact, contact.heading_deg + 180, standoff);
+  const midpoint: Point = [(origin[0] + destination[0]) / 2, (origin[1] + destination[1]) / 2];
+  const distanceNM = geoDistanceM(origin, currentRendezvous) / 1852;
+  const groupLabel = group ? `${group.color_name.toUpperCase()} ${group.code}` : mission.name.toUpperCase();
+  const etaText = `ETA ${formatETA(eta)} · ${distanceNM.toFixed(1)} NM`;
+  const features: GeoJSON.Feature[] = [
+    {
+      type: "Feature",
+      properties: { kind: "rendezvous-route", color, label: `${groupLabel} → ${contact.name.toUpperCase()}` },
+      geometry: { type: "LineString", coordinates: [origin, destination] },
+    },
+    {
+      type: "Feature",
+      properties: { kind: "rendezvous-eta", color, label: etaText },
+      geometry: { type: "Point", coordinates: midpoint },
+    },
+  ];
+  if (contact.speed_mps > 0.05 && geoDistanceM(contact.position, predictedContact) > 10) {
+    features.push({
+      type: "Feature",
+      properties: { kind: "contact-prediction", color: contact.color },
+      geometry: { type: "LineString", coordinates: [contact.position, predictedContact] },
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
 function geometryData(
   mission: MissionWorkspaceV2 | null,
 ): GeoJSON.FeatureCollection {
@@ -266,10 +387,15 @@ function geometryData(
   };
 }
 function groupAssemblyData(fleet: FleetSnapshotV2): GeoJSON.FeatureCollection {
+  const missionTargets = new Set(
+    fleet.missions
+      .filter((mission) => ["authorized", "executing", "paused"].includes(mission.status))
+      .flatMap((mission) => mission.target_ids),
+  );
   return {
     type: "FeatureCollection",
     features: fleet.groups
-      .filter((group) => group.assembly_point)
+      .filter((group) => group.assembly_point && !group.member_ids.some((id) => missionTargets.has(id)))
       .map((group) => ({
         type: "Feature",
         id: `assembly-${group.id}`,
@@ -421,6 +547,14 @@ export function OperationsMap({
   const effectiveWaypointColor = selectedGroup
     ? (selectedGroup.color_name as WaypointColor)
     : "amber";
+  const contactMissionOverlay = useMemo(
+    () => contactMissionOverlayData(activePlan, mission, fleet),
+    [activePlan, mission, fleet],
+  );
+  const rendezvousStatus = String(
+    contactMissionOverlay.features.find((feature) => feature.properties?.kind === "rendezvous-eta")?.properties?.label ?? "",
+  );
+  const visibleHoldGroups = useMemo(() => groupAssemblyData(fleet), [fleet]);
   const visibleVesselIDs = () => {
     const map = mapRef.current;
     if (!map) return [];
@@ -748,6 +882,59 @@ export function OperationsMap({
           "line-opacity": 0.9,
         },
       });
+      map.addSource("contact-mission-overlay", { type: "geojson", data: empty });
+      map.addLayer({
+        id: "contact-mission-prediction",
+        type: "line",
+        source: "contact-mission-overlay",
+        filter: ["==", ["get", "kind"], "contact-prediction"],
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 1.5,
+          "line-dasharray": [2, 3],
+          "line-opacity": 0.7,
+        },
+      });
+      map.addLayer({
+        id: "contact-mission-route-glow",
+        type: "line",
+        source: "contact-mission-overlay",
+        filter: ["==", ["get", "kind"], "rendezvous-route"],
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 8,
+          "line-opacity": 0.18,
+          "line-blur": 2,
+        },
+      });
+      map.addLayer({
+        id: "contact-mission-route",
+        type: "line",
+        source: "contact-mission-overlay",
+        filter: ["==", ["get", "kind"], "rendezvous-route"],
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 3,
+          "line-opacity": 0.96,
+        },
+      });
+      map.addLayer({
+        id: "contact-mission-eta",
+        type: "symbol",
+        source: "contact-mission-overlay",
+        filter: ["==", ["get", "kind"], "rendezvous-eta"],
+        layout: {
+          "text-field": ["get", "label"],
+          "text-size": 10,
+          "text-offset": [0, -1.1],
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": "#fff3d5",
+          "text-halo-color": "#111718",
+          "text-halo-width": 2.5,
+        },
+      });
       map.addSource("surface-contact-routes", {
         type: "geojson",
         data: surfaceRouteData(fleet.surface_contacts),
@@ -957,6 +1144,9 @@ export function OperationsMap({
     (mapRef.current.getSource("routes") as GeoJSONSource)?.setData(
       routeData(activePlan, mission, fleet),
     );
+    (mapRef.current.getSource("contact-mission-overlay") as GeoJSONSource)?.setData(
+      contactMissionOverlay,
+    );
     (mapRef.current.getSource("surface-contacts") as GeoJSONSource)?.setData(
       surfaceContactData(fleet),
     );
@@ -967,9 +1157,9 @@ export function OperationsMap({
       geometryData(mission),
     );
     (mapRef.current.getSource("group-assembly") as GeoJSONSource)?.setData(
-      groupAssemblyData(fleet),
+      visibleHoldGroups,
     );
-  }, [ready, fleet, activePlan, mission]);
+  }, [ready, fleet, activePlan, mission, contactMissionOverlay, visibleHoldGroups]);
   useEffect(() => {
     if (!ready || !mapRef.current || !mission || !focusedGeometry) return;
     let point: Point | undefined;
@@ -1644,6 +1834,8 @@ export function OperationsMap({
       ref={host}
       role="application"
       aria-label="Fleet operating map. Tap to select. Long press for contextual actions."
+      data-rendezvous-status={rendezvousStatus || undefined}
+      data-visible-hold-groups={visibleHoldGroups.features.length}
       onPointerLeave={() => setMapHover(null)}
     >
       {box && (
