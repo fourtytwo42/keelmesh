@@ -375,6 +375,28 @@ func (m *Manager) Scenes(actor, session string) []domain.CommandSceneV1 {
 	sort.SliceStable(result, func(i, j int) bool { return result[i].UpdatedAt.After(result[j].UpdatedAt) })
 	return result
 }
+
+// RestoreScenes rehydrates inert, previously validated scene projections after
+// restart. It never restores pending execution or invokes scene actions.
+func (m *Manager) RestoreScenes(values []domain.CommandSceneV1) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, value := range values {
+		if _, exists := m.scenes[value.ID]; exists {
+			continue
+		}
+		if value.PendingApproval {
+			value.PendingApproval = false
+			value.Approval = nil
+			value.State = "history"
+		}
+		m.scenes[value.ID] = clone(value)
+		m.sceneOrder = append(m.sceneOrder, value.ID)
+		if value.State == "active" {
+			m.activeScenes[sceneSessionKey(value.ActorID, value.SessionID)] = value.ID
+		}
+	}
+}
 func (m *Manager) Scene(id string) (domain.CommandSceneV1, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

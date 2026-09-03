@@ -27,6 +27,7 @@ func (s *Server) assistantTurnV4(w http.ResponseWriter, r *http.Request) {
 	value, err := s.agent.CreateAssistantTurn(r.Context(), request, s.fleetops.Snapshot())
 	if err == nil && s.memory != nil {
 		s.memory.RecordExchange(r.Context(), value.ID, request.ActorIdentity, request.SessionID, request.ActiveMissionID, request.Text, value.Assistant.Speech, value.Assistant.Provider)
+		s.memory.SaveScene(r.Context(), value.Scene)
 	}
 	respondAgent(w, value, err, http.StatusCreated)
 }
@@ -82,6 +83,9 @@ func (s *Server) scenesV4(w http.ResponseWriter, r *http.Request) {
 	if s.fleetops != nil {
 		s.agent.RefreshScenes(s.fleetops.Snapshot())
 	}
+	if s.memory != nil {
+		s.agent.RestoreScenes(s.memory.Scenes(r.URL.Query().Get("actor_identity"), r.URL.Query().Get("session_id")))
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"scenes": s.agent.Scenes(r.URL.Query().Get("actor_identity"), r.URL.Query().Get("session_id"))})
 }
 func (s *Server) assistantHistoryV4(w http.ResponseWriter, r *http.Request) { s.scenesV4(w, r) }
@@ -104,6 +108,9 @@ func (s *Server) sceneMutationV4(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			value, err := s.agent.MutateScene(id, operation, request)
+			if err == nil && s.memory != nil {
+				s.memory.SaveScene(r.Context(), value)
+			}
 			respondAgent(w, value, err, http.StatusOK)
 			return
 		}
@@ -117,5 +124,8 @@ func (s *Server) sceneActionV4(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value, err := s.agent.ApplySceneAction(r.PathValue("id"), request)
+	if err == nil && s.memory != nil {
+		s.memory.SaveScene(r.Context(), value)
+	}
 	respondAgent(w, value, err, http.StatusOK)
 }

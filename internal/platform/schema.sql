@@ -139,6 +139,17 @@ CREATE TABLE IF NOT EXISTS memory_conversation_turns (
   created_at timestamptz NOT NULL
 );
 CREATE INDEX IF NOT EXISTS memory_turn_scope_idx ON memory_conversation_turns(actor_id,session_id,mission_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS memory_scene_history (
+  id text PRIMARY KEY,
+  actor_id text NOT NULL,
+  session_id text NOT NULL,
+  state text NOT NULL,
+  pinned boolean NOT NULL DEFAULT false,
+  payload jsonb NOT NULL,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS memory_scene_scope_idx ON memory_scene_history(actor_id,session_id,updated_at DESC);
 CREATE TABLE IF NOT EXISTS memory_items (
   id text PRIMARY KEY,
   scope_kind text NOT NULL CHECK(scope_kind IN ('operator','mission','vessel','group','faction','approved_global')),
