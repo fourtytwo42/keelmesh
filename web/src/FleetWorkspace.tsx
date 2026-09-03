@@ -14,6 +14,7 @@ import type {
   FleetSnapshotV2,
   MissionWaypointV2,
   MissionWorkspaceV2,
+  OperationalGroupV2,
   PlatformSnapshot,
   Point,
   ReachabilityV2,
@@ -1596,7 +1597,7 @@ export function FleetWorkspace() {
       kind: "primary",
       preferredDock: "left",
       initialDock: "left",
-      title: pirate ? "Flotilla / Crews" : "Fleet / Groups",
+      title: pirate ? "Flotilla" : "Fleet",
       icon: <Ship />,
       activation: windowActivations.fleet,
       toggleActivation: windowToggleActivations.fleet,
@@ -1689,7 +1690,7 @@ export function FleetWorkspace() {
       autoSize: false,
       minWidth: 350,
       minHeight: 245,
-      title: pirate ? "Voyage Canvas" : "Mission Canvas",
+      title: pirate ? "Voyage" : "Mission",
       icon: <Route />,
       initial: { x: window.innerWidth - 370, y: 92, width: 350, height: 680 },
       content: (
@@ -2381,6 +2382,39 @@ function VesselGroupContextMenu({
     document.body,
   );
 }
+function vesselFleetHelp(vessel: VesselProfileV2) {
+  const telemetry = vessel.telemetry;
+  const group = vessel.group_code
+    ? `${vessel.group_color_name} · ${vessel.group_code}`
+    : "Unassigned";
+  return [
+    `${vessel.callsign} · ${vessel.designation} · ${vessel.class.name}`,
+    `${telemetry.mode.replaceAll("_", " ")} · ${telemetry.speed_mps.toFixed(1)} m/s · heading ${Math.round(telemetry.heading_deg)}°`,
+    `Reserve ${Math.round(telemetry.reserve * 100)}% · projected ${Math.round(telemetry.projected_reserve * 100)}%`,
+    `PNT ${telemetry.pnt_integrity} ±${Math.round(telemetry.uncertainty_m)} m · ${telemetry.health}`,
+    `Group ${group}`,
+  ].join("\n");
+}
+
+function groupFleetHelp(group: OperationalGroupV2, fleet: FleetSnapshotV2) {
+  const members = group.member_ids
+    .map((id) => fleet.vessels.find((vessel) => vessel.id === id))
+    .filter((vessel): vessel is VesselProfileV2 => !!vessel);
+  const averageReserve = members.length
+    ? members.reduce((sum, vessel) => sum + vessel.telemetry.reserve, 0) / members.length
+    : 0;
+  const underway = members.filter((vessel) => vessel.telemetry.speed_mps > 0.1).length;
+  const available = members.filter((vessel) => vessel.available).length;
+  const decisionNode = members.find((vessel) => vessel.id === group.decision_node_id);
+  return [
+    `${group.code} · ${group.name} · ${group.color_name} team`,
+    `${available}/${members.length} available · ${underway} underway`,
+    `${group.formation.replaceAll("_", " ")} · ${group.formation_spacing_m} m spacing · heading ${Math.round(group.formation_heading_deg)}°`,
+    `Average reserve ${Math.round(averageReserve * 100)}% · ${group.route_mode.replaceAll("_", " ")}`,
+    `Decision node ${decisionNode?.callsign || "Unavailable"} · epoch ${group.decision_epoch}`,
+  ].join("\n");
+}
+
 function FleetRail({
   pirate,
   fleet,
@@ -2482,12 +2516,12 @@ function FleetRail({
                 setDropGroup("");
             }}
             onDrop={(e) => drop(e, g.id)}
-            title={`Drop a vessel into ${g.code} ${g.name}`}
           >
             <div className="group-row-wrap">
               <button
                 aria-label={`${g.code} ${g.name}`}
                 className="group-row"
+                data-help={groupFleetHelp(g, fleet)}
                 onDoubleClick={() => onGroup(g.id)}
                 onClick={() => onGroup(g.id)}
               >
@@ -2538,6 +2572,7 @@ function FleetRail({
                     setMenu({ vessel: v, x: e.clientX, y: e.clientY });
                   }}
                   className={`fleet-vessel-row ${selected.has(v.id) ? "selected" : ""}`}
+                  data-help={vesselFleetHelp(v)}
                   data-fleet-vessel={v.id}
                   key={v.id}
                 >
@@ -2615,6 +2650,7 @@ function FleetRail({
                     setMenu({ vessel: v, x: e.clientX, y: e.clientY });
                   }}
                   className={`fleet-vessel-row ${selected.has(v.id) ? "selected" : ""}`}
+                  data-help={vesselFleetHelp(v)}
                   data-fleet-vessel={v.id}
                   key={v.id}
                 >
@@ -3472,11 +3508,11 @@ function MissionCanvas({
           {pirate ? "voyage" : "mission"} v{mission.version}
         </p>
       </div>
-      <div className="mission-scope-strip" title="Mission membership mirrors the current selection in Fleet / Groups. Changing that selection safely returns an active mission to draft for a new plan and authorization.">
+      <div className="mission-scope-strip" title="Mission membership mirrors the current selection in Fleet. Changing that selection safely returns an active mission to draft for a new plan and authorization.">
         <Ship />
         <span>
           <small>{pirate ? "VOYAGE CREW" : "MISSION ASSETS"}</small>
-          <b>{scopeParts.length > 0 ? scopeParts.join(" · ") : pirate ? "Choose ships in Flotilla / Crews" : "Select vessels or groups in Fleet / Groups"}</b>
+          <b>{scopeParts.length > 0 ? scopeParts.join(" · ") : pirate ? "Choose ships in Flotilla" : "Select vessels or groups in Fleet"}</b>
         </span>
         <em>{mission.target_ids.length}</em>
         <button

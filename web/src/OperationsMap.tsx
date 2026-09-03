@@ -2002,7 +2002,7 @@ export function OperationsMap({
               setContextMenu(null);
             }}
           >
-            {pirate ? "Open the muster roll" : "Open Fleet / Groups"}
+            {pirate ? "Open the muster roll" : "Open Fleet"}
           </button>
           {contextMenu.group && (
             <>
@@ -2051,7 +2051,7 @@ export function OperationsMap({
           </button>
           <button
             role="menuitem"
-            title="Open Mission Canvas with this contact as an uncommitted objective"
+            title="Open Mission with this contact as an uncommitted objective"
             onClick={() => {
               onPlanContact(contextContact.id);
               setContextMenu(null);
@@ -2062,7 +2062,7 @@ export function OperationsMap({
           <p>
             {pirate
               ? "Opens the plotter only; no voyage or authority is created."
-              : "Opens Mission Canvas only. No mission or movement is created."}
+              : "Opens Mission only. No mission or movement is created."}
           </p>
         </div>
       )}
