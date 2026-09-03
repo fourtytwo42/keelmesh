@@ -2,7 +2,7 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { api, KeelMeshError, requestID } from "./api";
+import { api, clientUUID, KeelMeshError, requestID } from "./api";
 import type {
   AgentSnapshot,
   ArenaSnapshotV1,
@@ -115,7 +115,7 @@ function commandSceneSessionID() {
   const key = "keelmesh.command-scene-session.v1";
   const existing = sessionStorage.getItem(key);
   if (existing) return existing;
-  const value = crypto.randomUUID();
+  const value = clientUUID();
   sessionStorage.setItem(key, value);
   return value;
 }
