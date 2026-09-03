@@ -364,7 +364,7 @@ func (m *Manager) ConversationTurns(actor, session string, limit int) []domain.C
 	result := make([]domain.ConversationTurnV1, 0, limit)
 	for i := len(m.turns) - 1; i >= 0 && len(result) < limit; i-- {
 		turn := m.turns[i]
-		if turn.ActorID == actor && turn.SessionID == session && turn.MissionID == "" {
+		if turn.ActorID == actor && turn.SessionID == session {
 			result = append(result, turn)
 		}
 	}

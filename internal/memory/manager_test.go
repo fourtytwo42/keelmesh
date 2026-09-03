@@ -38,11 +38,11 @@ func TestConversationTurnsAreSessionScopedAndBounded(t *testing.T) {
 	m.RecordExchange(ctx, "mission-turn", "demo-operator", "browser-a", "mission-1", "mission question", "mission answer", "mock")
 
 	turns := m.ConversationTurns("demo-operator", "browser-a", 4)
-	if len(turns) != 4 || turns[0].Content != "user 2" || turns[3].Content != "assistant 3" {
+	if len(turns) != 4 || turns[0].Content != "user 3" || turns[3].Content != "mission answer" {
 		t.Fatalf("unexpected bounded transcript: %+v", turns)
 	}
 	for _, turn := range turns {
-		if turn.SessionID != "browser-a" || turn.MissionID != "" {
+		if turn.SessionID != "browser-a" {
 			t.Fatalf("cross-scope turn leaked into global chat: %+v", turn)
 		}
 	}
