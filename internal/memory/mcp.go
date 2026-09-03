@@ -41,6 +41,11 @@ func (m *Manager) MCPHandler() http.Handler {
 			if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
 				return nil, err
 			}
+			// The incident-investigator token is bound server-side to the demo
+			// operator. A model-supplied actor field cannot widen its scope.
+			if args.Actor != "demo-operator" {
+				return nil, problem("MEMORY_SCOPE_DENIED", "MCP token is not authorized for the requested actor scope.")
+			}
 			var value any
 			var err error
 			switch definition.name {

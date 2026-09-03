@@ -81,6 +81,7 @@ type Manager struct {
 	items              map[string]domain.MemoryItemV1
 	candidates         map[string]domain.MemoryCandidateV1
 	turns              []domain.ConversationTurnV1
+	scenes             map[string]domain.CommandSceneV1
 	receipts           map[string]domain.RetrievalReceiptV1
 	contexts           map[string]domain.ContextAssemblyV1
 	entities           map[string]domain.MemoryEntityV1
@@ -92,7 +93,7 @@ type Manager struct {
 
 func New(cfg Config, logger *slog.Logger) *Manager {
 	now := time.Now().UTC()
-	return &Manager{cfg: cfg, logger: logger, http: &http.Client{Timeout: 1800 * time.Millisecond}, items: map[string]domain.MemoryItemV1{}, candidates: map[string]domain.MemoryCandidateV1{}, receipts: map[string]domain.RetrievalReceiptV1{}, contexts: map[string]domain.ContextAssemblyV1{}, entities: map[string]domain.MemoryEntityV1{}, replays: map[string]domain.MemoryReplayV1{}, idempotency: map[string]string{}, snapshot: domain.MemorySnapshotV1{SchemaVersion: 1, StateVersion: 1, Phase: "starting", EmbeddingVersion: EmbeddingVersion, EmbeddingState: "checking", RetrievalMode: "current-turn-only", Sync: []domain.MemorySyncStateV1{}, MemoryLab: map[string]any{"profile": "optional", "enabled": false, "minio": "stopped", "dagster": "stopped", "mlflow": "stopped"}, UpdatedAt: now, Summary: "Memory is starting; mission authority remains independent."}}
+	return &Manager{cfg: cfg, logger: logger, http: &http.Client{Timeout: 1800 * time.Millisecond}, items: map[string]domain.MemoryItemV1{}, candidates: map[string]domain.MemoryCandidateV1{}, scenes: map[string]domain.CommandSceneV1{}, receipts: map[string]domain.RetrievalReceiptV1{}, contexts: map[string]domain.ContextAssemblyV1{}, entities: map[string]domain.MemoryEntityV1{}, replays: map[string]domain.MemoryReplayV1{}, idempotency: map[string]string{}, snapshot: domain.MemorySnapshotV1{SchemaVersion: 1, StateVersion: 1, Phase: "starting", EmbeddingVersion: EmbeddingVersion, EmbeddingState: "checking", RetrievalMode: "current-turn-only", Sync: []domain.MemorySyncStateV1{}, MemoryLab: map[string]any{"profile": "optional", "enabled": false, "minio": "stopped", "dagster": "stopped", "mlflow": "stopped"}, UpdatedAt: now, Summary: "Memory is starting; mission authority remains independent."}}
 }
 
 func (m *Manager) Run(ctx context.Context) {
@@ -377,6 +378,50 @@ func (m *Manager) RecordExchange(ctx context.Context, turnID, actor, session, mi
 		m.commitCandidate(ctx, c, actor)
 	}
 	m.publish("memory.events.v1", turnID, map[string]any{"kind": "conversation_exchange", "turn_id": turnID, "actor_identity": actor, "provider": provider, "created_at": now})
+}
+
+// SaveScene stores the trusted, already-validated A2UI scene projection. Scene
+// history is memory, not authority: restoring it cannot execute an action.
+func (m *Manager) SaveScene(ctx context.Context, scene domain.CommandSceneV1) {
+	m.mu.Lock()
+	m.scenes[scene.ID] = clone(scene)
+	if len(m.scenes) > 200 {
+		var oldestID string
+		var oldest time.Time
+		for id, value := range m.scenes {
+			if value.Pinned {
+				continue
+			}
+			if oldestID == "" || value.UpdatedAt.Before(oldest) {
+				oldestID, oldest = id, value.UpdatedAt
+			}
+		}
+		if oldestID != "" {
+			delete(m.scenes, oldestID)
+		}
+	}
+	local := m.local
+	m.mu.Unlock()
+	m.persistJSON(ctx, "INSERT INTO memory_scene_history(id,actor_id,session_id,state,pinned,payload,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET state=excluded.state,pinned=excluded.pinned,payload=excluded.payload,updated_at=excluded.updated_at", scene.ID, scene.ActorID, scene.SessionID, scene.State, scene.Pinned, scene, scene.CreatedAt, scene.UpdatedAt)
+	if local != nil {
+		_ = local.putScene(scene)
+	}
+}
+
+func (m *Manager) Scenes(actor, session string) []domain.CommandSceneV1 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	values := make([]domain.CommandSceneV1, 0, len(m.scenes))
+	for _, scene := range m.scenes {
+		if scene.ActorID == actor && (scene.SessionID == session || scene.Critical) {
+			values = append(values, clone(scene))
+		}
+	}
+	sort.Slice(values, func(i, j int) bool { return values[i].UpdatedAt.Before(values[j].UpdatedAt) })
+	if len(values) > 50 {
+		values = values[len(values)-50:]
+	}
+	return values
 }
 
 func (m *Manager) Search(ctx context.Context, req SearchRequest) ([]domain.RetrievalHitV2, domain.RetrievalReceiptV1, error) {
@@ -669,6 +714,7 @@ func (m *Manager) Reset(ctx context.Context, req Mutation) (domain.MemorySnapsho
 	m.items = map[string]domain.MemoryItemV1{}
 	m.candidates = map[string]domain.MemoryCandidateV1{}
 	m.turns = nil
+	m.scenes = map[string]domain.CommandSceneV1{}
 	m.receipts = map[string]domain.RetrievalReceiptV1{}
 	m.contexts = map[string]domain.ContextAssemblyV1{}
 	m.replays = map[string]domain.MemoryReplayV1{}
@@ -683,7 +729,7 @@ func (m *Manager) Reset(ctx context.Context, req Mutation) (domain.MemorySnapsho
 	out := clone(m.snapshot)
 	m.mu.Unlock()
 	if m.pool != nil {
-		_, _ = m.pool.Exec(ctx, "TRUNCATE memory_context_assemblies,memory_retrieval_receipts,memory_conversation_turns,memory_tombstones,memory_revisions,memory_candidates,memory_items,memory_replays")
+		_, _ = m.pool.Exec(ctx, "TRUNCATE memory_scene_history,memory_context_assemblies,memory_retrieval_receipts,memory_conversation_turns,memory_tombstones,memory_revisions,memory_candidates,memory_items,memory_replays")
 	}
 	return out, nil
 }
@@ -758,7 +804,7 @@ func (m *Manager) loadLocal() {
 	if local == nil {
 		return
 	}
-	items, turns, candidates, err := local.load()
+	items, turns, candidates, scenes, err := local.load()
 	if err != nil {
 		m.logger.Warn("load node-local memory", "error", err)
 		return
@@ -770,6 +816,9 @@ func (m *Manager) loadLocal() {
 	m.turns = turns
 	for _, v := range candidates {
 		m.candidates[v.ID] = v
+	}
+	for _, v := range scenes {
+		m.scenes[v.ID] = v
 	}
 	m.snapshot.CommittedItems = int64(activeItems(m.items))
 	m.snapshot.ConversationTurns = int64(len(turns))
@@ -841,6 +890,19 @@ func (m *Manager) load(ctx context.Context) {
 		m.mu.Lock()
 		m.turns = loaded
 		m.snapshot.ConversationTurns = int64(len(loaded))
+		m.mu.Unlock()
+	}
+	sceneRows, err := pool.Query(ctx, "SELECT payload FROM memory_scene_history ORDER BY updated_at DESC LIMIT 200")
+	if err == nil {
+		defer sceneRows.Close()
+		m.mu.Lock()
+		for sceneRows.Next() {
+			var raw []byte
+			var scene domain.CommandSceneV1
+			if sceneRows.Scan(&raw) == nil && json.Unmarshal(raw, &scene) == nil {
+				m.scenes[scene.ID] = scene
+			}
+		}
 		m.mu.Unlock()
 	}
 	entityRows, err := pool.Query(ctx, "SELECT id,entity_type,name,scope_kind,scope_id,version,metadata,updated_at FROM memory_entities ORDER BY name")
@@ -1089,16 +1151,16 @@ func activeItems(v map[string]domain.MemoryItemV1) int {
 
 func memoryProjectionChecksum(items []domain.MemoryItemV1) string {
 	type projected struct {
-		ID             string                `json:"id"`
-		Scope          domain.MemoryScopeV1  `json:"scope"`
-		Kind           string                `json:"kind"`
-		Content        string                `json:"content"`
-		Revision       int                   `json:"revision"`
-		SourceID       string                `json:"source_id"`
-		SourceChecksum string                `json:"source_checksum"`
-		Inferred       bool                  `json:"inferred"`
-		SupersedesID   string                `json:"supersedes_id,omitempty"`
-		Tombstoned     bool                  `json:"tombstoned"`
+		ID             string               `json:"id"`
+		Scope          domain.MemoryScopeV1 `json:"scope"`
+		Kind           string               `json:"kind"`
+		Content        string               `json:"content"`
+		Revision       int                  `json:"revision"`
+		SourceID       string               `json:"source_id"`
+		SourceChecksum string               `json:"source_checksum"`
+		Inferred       bool                 `json:"inferred"`
+		SupersedesID   string               `json:"supersedes_id,omitempty"`
+		Tombstoned     bool                 `json:"tombstoned"`
 	}
 	values := make([]projected, 0, len(items))
 	for _, item := range items {

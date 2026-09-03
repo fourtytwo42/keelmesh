@@ -29,7 +29,7 @@ func openLocalStore(root string) (*localStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	statements := []string{"PRAGMA journal_mode=WAL", "PRAGMA synchronous=FULL", "PRAGMA foreign_keys=ON", "CREATE TABLE IF NOT EXISTS turns(id TEXT PRIMARY KEY,payload BLOB NOT NULL,created_at TEXT NOT NULL)", "CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,payload BLOB NOT NULL,tombstoned INTEGER NOT NULL,updated_at TEXT NOT NULL)", "CREATE TABLE IF NOT EXISTS candidates(id TEXT PRIMARY KEY,payload BLOB NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL)", "CREATE TABLE IF NOT EXISTS retrieval_metadata(id TEXT PRIMARY KEY,payload BLOB NOT NULL,created_at TEXT NOT NULL)"}
+	statements := []string{"PRAGMA journal_mode=WAL", "PRAGMA synchronous=FULL", "PRAGMA foreign_keys=ON", "CREATE TABLE IF NOT EXISTS turns(id TEXT PRIMARY KEY,payload BLOB NOT NULL,created_at TEXT NOT NULL)", "CREATE TABLE IF NOT EXISTS scenes(id TEXT PRIMARY KEY,payload BLOB NOT NULL,pinned INTEGER NOT NULL,updated_at TEXT NOT NULL)", "CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,payload BLOB NOT NULL,tombstoned INTEGER NOT NULL,updated_at TEXT NOT NULL)", "CREATE TABLE IF NOT EXISTS candidates(id TEXT PRIMARY KEY,payload BLOB NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL)", "CREATE TABLE IF NOT EXISTS retrieval_metadata(id TEXT PRIMARY KEY,payload BLOB NOT NULL,created_at TEXT NOT NULL)"}
 	for _, statement := range statements {
 		if _, err = db.Exec(statement); err != nil {
 			db.Close()
@@ -70,6 +70,13 @@ func (s *localStore) putCandidate(v domain.MemoryCandidateV1) error {
 	}
 	return s.append("candidate", v.ID, raw)
 }
+func (s *localStore) putScene(v domain.CommandSceneV1) error {
+	raw, _ := json.Marshal(v)
+	if _, err := s.db.Exec("INSERT INTO scenes(id,payload,pinned,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,pinned=excluded.pinned,updated_at=excluded.updated_at", v.ID, raw, v.Pinned, v.UpdatedAt.Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	return s.append("scene", v.ID, raw)
+}
 func (s *localStore) tombstone(v domain.MemoryItemV1) error { return s.putItem(v) }
 func (s *localStore) append(kind, id string, raw []byte) error {
 	return s.journal.Update(func(tx *bbolt.Tx) error {
@@ -81,13 +88,14 @@ func (s *localStore) append(kind, id string, raw []byte) error {
 		return bucket.Put(key, value)
 	})
 }
-func (s *localStore) load() ([]domain.MemoryItemV1, []domain.ConversationTurnV1, []domain.MemoryCandidateV1, error) {
+func (s *localStore) load() ([]domain.MemoryItemV1, []domain.ConversationTurnV1, []domain.MemoryCandidateV1, []domain.CommandSceneV1, error) {
 	items := []domain.MemoryItemV1{}
 	turns := []domain.ConversationTurnV1{}
 	candidates := []domain.MemoryCandidateV1{}
+	scenes := []domain.CommandSceneV1{}
 	rows, err := s.db.Query("SELECT payload FROM items ORDER BY updated_at")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	for rows.Next() {
 		var raw []byte
@@ -99,7 +107,7 @@ func (s *localStore) load() ([]domain.MemoryItemV1, []domain.ConversationTurnV1,
 	rows.Close()
 	rows, err = s.db.Query("SELECT payload FROM turns ORDER BY created_at DESC LIMIT 2000")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	for rows.Next() {
 		var raw []byte
@@ -112,7 +120,7 @@ func (s *localStore) load() ([]domain.MemoryItemV1, []domain.ConversationTurnV1,
 	reverseTurns(turns)
 	rows, err = s.db.Query("SELECT payload FROM candidates ORDER BY created_at")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	for rows.Next() {
 		var raw []byte
@@ -122,5 +130,17 @@ func (s *localStore) load() ([]domain.MemoryItemV1, []domain.ConversationTurnV1,
 		}
 	}
 	rows.Close()
-	return items, turns, candidates, nil
+	rows, err = s.db.Query("SELECT payload FROM scenes ORDER BY updated_at DESC LIMIT 200")
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	for rows.Next() {
+		var raw []byte
+		var v domain.CommandSceneV1
+		if rows.Scan(&raw) == nil && json.Unmarshal(raw, &v) == nil {
+			scenes = append(scenes, v)
+		}
+	}
+	rows.Close()
+	return items, turns, candidates, scenes, nil
 }
