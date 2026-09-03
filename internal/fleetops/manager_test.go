@@ -7,11 +7,114 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/trajectory"
 )
+
+func TestMissionLoopDefaultsOffAndRestartsFromFinalPose(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		loop bool
+	}{
+		{name: "hold at end", loop: false},
+		{name: "loop to first marker", loop: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m := New("", slog.Default())
+			vesselID := m.groups["group-01"].MemberIDs[0]
+			start := m.vessels[vesselID].Telemetry.Position
+			marker := domain.GeoPointV2{start[0] + .000001, start[1]}
+			mission := domain.MissionWorkspaceV2{
+				SchemaVersion: 2,
+				ID:            "mission-loop-test",
+				Name:          "Loop test",
+				Status:        "executing",
+				TargetIDs:     []string{vesselID},
+				Constraints:   defaultConstraints(),
+				Formation:     "column",
+				Loop:          test.loop,
+				Version:       1,
+			}
+			plan := domain.FleetPlanV2{
+				ID:          "plan-loop-test",
+				MissionID:   mission.ID,
+				ContentHash: "sha256:approved-loop-plan",
+				Assignments: []domain.FleetAssignmentV2{{VesselID: vesselID, Route: []domain.GeoPointV2{start, marker}, SpeedMPS: 1}},
+			}
+			lease := domain.FleetLeaseV2{ID: "lease-loop-test"}
+			revision := trajectory.BuildRevision(mission, plan, lease, 1, 0, 0, m.secret)
+			program := trajectory.NewProgram(mission.ID, revision, 60)
+			program.MissionTickMS = 9_800
+			trajectory.UpdateCursors(&program)
+			vessel := m.vessels[vesselID]
+			vessel.Telemetry.MissionID = mission.ID
+			vessel.Telemetry.Position = marker
+			m.vessels[vesselID] = vessel
+			m.missions[mission.ID] = mission
+			m.plans[plan.ID] = plan
+			m.programs[mission.ID] = program
+
+			m.tickStepLocked()
+			updated := m.missions[mission.ID]
+			if test.loop {
+				looped := m.programs[mission.ID]
+				if updated.Status != "executing" || looped.ActiveRevision != 2 {
+					t.Fatalf("loop did not restart: mission=%#v program=%#v", updated, looped)
+				}
+				if got := looped.Revisions[2].Segments[vesselID][0].Start; got != marker {
+					t.Fatalf("loop revision jumped away from actual final pose: got=%v want=%v", got, marker)
+				}
+				if m.vessels[vesselID].Telemetry.Mode != "mission · loop" {
+					t.Fatalf("loop vessel mode = %q", m.vessels[vesselID].Telemetry.Mode)
+				}
+			} else {
+				if updated.Loop || updated.Status != "completed" {
+					t.Fatalf("non-loop mission did not complete: %#v", updated)
+				}
+				if vessel := m.vessels[vesselID]; !strings.HasPrefix(vessel.Telemetry.Mode, "station_keep") || vessel.Telemetry.SpeedMPS != 0 || vessel.Telemetry.Position != marker {
+					t.Fatalf("non-loop vessel did not hold at final marker: %#v", vessel.Telemetry)
+				}
+			}
+		})
+	}
+}
+
+func TestMissionMembershipOrLoopChangeInvalidatesActiveAuthority(t *testing.T) {
+	m := New("", slog.Default())
+	first := m.groups["group-01"].MemberIDs[0]
+	second := m.groups["group-02"].MemberIDs[0]
+	mission := domain.MissionWorkspaceV2{SchemaVersion: 2, ID: "mission-replan", Name: "Replan", Status: "executing", TargetIDs: []string{first}, TargetSnapshotHash: hashAny([]string{first}), PlanIDs: []string{"plan-replan"}, AuthorizedPlanID: "plan-replan", Constraints: defaultConstraints(), Version: 4}
+	m.missions[mission.ID] = mission
+	m.plans["plan-replan"] = domain.FleetPlanV2{ID: "plan-replan", MissionID: mission.ID}
+	m.leases["lease-replan"] = domain.FleetLeaseV2{ID: "lease-replan", MissionID: mission.ID}
+	m.programs[mission.ID] = domain.TrajectoryProgramV1{MissionID: mission.ID}
+	vessel := m.vessels[first]
+	vessel.Telemetry.MissionID = mission.ID
+	vessel.Telemetry.Mode = "mission"
+	m.vessels[first] = vessel
+	loop := true
+	updated, err := m.PatchMission(mission.ID, PatchMissionRequest{
+		Mutation:  Mutation{RequestID: "change-authority", IdempotencyKey: "change-authority", ExpectedVersion: mission.Version},
+		TargetIDs: &[]string{second},
+		Loop:      &loop,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status != "draft" || !updated.Loop || len(updated.TargetIDs) != 1 || updated.TargetIDs[0] != second || len(updated.PlanIDs) != 0 || updated.AuthorizedPlanID != "" || updated.Trajectory != nil {
+		t.Fatalf("authority-changing patch did not produce a clean draft: %#v", updated)
+	}
+	if _, ok := m.programs[mission.ID]; ok {
+		t.Fatal("stale trajectory program survived membership change")
+	}
+	if vessel := m.vessels[first]; vessel.Telemetry.MissionID != "" || vessel.Telemetry.Mode != "station_keep" || vessel.Telemetry.SpeedMPS != 0 {
+		t.Fatalf("previously controlled vessel retained stale authority: %#v", vessel.Telemetry)
+	}
+}
 
 func TestSeededFleetHasStableClassMix(t *testing.T) {
 	m := New("", slog.Default())

@@ -15,17 +15,18 @@ export type WindowDefinition = {
   minHeight?:number;
   maximizable?:boolean;
   preferredDock?:"left"|"right";
+  initialDock?:"left"|"right";
   onVisibilityChange?:(visible:boolean)=>void;
 };
 type WindowState = { x:number;y:number;width:number;height:number; minimized:boolean; closed:boolean; maximized:boolean; z:number; dock?:"left"|"right" };
 type Drag = { id:string; mode:"move"|"resize"; startX:number;startY:number; initial:WindowState };
 
-const storageKey="keelmesh.m6.window-layout.v2";
+const storageKey="keelmesh.m6.window-layout.v3";
 const reservedBottom=64;
 function clamp(value:number,min:number,max:number){return Math.max(min,Math.min(max,value))}
 
 export function WindowManager({windows}:{windows:WindowDefinition[]}){
-  const defaults=useMemo(()=>Object.fromEntries(windows.map((w,i)=>[w.id,{...w.initial,minimized:false,closed:false,maximized:false,z:120+i}] as const)),[windows]);
+  const defaults=useMemo(()=>Object.fromEntries(windows.map((w,i)=>[w.id,{...w.initial,minimized:false,closed:false,maximized:false,z:120+i,dock:w.initialDock}] as const)),[windows]);
   const [states,setStates]=useState<Record<string,WindowState>>(()=>{try{return {...defaults,...JSON.parse(localStorage.getItem(storageKey)??"{}")}}catch{return defaults}});
   const drag=useRef<Drag|null>(null);
   const activations=useRef<Record<string,number>>({});
@@ -40,10 +41,10 @@ export function WindowManager({windows}:{windows:WindowDefinition[]}){
   const mutate=(id:string,patch:Partial<WindowState>)=>setStates(s=>({...s,[id]:{...(s[id]??defaults[id]),...patch}}));
   const minimized=windows.filter(w=>w.kind==="context"&&(states[w.id]??defaults[w.id])?.minimized&&!(states[w.id]??defaults[w.id])?.closed);
   return <>
-    {windows.map(w=>{const s=states[w.id]??defaults[w.id];if(!s||s.closed||s.minimized)return null;const minHeight=w.minHeight??160,top=clamp(s.y,82,Math.max(82,window.innerHeight-reservedBottom-minHeight));const style=s.maximized?{left:8,top:82,width:window.innerWidth-16,height:window.innerHeight-82-reservedBottom,zIndex:s.z}:s.dock?{left:s.dock==="left"?0:undefined,right:s.dock==="right"?0:undefined,top:82,width:Math.min(390,window.innerWidth*.34),height:window.innerHeight-82-reservedBottom,zIndex:s.z}:{left:s.x,top,width:s.width,height:Math.min(s.height,window.innerHeight-top-reservedBottom),zIndex:s.z};return <section key={w.id} className={`float-window window-${w.id} ${s.dock?`docked ${s.dock}`:""} ${s.maximized?"maximized":""}`} style={style} onPointerDown={()=>focus(w.id)} onKeyDown={e=>{if(!(e.altKey&&["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)))return;e.preventDefault();const step=e.shiftKey?40:10;mutate(w.id,{dock:undefined,maximized:false,x:clamp(s.x+(e.key==="ArrowLeft"?-step:e.key==="ArrowRight"?step:0),0,window.innerWidth-(w.minWidth??180)),y:clamp(s.y+(e.key==="ArrowUp"?-step:e.key==="ArrowDown"?step:0),82,window.innerHeight-reservedBottom-minHeight)})}} tabIndex={0} aria-label={w.title}>
-      <header className="float-title" onDoubleClick={()=>mutate(w.id,{dock:s.dock?undefined:(w.preferredDock??"right")})} onPointerDown={e=>{if((e.target as HTMLElement).closest("button"))return;drag.current={id:w.id,mode:"move",startX:e.clientX,startY:e.clientY,initial:s};(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)}}>
+    {windows.map(w=>{const s=states[w.id]??defaults[w.id];if(!s||s.closed||s.minimized)return null;const minWidth=w.minWidth??260,minHeight=w.minHeight??160,availableHeight=window.innerHeight-82-reservedBottom,top=clamp(s.y,82,Math.max(82,window.innerHeight-reservedBottom-minHeight)),dockWidth=clamp(s.width,minWidth,Math.max(minWidth,Math.min(520,window.innerWidth*.45))),dockHeight=clamp(s.height,minHeight,availableHeight);const style=s.maximized?{left:8,top:82,width:window.innerWidth-16,height:availableHeight,zIndex:s.z}:s.dock?{left:s.dock==="left"?0:undefined,right:s.dock==="right"?0:undefined,top:82,width:dockWidth,height:dockHeight,zIndex:s.z}:{left:s.x,top,width:s.width,height:Math.min(s.height,window.innerHeight-top-reservedBottom),zIndex:s.z};return <section key={w.id} className={`float-window window-${w.id} ${s.dock?`docked ${s.dock}`:""} ${s.maximized?"maximized":""}`} style={style} onPointerDown={()=>focus(w.id)} onKeyDown={e=>{if(!(e.altKey&&["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)))return;e.preventDefault();const step=e.shiftKey?40:10;mutate(w.id,{dock:undefined,maximized:false,x:clamp(s.x+(e.key==="ArrowLeft"?-step:e.key==="ArrowRight"?step:0),0,window.innerWidth-(w.minWidth??180)),y:clamp(s.y+(e.key==="ArrowUp"?-step:e.key==="ArrowDown"?step:0),82,window.innerHeight-reservedBottom-minHeight)})}} tabIndex={0} aria-label={w.title}>
+      <header className="float-title" onDoubleClick={()=>{if(w.preferredDock)mutate(w.id,{dock:s.dock?undefined:w.preferredDock})}} onPointerDown={e=>{if((e.target as HTMLElement).closest("button"))return;drag.current={id:w.id,mode:"move",startX:e.clientX,startY:e.clientY,initial:s};(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)}}>
         <span>{w.icon??<SquareDashed/>}</span><strong>{w.title}</strong><small>{s.dock?"DOCKED":"FLOATING"}</small>
-        {(()=>{const side=w.preferredDock??"left",docked=s.dock===side,label=docked?"Return to floating":`Snap ${side}`;return <button aria-label={label} title={label} onClick={()=>mutate(w.id,{dock:docked?undefined:side,maximized:false})}>{side==="right"?(docked?<PanelRightOpen/>:<PanelRightClose/>):(docked?<PanelLeftOpen/>:<PanelLeftClose/>)}</button>})()}
+        {w.preferredDock&&(()=>{const side=w.preferredDock,docked=s.dock===side,label=docked?"Return to floating":`Snap ${side}`;return <button aria-label={label} title={label} onClick={()=>mutate(w.id,{dock:docked?undefined:side,maximized:false})}>{side==="right"?(docked?<PanelRightOpen/>:<PanelRightClose/>):(docked?<PanelLeftOpen/>:<PanelLeftClose/>)}</button>})()}
         {w.maximizable&&<button aria-label={s.maximized?"Restore window":"Expand window"} title={s.maximized?"Restore window":"Expand to workspace"} onClick={()=>mutate(w.id,{maximized:!s.maximized,dock:undefined})}>{s.maximized?<Shrink/>:<Expand/>}</button>}
         <button aria-label="Minimize" title="Minimize" onClick={()=>{w.onVisibilityChange?.(false);mutate(w.id,{minimized:true})}}><Minus/></button>
         {w.kind==="context"&&<button aria-label="Close" title="Close" onClick={()=>{w.onVisibilityChange?.(false);mutate(w.id,{closed:true,minimized:false})}}><X/></button>}

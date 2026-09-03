@@ -19,7 +19,6 @@ import type {
   ReachabilityV2,
   SurfaceContactV2,
   VesselProfileV2,
-  VoiceV2,
 } from "./types";
 import { OperationsMap, type WaypointColor } from "./OperationsMap";
 import { WindowManager, type WindowDefinition } from "./WindowManager";
@@ -101,8 +100,6 @@ export function FleetWorkspace() {
     [platform, setPlatform] = useState<PlatformSnapshot | null>(null),
     [agent, setAgent] = useState<AgentSnapshot | null>(null),
     [arena, setArena] = useState<ArenaSnapshotV1 | null>(null),
-    [voices, setVoices] = useState<VoiceV2[]>([]),
-    [voice, setVoice] = useState("jarvis"),
     [speechState, setSpeechState] = useState("ready"),
     [selected, setSelected] = useState<Set<string>>(new Set()),
     [activeMissionID, setActiveMissionID] = useState<string>(""),
@@ -128,9 +125,6 @@ export function FleetWorkspace() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [connected, setConnected] = useState(true),
-    [autoRead, setAutoRead] = useState(
-      () => localStorage.getItem("keelmesh.auto-read.v2") !== "false",
-    ),
     [pendingDeleteID, setPendingDeleteID] = useState("");
   const audio = useRef<HTMLAudioElement | null>(null),
     speechAbort = useRef<AbortController | null>(null),
@@ -138,7 +132,8 @@ export function FleetWorkspace() {
     recordingStream = useRef<MediaStream | null>(null),
     recordingChunks = useRef<BlobPart[]>([]),
     stopRequested = useRef(false),
-    geometryHistory = useRef<Record<string, MissionWorkspaceV2["geometry"][]>>({});
+    geometryHistory = useRef<Record<string, MissionWorkspaceV2["geometry"][]>>({}),
+    missionSelectionSync = useRef("");
   const [inspectVesselID, setInspectVesselID] = useState(""),
     [inspectContactID, setInspectContactID] = useState(""),
     [windowActivations, setWindowActivations] = useState<
@@ -150,6 +145,7 @@ export function FleetWorkspace() {
   const [pirate, setPirate] = useState(
     () => localStorage.getItem("keelmesh.theme") === "pirate",
   );
+  const voice = pirate ? "barbossa" : "jarvis";
   const words = pirate
     ? {
         subtitle: "PIRATE FLEET COMMAND",
@@ -201,15 +197,6 @@ export function FleetWorkspace() {
     localStorage.setItem("keelmesh.theme", pirate ? "pirate" : "navy");
     document.documentElement.dataset.theme = pirate ? "pirate" : "navy";
   }, [pirate]);
-  useEffect(() => {
-    const preferredVoice = pirate ? "barbossa" : "jarvis";
-    if (voices.some((candidate) => candidate.id === preferredVoice && candidate.available)) {
-      setVoice(preferredVoice);
-    }
-  }, [pirate, voices]);
-  useEffect(() => {
-    localStorage.setItem("keelmesh.auto-read.v2", String(autoRead));
-  }, [autoRead]);
   const refresh = useCallback(async () => {
     const value = await api<FleetSnapshotV2>("/api/v2/fleet");
     setFleet(value);
@@ -221,10 +208,6 @@ export function FleetWorkspace() {
       api<PlatformSnapshot>("/api/v1/platform").then(setPlatform),
       api<AgentSnapshot>("/api/v1/ai").then(setAgent),
       api<ArenaSnapshotV1>("/api/v3/arena?faction=A").then(setArena),
-      api<{ voices: VoiceV2[] }>("/api/v2/voices").then((v) => {
-        setVoices(v.voices);
-        setVoice(v.voices.find((candidate) => candidate.default)?.id ?? "jarvis");
-      }),
     ]);
     const t = window.setInterval(() => {
       refresh()
@@ -260,12 +243,40 @@ export function FleetWorkspace() {
         },
       }
     : null;
+  const selectedKey = useMemo(() => [...selected].sort().join(","), [selected]);
+  const missionTargetKey = useMemo(
+    () => [...(mission?.target_ids ?? [])].sort().join(","),
+    [mission?.target_snapshot_hash, mission?.id],
+  );
   const pendingDeleteMission =
     fleet?.missions.find((item) => item.id === pendingDeleteID) ?? null;
   useEffect(() => {
     if (!activeMissionID && fleet?.missions[0])
       setActiveMissionID(fleet.missions[0].id);
   }, [fleet, activeMissionID]);
+  useEffect(() => {
+    if (!plannerVisible || !mission) return;
+    const marker = `${mission.id}:${missionTargetKey}`;
+    missionSelectionSync.current = marker;
+    setSelected(new Set(mission.target_ids));
+  }, [plannerVisible, mission?.id]);
+  useEffect(() => {
+    if (!plannerVisible || !mission) return;
+    const marker = `${mission.id}:${missionTargetKey}`;
+    if (missionSelectionSync.current === marker) {
+      if (selectedKey === missionTargetKey) missionSelectionSync.current = "";
+      return;
+    }
+    if (selectedKey === missionTargetKey) return;
+    const timer = window.setTimeout(() => {
+      setPlans([]);
+      setDraft(null);
+      setPreview(null);
+      setLease(null);
+      void updateMissionTargets(mission.id, [...selected]);
+    }, 140);
+    return () => window.clearTimeout(timer);
+  }, [plannerVisible, mission?.id, missionTargetKey, selectedKey]);
   const activePlan =
     plans.find((p) => p.id === planID) ??
     plans.find((p) => p.recommended) ??
@@ -587,6 +598,31 @@ export function FleetWorkspace() {
       }),
     );
     await refresh();
+  }
+  async function updateMissionTargets(missionID: string, targetIDs: string[]) {
+    const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
+    const current = snapshot.missions.find((item) => item.id === missionID);
+    if (!current) return;
+    const next = [...new Set(targetIDs)].sort();
+    const existing = [...current.target_ids].sort();
+    if (next.join(",") === existing.join(",")) return;
+    try {
+      await mutate(() =>
+        api<MissionWorkspaceV2>(`/api/v2/missions/${missionID}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            request_id: requestID("mission-targets"),
+            idempotency_key: requestID("mission-targets-key"),
+            expected_version: current.version,
+            target_ids: next,
+          }),
+        }),
+      );
+      await refresh();
+    } catch {
+      missionSelectionSync.current = `${missionID}:${existing.join(",")}`;
+      setSelected(new Set(existing));
+    }
   }
   async function renameMission(id: string, name: string) {
     const current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find(
@@ -965,7 +1001,7 @@ export function FleetWorkspace() {
     if (!compiled) return;
     setDraft(compiled);
     setCommand("");
-    if (planningMode === "ai_assisted" && autoRead && compiled.advisor?.summary)
+    if (planningMode === "ai_assisted" && compiled.advisor?.summary)
       void speak(compiled.advisor.summary);
     const current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find(
       (m) => m.id === targetMission.id,
@@ -1158,7 +1194,9 @@ export function FleetWorkspace() {
               result.message ??
                 "No speech was detected; typed input remains available.",
             );
-          setCommand(result.text);
+          // Releasing the microphone is a send action, so do not leave the
+          // accepted transcript behind as if it were an unsent draft.
+          setCommand("");
           setSpeechState(
             `${result.route} · RTF ${result.real_time_factor ?? "—"}`,
           );
@@ -1194,13 +1232,14 @@ export function FleetWorkspace() {
       id: "fleet",
       kind: "primary",
       preferredDock: "left",
+      initialDock: "left",
       title: pirate ? "Flotilla / Crews" : "Fleet / Groups",
       icon: <Ship />,
       activation: windowActivations.fleet,
       toggleActivation: windowToggleActivations.fleet,
       minWidth: 245,
       minHeight: 180,
-      initial: { x: 10, y: 92, width: 320, height: 600 },
+      initial: { x: 10, y: 92, width: 245, height: 600 },
       content: (
         <FleetRail
           pirate={pirate}
@@ -1288,6 +1327,7 @@ export function FleetWorkspace() {
       kind: "primary",
       maximizable: true,
       preferredDock: "right",
+      initialDock: "right",
       onVisibilityChange: (visible) => setPlannerVisible(visible),
       activation: windowActivations.planner,
       toggleActivation: windowToggleActivations.planner,
@@ -1296,13 +1336,12 @@ export function FleetWorkspace() {
       minHeight: 245,
       title: pirate ? "Voyage Plotter" : "Mission Planner",
       icon: <Route />,
-      initial: { x: window.innerWidth - 480, y: 92, width: 460, height: 680 },
+      initial: { x: window.innerWidth - 370, y: 92, width: 350, height: 680 },
       content: (
         <Planner
           pirate={pirate}
           mission={mission}
           groups={fleet.groups}
-          selectedIDs={[...selected]}
           draft={draft}
           command={command}
           setCommand={setCommand}
@@ -1311,10 +1350,7 @@ export function FleetWorkspace() {
           preview={preview}
           lease={lease}
           busy={busy}
-          voices={voices}
-          voice={voice}
           speechState={speechState}
-          autoRead={autoRead}
           recording={
             speechState === "requesting microphone" ||
             speechState.startsWith("listening")
@@ -1322,31 +1358,19 @@ export function FleetWorkspace() {
           tool={tool}
           contactSeed={plannerContactSeed}
           geometryFocus={geometryFocus}
-          onVoice={setVoice}
           onSpeak={(text) => void speak(text)}
-          onAutoRead={setAutoRead}
           onTranscriptionStart={() => void beginTranscription()}
           onTranscriptionStop={endTranscription}
           onFormation={(f) => updateMission({ formation: f })}
-          onObjective={(objective) => updateMission({ objective })}
-          onAssignGroup={(groupID) => {
-            const group = fleet.groups.find((candidate) => candidate.id === groupID);
-            if (group) {
-              setPlans([]);
-              setDraft(null);
-              setPreview(null);
-              setLease(null);
-              void updateMission({ target_ids: group.member_ids });
-            }
-          }}
-          onAssignAssets={(targetIDs) => {
-            setPlans([]);
+          onLoop={(loop) => {
             setDraft(null);
+            setPlans([]);
+            setPlanID("");
             setPreview(null);
             setLease(null);
-            void updateMission({ target_ids: targetIDs });
+            void updateMission({ loop });
           }}
-          onOpenFleet={() => open("fleet")}
+          onObjective={(objective) => updateMission({ objective })}
           onArea={(kind) => setTool(kind)}
           onTool={setTool}
           onCreate={(intent) => createPlans(mission, intent, "ai_assisted")}
@@ -1527,7 +1551,13 @@ export function FleetWorkspace() {
             <Ship />
             {words.fleet}
           </button>
-          <button title="Show or hide the active mission planner" onClick={() => toggleWindow("planner")}>
+          <button title="Show or hide the active mission planner" onClick={() => {
+            if (mission) {
+              missionSelectionSync.current = `${mission.id}:${[...mission.target_ids].sort().join(",")}`;
+              setSelected(new Set(mission.target_ids));
+            }
+            toggleWindow("planner");
+          }}>
             <Route />
             {words.mission}
           </button>
@@ -1576,6 +1606,8 @@ export function FleetWorkspace() {
               className="mission-tab-main"
               onClick={() => {
                 const sameMission = m.id === mission?.id;
+                missionSelectionSync.current = `${m.id}:${[...m.target_ids].sort().join(",")}`;
+                setSelected(new Set(m.target_ids));
                 setActiveMissionID(m.id);
                 setPlannerContactSeed(null);
                 setPlans([]);
@@ -1630,8 +1662,6 @@ export function FleetWorkspace() {
         focusedGeometry={geometryFocus}
         onSelect={(ids, mode) => {
           select(ids, mode);
-          if (plannerVisible && tool === "box" && mission && mode === "replace" && ids.length > 0)
-            void updateMission({ target_ids: ids });
         }}
         onGroup={selectGroup}
         onVessel={(id) => {
@@ -1754,7 +1784,7 @@ export function FleetWorkspace() {
             </button>
           ))}
         </div>
-        <span>{new Date(fleet.generated_at).toLocaleTimeString()}</span>
+        <span className="status-clock">{new Date(fleet.generated_at).toLocaleTimeString()}</span>
       </footer>
     </main>
   );
@@ -2905,7 +2935,6 @@ function Planner({
   pirate,
   mission,
   groups,
-  selectedIDs,
   draft,
   command,
   setCommand,
@@ -2914,24 +2943,17 @@ function Planner({
   preview,
   lease,
   busy,
-  voices,
-  voice,
   speechState,
-  autoRead,
   recording,
   tool,
   contactSeed,
   geometryFocus,
-  onVoice,
   onSpeak,
-  onAutoRead,
   onTranscriptionStart,
   onTranscriptionStop,
   onFormation,
+  onLoop,
   onObjective,
-  onAssignGroup,
-  onAssignAssets,
-  onOpenFleet,
   onArea,
   onTool,
   onCreate,
@@ -2954,7 +2976,6 @@ function Planner({
   pirate: boolean;
   mission: MissionWorkspaceV2 | null;
   groups: FleetSnapshotV2["groups"];
-  selectedIDs: string[];
   draft: CommandDraftV2 | null;
   command: string;
   setCommand: (v: string) => void;
@@ -2963,24 +2984,17 @@ function Planner({
   preview: FleetPreviewV2 | null;
   lease: FleetLeaseV2 | null;
   busy: boolean;
-  voices: VoiceV2[];
-  voice: string;
   speechState: string;
-  autoRead: boolean;
   recording: boolean;
   tool: Tool;
   contactSeed: SurfaceContactV2 | null;
   geometryFocus: GeometryFocus | null;
-  onVoice: (v: string) => void;
   onSpeak: (text: string) => void;
-  onAutoRead: (enabled: boolean) => void;
   onTranscriptionStart: () => void;
   onTranscriptionStop: () => void;
   onFormation: (v: string) => void;
+  onLoop: (loop: boolean) => void;
   onObjective: (v: string) => void;
-  onAssignGroup: (groupID: string) => void;
-  onAssignAssets: (targetIDs: string[]) => void;
-  onOpenFleet: () => void;
   onArea: (k: "include" | "exclude") => void;
   onTool: (t: Tool) => void;
   onCreate: (intent: string) => void;
@@ -3031,7 +3045,18 @@ function Planner({
     followContactID = missionType === "follow_contact" ? contactSeed?.id ?? draft?.follow_contact_id ?? "" : "",
     hasRouteGeometry = mission.geometry.waypoints.length > 0 || mission.geometry.included_areas.length > 0,
     hasPointForBehavior = mission.geometry.pois.some((poi) => poi.kind === missionType),
-    manualReady = mission.target_ids.length > 0 && (missionType === "follow_contact" ? !!followContactID : missionType === "hold" || missionType === "orbit" ? hasPointForBehavior : hasRouteGeometry);
+    manualReady = mission.target_ids.length > 0 && (missionType === "follow_contact" ? !!followContactID : missionType === "hold" || missionType === "orbit" ? hasPointForBehavior : hasRouteGeometry),
+    coveredTargets = new Set<string>(),
+    assignedGroups = groups.filter((group) => {
+      const assigned = group.member_ids.length > 0 && group.member_ids.every((id) => mission.target_ids.includes(id));
+      if (assigned) group.member_ids.forEach((id) => coveredTargets.add(id));
+      return assigned;
+    }),
+    individualCount = mission.target_ids.filter((id) => !coveredTargets.has(id)).length,
+    scopeParts = [
+      ...assignedGroups.map((group) => `${group.code} · ${group.name}`),
+      ...(individualCount > 0 ? [`${individualCount} individual${individualCount === 1 ? "" : "s"}`] : []),
+    ];
   return (
     <div className="planner">
       <div className="planner-layout">
@@ -3068,6 +3093,26 @@ function Planner({
           · geometry r{mission.geometry.revision} ·{" "}
           {pirate ? "voyage" : "mission"} v{mission.version}
         </p>
+      </div>
+      <div className="mission-scope-strip" title="Mission membership mirrors the current selection in Fleet / Groups. Changing that selection safely returns an active mission to draft for a new plan and authorization.">
+        <Ship />
+        <span>
+          <small>{pirate ? "VOYAGE CREW" : "MISSION ASSETS"}</small>
+          <b>{scopeParts.length > 0 ? scopeParts.join(" · ") : pirate ? "Choose ships in Flotilla / Crews" : "Select vessels or groups in Fleet / Groups"}</b>
+        </span>
+        <em>{mission.target_ids.length}</em>
+        <button
+          type="button"
+          className={mission.loop ? "active" : ""}
+          aria-label={mission.loop ? "Disable mission loop" : "Enable mission loop"}
+          aria-pressed={mission.loop}
+          title={mission.loop ? "Loop enabled: after the final marker, return to the first and repeat." : "Loop disabled: finish at the final marker and hold position."}
+          disabled={busy}
+          onClick={() => onLoop(!mission.loop)}
+        >
+          <RotateCcw />
+          {mission.loop ? "LOOP" : "HOLD AT END"}
+        </button>
       </div>
       <div className="mission-chat" aria-live="polite">
         {(mission.conversation ?? []).length === 0 && (
@@ -3158,111 +3203,13 @@ function Planner({
           </button>
         </div>
       </div>
-      <div className="voice-row">
-        <select aria-label="AI voice" value={voice} onChange={(e) => onVoice(e.target.value)}>
-          {voices.map((v) => (
-            <option value={v.id} key={v.id}>
-              {v.name}
-              {v.default ? " · default" : ""}
-            </option>
-          ))}
-        </select>
-        <label className="auto-read-toggle">
-          <input
-            type="checkbox"
-            checked={autoRead}
-            onChange={(event) => onAutoRead(event.target.checked)}
-          />
-          <Volume2 />
-          {pirate ? "Read replies aloud" : "Read AI replies aloud"}
-        </label>
-        <small>{speechState}</small>
+      <div className="voice-status" title={pirate ? "AI replies are automatically spoken with the Captain Barbossa voice." : "AI replies are automatically spoken with the Jarvis voice."}>
+        <Volume2 />
+        <b>{pirate ? "Captain Barbossa" : "Jarvis"}</b>
+        <span>automatic voice · {speechState}</span>
       </div>
       </section>
       <section className="planner-options-pane">
-      <details className="planner-section planner-assets" open>
-      <summary>
-        <span>{pirate ? "ASSIGNED CREW" : "ASSIGNED ASSETS"}</span>
-        <em>{mission.target_ids.length} {pirate ? "aboard" : "assigned"}</em>
-      </summary>
-      <div className="planner-assets-body">
-      <label>
-        {pirate ? "CREW OR CURRENT MUSTER" : "GROUP OR CURRENT SELECTION"}
-        <select
-          aria-label={pirate ? "ASSIGNED CREW" : "ASSIGNED ASSETS"}
-          value={
-            groups.find(
-              (group) =>
-                group.member_ids.length === mission.target_ids.length &&
-                group.member_ids.every((id) => mission.target_ids.includes(id)),
-            )?.id ?? ""
-          }
-          onChange={(event) => onAssignGroup(event.target.value)}
-        >
-          <option value="" disabled>
-            {mission.target_ids.length === 0
-              ? pirate ? "No ships assigned yet" : "No assets assigned yet"
-              : `${mission.target_ids.length} mixed or individual assets`}
-          </option>
-          {groups.map((group) => (
-            <option value={group.id} key={group.id}>
-              {group.code} · {group.name} · {group.color_name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="planner-asset-actions">
-        <button type="button" onClick={onOpenFleet}>
-          <Ship /> {pirate ? "Choose crew" : "Open Fleet"}
-        </button>
-        <button
-          type="button"
-          disabled={selectedIDs.length === 0 || busy}
-          onClick={() => onAssignAssets(selectedIDs)}
-        >
-          <CheckCircle2 />
-          {pirate
-            ? `Apply muster (${selectedIDs.length})`
-            : `Apply selected (${selectedIDs.length})`}
-        </button>
-        {mission.target_ids.length > 0 && (
-          <button type="button" disabled={busy} onClick={() => onAssignAssets([])}>
-            <X /> {pirate ? "Dismiss" : "Clear"}
-          </button>
-        )}
-      </div>
-      {mission.target_ids.length === 0 && (
-        <p className="planner-assets-hint">
-          {pirate
-            ? "Choose a crew or muster the current ship selection."
-            : "Choose a group or apply any mixed selection from Fleet / Groups."}
-        </p>
-      )}
-      {mission.target_ids.length > 1 ? (
-        <label className="formation-control">
-          {pirate ? "SAILING FORMATION" : "FORMATION PREFERENCE"}
-          <select
-            value={mission.formation}
-            onChange={(e) => onFormation(e.target.value)}
-          >
-            {formations.map((f) => (
-              <option value={f} key={f}>
-                {f.replaceAll("_", " ")}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : mission.target_ids.length === 1 ? (
-        <div className="solo-mode">
-          <Ship />
-          <span>
-            <b>INDEPENDENT VESSEL</b>
-            <small>Fleet formation controls are not applied.</small>
-          </span>
-        </div>
-      ) : null}
-      </div>
-      </details>
       {mission.trajectory && (
         <div className="trajectory-program-summary">
           <header>
@@ -3311,6 +3258,16 @@ function Planner({
           OBJECTIVE
           <textarea value={manualObjective} onChange={(event) => setManualObjective(event.target.value)} onBlur={() => { if (manualObjective.trim() && manualObjective.trim() !== mission.objective) onObjective(manualObjective.trim()); }} />
         </label>
+        {mission.target_ids.length > 1 ? (
+          <label className="formation-control">
+            {pirate ? "SAILING FORMATION" : "FORMATION PREFERENCE"}
+            <select value={mission.formation} onChange={(e) => onFormation(e.target.value)}>
+              {formations.map((formation) => <option value={formation} key={formation}>{formation.replaceAll("_", " ")}</option>)}
+            </select>
+          </label>
+        ) : mission.target_ids.length === 1 ? (
+          <div className="solo-mode"><Ship /><span><b>INDEPENDENT VESSEL</b><small>Formation controls are not applied.</small></span></div>
+        ) : null}
       </details>
       <details className="planner-section map-authoring">
         <summary>MAP AUTHORING</summary>
@@ -3319,14 +3276,14 @@ function Planner({
           <span>{tool === "select" ? "READY · SELECT OR EDIT" : `${tool.replaceAll("_", " ").toUpperCase()} TOOL ACTIVE · ESC TO CANCEL`}</span>
         </div>
         <div className="geometry-actions">
-          <button className={tool === "select" ? "active" : ""} onClick={() => onTool("select")} title="Select or drag existing geometry"><MousePointer2 />Edit</button>
-          <button className={tool === "box" ? "active" : ""} onClick={() => onTool("box")} title="Assign vessels inside a rectangle"><BoxSelect />Assign box</button>
-          <button className={tool === "include" ? "active" : ""} onClick={() => onArea("include")}><Plus /><BoxSelect />Operating</button>
-          <button className={tool === "exclude" ? "active" : ""} onClick={() => onArea("exclude")}><Ban />Exclusion</button>
-          <button className={tool === "waypoint" ? "active" : ""} onClick={() => onTool("waypoint")}><MapPinned />Waypoint</button>
-          <button className={tool === "hold" ? "active" : ""} onClick={() => onTool("hold")}><CircleDot />Hold point</button>
-          <button className={tool === "orbit" ? "active" : ""} onClick={() => onTool("orbit")}><RotateCcw />Orbit point</button>
-          <button onClick={onUndoGeometry} title="Undo the most recent geometry mutation"><Undo2 />Undo</button>
+          <button aria-label="Select or edit mission geometry" className={tool === "select" ? "active" : ""} onClick={() => onTool("select")} title="Select or drag existing mission geometry"><MousePointer2 /></button>
+          <button aria-label="Assign vessels by rectangle" className={tool === "box" ? "active" : ""} onClick={() => onTool("box")} title="Assign every controlled vessel inside a rectangle"><BoxSelect /></button>
+          <button aria-label="Add operating area" className={tool === "include" ? "active" : ""} onClick={() => onArea("include")} title="Draw an allowed operating area"><Plus /><BoxSelect /></button>
+          <button aria-label="Add exclusion area" className={tool === "exclude" ? "active" : ""} onClick={() => onArea("exclude")} title="Draw an area this mission must avoid"><Ban /></button>
+          <button aria-label="Add waypoint" className={tool === "waypoint" ? "active" : ""} onClick={() => onTool("waypoint")} title="Add the next numbered route waypoint"><MapPinned /></button>
+          <button aria-label="Add hold point" className={tool === "hold" ? "active" : ""} onClick={() => onTool("hold")} title="Add a position for selected vessels to hold"><CircleDot /></button>
+          <button aria-label="Add orbit point" className={tool === "orbit" ? "active" : ""} onClick={() => onTool("orbit")} title="Add a point for selected vessels to orbit"><RotateCcw /></button>
+          <button aria-label="Undo mission geometry change" onClick={onUndoGeometry} title="Undo the most recent geometry mutation"><Undo2 /></button>
         </div>
         <div className="geometry-summary">
           <span>{mission.geometry.included_areas.length} operating</span>

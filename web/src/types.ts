@@ -722,6 +722,7 @@ export type MissionWorkspaceV2 = {
   geometry: MissionGeometryV2;
   constraints: ConstraintSetV2;
   formation: string;
+  loop: boolean;
   plan_ids: string[];
   authorized_plan_id?: string;
   conversation: MissionChatMessageV2[];

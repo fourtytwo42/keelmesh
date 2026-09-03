@@ -168,6 +168,7 @@ type MissionWorkspaceV2 struct {
 	Geometry           MissionGeometryV2           `json:"geometry"`
 	Constraints        ConstraintSetV2             `json:"constraints"`
 	Formation          string                      `json:"formation"`
+	Loop               bool                        `json:"loop"`
 	PlanIDs            []string                    `json:"plan_ids"`
 	AuthorizedPlanID   string                      `json:"authorized_plan_id,omitempty"`
 	Conversation       []MissionChatMessageV2      `json:"conversation"`

@@ -381,3 +381,31 @@ code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
   .window-engineer .engineer-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr))}
   .window-engineer .engineer-hero p{display:none}
 }
+
+/* Mission membership, automatic voice, compact authoring, and map-centered environment controls. */
+.environment-overlays{left:50%;right:auto;top:8px;transform:translateX(-50%)}
+.ops-status>.status-clock{margin-left:auto}
+.mission-scope-strip{display:grid;grid-template-columns:15px minmax(0,1fr) auto auto;align-items:center;gap:6px;margin:4px 0;padding:5px 6px;border:1px solid #39423d;background:#1d2422;color:#d4d2c8}
+.mission-scope-strip>svg{width:13px;height:13px;color:var(--m6-amber)}
+.mission-scope-strip>span{display:grid;min-width:0;gap:1px}
+.mission-scope-strip small{font-size:5px;letter-spacing:.11em;color:#7d847e}
+.mission-scope-strip b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:7px;font-weight:600}
+.mission-scope-strip>em{font:10px ui-monospace;font-style:normal;color:#dca13f}
+.mission-scope-strip>button{height:23px;display:flex;align-items:center;justify-content:center;gap:4px;padding:0 6px;border:1px solid #46504a;background:#252c29;color:#999f98;font-size:6px;cursor:pointer}
+.mission-scope-strip>button svg{width:10px;height:10px}
+.mission-scope-strip>button.active{border-color:#a8782e;background:#30291e;color:#efb04a}
+.voice-status{height:23px;display:flex;align-items:center;gap:5px;margin:4px 0 1px;padding:0 7px;border:1px solid #39423d;background:#1d2422;color:#8f968f}
+.voice-status svg{width:11px;height:11px;color:var(--m6-amber)}
+.voice-status b{font-size:7px;color:#d4d1c7}
+.voice-status span{margin-left:auto;font-size:6px;text-transform:uppercase}
+.map-authoring .geometry-actions{grid-template-columns:repeat(8,minmax(25px,1fr))}
+.map-authoring .geometry-actions button{position:relative;display:grid;place-items:center!important;min-width:0;padding:0!important}
+.map-authoring .geometry-actions button svg{width:12px;height:12px}
+.map-authoring .geometry-actions button svg+svg{position:absolute;right:4px;bottom:3px;width:7px;height:7px}
+.window-planner.docked .map-authoring .geometry-actions{grid-template-columns:repeat(8,minmax(25px,1fr))}
+.window-planner.docked .geometry-actions button{display:grid;place-items:center;grid-template-columns:1fr}
+.objective-section .formation-control{padding-top:0;border-top:0}
+
+@container workspace-window (max-height:420px){
+  .window-planner .mission-scope-strip,.window-planner .voice-status{display:none}
+}

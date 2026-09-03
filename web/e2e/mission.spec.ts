@@ -105,7 +105,12 @@ test("map-first workspace exposes the persistent operating picture without heade
   expect(Math.abs((newMission!.x + newMission!.width / 2) - (plusIcon!.x + plusIcon!.width / 2))).toBeLessThan(2);
   expect(Math.abs((newMission!.y + newMission!.height / 2) - (plusIcon!.y + plusIcon!.height / 2))).toBeLessThan(2);
   const overlays = page.locator(".environment-overlays");
-  await expect(overlays.getByText("TIME-VARYING FIXTURE", { exact: true })).toBeVisible();
+  await expect(overlays.getByText("TIME-VARYING FIXTURE", { exact: true })).toHaveCount(0);
+  const overlayBox = await overlays.boundingBox();
+  const viewport = page.viewportSize();
+  expect(overlayBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(Math.abs((overlayBox!.x + overlayBox!.width / 2) - viewport!.width / 2)).toBeLessThan(2);
   await expect(overlays.getByRole("button", { name: /CURRENT/ })).toHaveClass(/on/);
   await expect(overlays.getByRole("button", { name: /WIND/ })).toHaveClass(/on/);
   await expect(overlays.getByRole("button", { name: /DEPTH/ })).toHaveClass(/on/);
@@ -123,18 +128,28 @@ test("new mission opens as an empty planning workspace and accepts assets afterw
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await expect(planner).toBeVisible();
   await expect(planner.getByText(/0 frozen assets/)).toBeVisible();
-  await expect(planner.getByLabel("ASSIGNED ASSETS")).toHaveValue("");
-  await expect(planner.getByRole("button", { name: "Apply selected (0)" })).toBeDisabled();
-
-  const blockGuard = await planner
-    .getByLabel("ASSIGNED ASSETS")
-    .locator("option")
-    .filter({ hasText: "BG · Block Guard" })
-    .getAttribute("value");
-  expect(blockGuard).not.toBeNull();
-  await planner.getByLabel("ASSIGNED ASSETS").selectOption(blockGuard!);
+  await expect(planner.getByText("Select vessels or groups in Fleet / Groups", { exact: true })).toBeVisible();
+  await expect(planner.getByLabel("Enable mission loop")).toHaveAttribute("aria-pressed", "false");
+  const rail = page.getByRole("region", { name: "Fleet / Groups" });
+  await rail.getByRole("button", { name: "BG Block Guard", exact: true }).click();
   await expect(planner.getByText(/6 frozen assets/)).toBeVisible();
-  await expect(planner.getByText("6 assigned", { exact: true })).toBeVisible();
+  await expect(planner.locator(".mission-scope-strip")).toContainText("BG · Block Guard");
+  await expect.poll(async () => {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    return fleet.missions[0]?.target_ids?.length ?? 0;
+  }).toBe(6);
+  await planner.getByLabel("Enable mission loop").click();
+  await expect(planner.getByLabel("Disable mission loop")).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(async () => {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    return fleet.missions[0]?.loop;
+  }).toBe(true);
+  await planner.getByTitle("Minimize").click();
+  await rail.getByRole("button", { name: "Clear" }).click();
+  await expectSelected(page, 0);
+  await page.locator(".mission-tabs .mission-tab.active .mission-tab-main").click();
+  await expect(planner).toBeVisible();
+  await expectSelected(page, 6);
 
   const defaultOptionsSize = await planner.locator(".planner-options-pane").evaluate((element) => ({
     clientHeight: element.clientHeight,
@@ -183,13 +198,14 @@ test("pirate watch changes nomenclature, agent voice, and returns cleanly to nav
   await pirateFleet.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
   await page.getByRole("button", { name: "New voyage" }).click();
   const piratePlanner = page.getByRole("region", { name: /Voyage Plotter/ });
-  await expect(piratePlanner.getByRole("combobox", { name: "AI voice" })).toHaveValue("barbossa");
+  await expect(piratePlanner.locator(".voice-status")).toContainText("Captain Barbossa");
+  await expect(piratePlanner.getByRole("combobox", { name: "AI voice" })).toHaveCount(0);
 
   await expect(page.evaluate(() => localStorage.getItem("keelmesh.theme"))).resolves.toBe("pirate");
   await page.getByRole("button", { name: "Return to navy mode" }).click();
   await expect(page.getByText("MISSION OPERATIONS", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Enter pirate mode" })).toBeVisible();
-  await expect(page.getByRole("region", { name: /Mission Planner/ }).getByRole("combobox", { name: "AI voice" })).toHaveValue("jarvis");
+  await expect(page.getByRole("region", { name: /Mission Planner/ }).locator(".voice-status")).toContainText("Jarvis");
 });
 
 test("fleet rail, search, group, and filtered selection resolve exact targets", async ({ page }) => {
@@ -251,22 +267,24 @@ test("mission planner owns map authoring and manual route generation bypasses AI
   await page.keyboard.press("Escape");
 
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
+  await expect(rail).toHaveClass(/docked left/);
+  await expect(rail.getByTitle("Return to floating")).toBeVisible();
+  await rail.getByTitle("Return to floating").click();
   await expect(rail.getByTitle("Snap left")).toBeVisible();
   await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
   await createSelectedMission(page);
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await expect(planner).toBeVisible();
-  const snapRight = planner.getByTitle("Snap right");
-  await expect(snapRight).toBeVisible();
-  await expect(snapRight.locator("svg")).toHaveClass(/lucide-panel-right-close/);
-  await snapRight.click();
+  await expect(planner).toHaveClass(/docked right/);
   await expect(planner.getByTitle("Return to floating").locator("svg")).toHaveClass(/lucide-panel-right-open/);
   await planner.getByTitle("Return to floating").click();
+  const snapRight = planner.getByTitle("Snap right");
+  await expect(snapRight.locator("svg")).toHaveClass(/lucide-panel-right-close/);
   await expect(planner.getByText("MAP AUTHORING", { exact: true })).toBeVisible();
   await planner.locator("details.objective-section > summary").click();
   await planner.locator("details.map-authoring > summary").click();
   await planner.getByLabel("MISSION TYPE").selectOption("transit");
-  await planner.getByRole("button", { name: "Waypoint", exact: true }).click();
+  await planner.getByRole("button", { name: "Add waypoint", exact: true }).click();
   await expect(planner).toContainText("WAYPOINT TOOL ACTIVE · ESC TO CANCEL");
   await canvas.click({ position: { x: 780, y: 570 } });
   await expect(planner.getByText("1 waypoints", { exact: true })).toBeVisible();
@@ -348,8 +366,8 @@ test("dragged geometry follows deterministic planning and the preview boundary",
   await expect(planner).toBeVisible();
 
   await planner.locator("details.map-authoring > summary").click();
-  await planner.getByRole("button", { name: "Operating", exact: true }).click();
-  await expect(planner.getByRole("button", { name: "Operating", exact: true })).toHaveClass(/active/);
+  await planner.getByRole("button", { name: "Add operating area", exact: true }).click();
+  await expect(planner.getByRole("button", { name: "Add operating area", exact: true })).toHaveClass(/active/);
   await expect(planner).toContainText("INCLUDE TOOL ACTIVE · ESC TO CANCEL");
   await page.waitForTimeout(250);
   const canvas = page.locator(".operations-map .maplibregl-canvas");
@@ -420,6 +438,10 @@ test("mission numbering, direct controls, window restore, and confirmed draft de
 
 test("workspace windows move, minimize, restore, dock, and top navigation toggles", async ({ page }) => {
   await page.goto("/");
+  const fleetWindow = page.getByRole("region", { name: "Fleet / Groups", exact: true });
+  await expect(fleetWindow).toHaveClass(/docked left/);
+  expect((await fleetWindow.boundingBox())?.width).toBeCloseTo(245, 0);
+  await expect(fleetWindow.getByTitle("Return to floating")).toBeVisible();
   await page.getByRole("button", { name: "Engineer" }).click();
   const engineer = page.getByRole("region", { name: "Autonomy Engineer", exact: true });
   await expect(engineer).toBeVisible();
@@ -432,8 +454,7 @@ test("workspace windows move, minimize, restore, dock, and top navigation toggle
   await page.keyboard.press("Alt+ArrowRight");
   const after = await engineer.boundingBox();
   expect(after?.x).toBeGreaterThan(before?.x ?? 0);
-  await engineer.getByTitle("Snap left").click();
-  await expect(engineer).toHaveClass(/docked/);
+  await expect(engineer.getByTitle(/Snap (left|right)/)).toHaveCount(0);
   await engineer.getByTitle("Minimize").click();
   await expect(engineer).not.toBeVisible();
   await expect(page.locator(".window-shelf")).not.toContainText("Autonomy Engineer");
@@ -467,6 +488,7 @@ test("workspace windows move, minimize, restore, dock, and top navigation toggle
   await expect(cutaway).toBeHidden();
   await page.getByRole("button", { name: "Cutaway" }).click();
   await expect(cutaway).toBeVisible();
+  await expect(cutaway.getByTitle(/Snap (left|right)/)).toHaveCount(0);
 });
 
 test("single-vessel intent uses the real advisor boundary and never offers fleet formations", async ({ page }) => {
@@ -479,6 +501,7 @@ test("single-vessel intent uses the real advisor boundary and never offers fleet
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await planner.getByRole("textbox", { name: "Message mission AI" }).fill("patrol the shoreline and preserve at least 35% battery reserve");
   await planner.getByRole("button", { name: "Send to mission AI" }).click();
+  await planner.locator("details.objective-section > summary").click();
   await expect(planner.getByText("INDEPENDENT VESSEL", { exact: true })).toBeVisible();
   await expect(planner.locator(".mission-advisor")).toBeVisible({ timeout: 20_000 });
   await expect(planner.locator(".mission-advisor")).toContainText(/openai|openrouter|local|mock|deterministic/i);
@@ -542,11 +565,10 @@ test("mission chat starts blank and exposes streamlined voice controls", async (
   await expect(planner.getByRole("textbox", { name: "Message mission AI" })).toHaveValue("");
   const microphone = planner.getByRole("button", { name: "Hold to talk" });
   await expect(microphone).toBeVisible();
-  const autoRead = planner.getByRole("checkbox", { name: "Read AI replies aloud" });
-  await expect(autoRead).toBeChecked();
-  await autoRead.uncheck();
-  await expect.poll(() => page.evaluate(() => localStorage.getItem("keelmesh.auto-read.v2"))).toBe("false");
-  await autoRead.check();
+  await expect(planner.getByRole("checkbox", { name: "Read AI replies aloud" })).toHaveCount(0);
+  await expect(planner.getByRole("combobox", { name: "AI voice" })).toHaveCount(0);
+  await expect(planner.locator(".voice-status")).toContainText("Jarvis");
+  await expect(planner.locator(".voice-status")).toContainText("automatic voice");
   const box = await microphone.boundingBox();
   expect(box).not.toBeNull();
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);

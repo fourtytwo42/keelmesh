@@ -1657,10 +1657,6 @@ export function OperationsMap({
         className="environment-overlays"
         aria-label="Environmental map layers"
       >
-        <header>
-          <strong>ENVIRONMENT</strong>
-          <span>TIME-VARYING FIXTURE</span>
-        </header>
         <div>
           <button
             className={overlays.current ? "on" : ""}

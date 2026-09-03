@@ -93,6 +93,7 @@ type PatchMissionRequest struct {
 	Objective   *string                 `json:"objective"`
 	Status      *string                 `json:"status"`
 	Formation   *string                 `json:"formation"`
+	Loop        *bool                   `json:"loop"`
 	TargetIDs   *[]string               `json:"target_ids"`
 	Constraints *domain.ConstraintSetV2 `json:"constraints"`
 }
@@ -1035,7 +1036,7 @@ func (m *Manager) CreateMission(req CreateMissionRequest) (domain.MissionWorkspa
 		nameSource = "generated"
 		name = m.nextMissionNameLocked()
 	}
-	mission := domain.MissionWorkspaceV2{SchemaVersion: 2, ID: "mission-" + shortHash(req.IdempotencyKey), Name: m.uniqueMissionNameLocked(name), NameSource: nameSource, Objective: req.Objective, Status: "draft", TargetIDs: targets, TargetSnapshotHash: hashAny(targets), FleetVersion: m.fleetVersion, Version: 1, Geometry: domain.MissionGeometryV2{Revision: 1, IncludedAreas: [][][]float64{}, ExclusionAreas: [][][]float64{}, Waypoints: []domain.GeoPointV2{}, POIs: []domain.MissionPOIV2{}}, Constraints: defaultConstraints(), Formation: "column", Conversation: []domain.MissionChatMessageV2{}, CreatedAt: now, UpdatedAt: now}
+	mission := domain.MissionWorkspaceV2{SchemaVersion: 2, ID: "mission-" + shortHash(req.IdempotencyKey), Name: m.uniqueMissionNameLocked(name), NameSource: nameSource, Objective: req.Objective, Status: "draft", TargetIDs: targets, TargetSnapshotHash: hashAny(targets), FleetVersion: m.fleetVersion, Version: 1, Geometry: domain.MissionGeometryV2{Revision: 1, IncludedAreas: [][][]float64{}, ExclusionAreas: [][][]float64{}, Waypoints: []domain.GeoPointV2{}, POIs: []domain.MissionPOIV2{}}, Constraints: defaultConstraints(), Formation: "column", Loop: false, Conversation: []domain.MissionChatMessageV2{}, CreatedAt: now, UpdatedAt: now}
 	m.missions[mission.ID] = mission
 	m.persistAsync()
 	return mission, nil
@@ -1103,6 +1104,11 @@ func (m *Manager) PatchMission(id string, req PatchMissionRequest) (domain.Missi
 	if req.Constraints != nil {
 		v.Constraints = conservative(*req.Constraints, v.Constraints)
 	}
+	authorityShapeChanged := false
+	if req.Loop != nil && v.Loop != *req.Loop {
+		v.Loop = *req.Loop
+		authorityShapeChanged = true
+	}
 	if req.TargetIDs != nil {
 		if err := m.validTargets(*req.TargetIDs); err != nil {
 			return v, err
@@ -1110,8 +1116,15 @@ func (m *Manager) PatchMission(id string, req PatchMissionRequest) (domain.Missi
 		if c := m.conflicts(*req.TargetIDs, id); len(c) > 0 {
 			return v, &Error{"MOVEMENT_AUTHORITY_CONFLICT", "Targets already belong to another active mission."}
 		}
-		v.TargetIDs = unique(*req.TargetIDs)
-		v.TargetSnapshotHash = hashAny(v.TargetIDs)
+		nextTargets := unique(*req.TargetIDs)
+		if hashAny(nextTargets) != v.TargetSnapshotHash {
+			v.TargetIDs = nextTargets
+			v.TargetSnapshotHash = hashAny(v.TargetIDs)
+			authorityShapeChanged = true
+		}
+	}
+	if authorityShapeChanged {
+		m.invalidateMissionExecutionLocked(id, &v)
 	}
 	v.Version++
 	v.UpdatedAt = time.Now().UTC()
@@ -1121,6 +1134,49 @@ func (m *Manager) PatchMission(id string, req PatchMissionRequest) (domain.Missi
 	m.missions[id] = v
 	m.persistAsync()
 	return v, nil
+}
+
+// invalidateMissionExecutionLocked turns a mid-mission membership or loop
+// change into a safe replan boundary. No stale plan, lease, or trajectory may
+// continue after the operator changes who participates or whether work repeats.
+func (m *Manager) invalidateMissionExecutionLocked(id string, mission *domain.MissionWorkspaceV2) {
+	for vesselID, vessel := range m.vessels {
+		if vessel.Telemetry.MissionID != id {
+			continue
+		}
+		vessel.Telemetry.MissionID = ""
+		vessel.Telemetry.Route = nil
+		vessel.Telemetry.Mode = "station_keep"
+		vessel.Telemetry.SpeedMPS = 0
+		m.vessels[vesselID] = vessel
+	}
+	for key, draft := range m.drafts {
+		if draft.MissionID == id {
+			delete(m.drafts, key)
+		}
+	}
+	planIDs := map[string]bool{}
+	for key, plan := range m.plans {
+		if plan.MissionID == id {
+			planIDs[key] = true
+			delete(m.plans, key)
+		}
+	}
+	for key, lease := range m.leases {
+		if lease.MissionID == id {
+			delete(m.leases, key)
+		}
+	}
+	for key, planID := range m.startedPlans {
+		if planIDs[planID] {
+			delete(m.startedPlans, key)
+		}
+	}
+	delete(m.programs, id)
+	mission.PlanIDs = nil
+	mission.AuthorizedPlanID = ""
+	mission.Trajectory = nil
+	mission.Status = "draft"
 }
 
 // DeleteMission ends any active movement, releases its vessels, and removes
@@ -2411,6 +2467,15 @@ func (m *Manager) tickStepLocked() {
 			m.persistProgramAsync(mid, program)
 		}
 		if !active {
+			if mission.Loop {
+				if looped, ok := m.restartMissionLoopLocked(mission, program); ok {
+					m.programs[mid] = looped
+					mission.UpdatedAt = time.Now().UTC()
+					m.missions[mid] = mission
+					m.persistProgramAsync(mid, looped)
+					continue
+				}
+			}
 			mission.Status = "completed"
 			mission.Version++
 			mission.UpdatedAt = time.Now().UTC()
@@ -2426,6 +2491,48 @@ func (m *Manager) tickStepLocked() {
 	// configuration. Keeping their 5 Hz cadence out of fleetVersion prevents
 	// ordinary group/mission writes from racing continuous station keeping.
 	m.tickIdleGroupsLocked()
+}
+
+// restartMissionLoopLocked creates another signed execution revision from the
+// vessels' actual final poses back to the first approved route marker. The
+// loop flag is part of the versioned mission state that produced the approved
+// plan; no new geometry, target, speed, or policy authority is invented here.
+func (m *Manager) restartMissionLoopLocked(mission domain.MissionWorkspaceV2, program domain.TrajectoryProgramV1) (domain.TrajectoryProgramV1, bool) {
+	activeRevision, ok := program.Revisions[program.ActiveRevision]
+	if !ok {
+		return program, false
+	}
+	sourcePlan, ok := m.plans[activeRevision.PlanID]
+	if !ok || len(sourcePlan.Assignments) == 0 {
+		return program, false
+	}
+	loopPlan := sourcePlan
+	loopPlan.Assignments = make([]domain.FleetAssignmentV2, 0, len(sourcePlan.Assignments))
+	for _, assignment := range sourcePlan.Assignments {
+		vessel, exists := m.vessels[assignment.VesselID]
+		if !exists || len(assignment.Route) < 2 {
+			return program, false
+		}
+		next := assignment
+		next.Route = append([]domain.GeoPointV2{vessel.Telemetry.Position}, clonePoints(assignment.Route[1:])...)
+		next.DistanceKM = routeDistance(next.Route)
+		loopPlan.Assignments = append(loopPlan.Assignments, next)
+	}
+	lease := domain.FleetLeaseV2{ID: activeRevision.LeaseID}
+	revision := trajectory.BuildRevision(mission, loopPlan, lease, program.ActiveRevision+1, 0, 0, m.secret)
+	if !trajectory.ValidateRevision(revision, m.secret) {
+		return program, false
+	}
+	looped := trajectory.NewProgram(mission.ID, revision, program.HotTapeHorizonS)
+	for _, assignment := range loopPlan.Assignments {
+		vessel := m.vessels[assignment.VesselID]
+		vessel.Telemetry.MissionID = mission.ID
+		vessel.Telemetry.Route = clonePoints(assignment.Route)
+		vessel.Telemetry.Mode = "mission · loop"
+		vessel.Telemetry.SpeedMPS = 0
+		m.vessels[assignment.VesselID] = vessel
+	}
+	return looped, true
 }
 
 func (m *Manager) localAdjustmentLocked(vessel domain.VesselProfileV2, segment domain.TrajectorySegmentV2) domain.LocalAdjustmentV1 {
