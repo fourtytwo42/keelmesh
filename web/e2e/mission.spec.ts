@@ -47,6 +47,7 @@ test.beforeEach(async ({ page }) => {
     localStorage.removeItem("keelmesh.m6.window-layout.v1");
     localStorage.removeItem("keelmesh.theme");
     localStorage.removeItem("keelmesh.auto-read");
+    localStorage.removeItem("keelmesh.auto-read.v2");
   });
   await resetFleet(page);
   await restoreFixtureGroups(page);
@@ -138,7 +139,9 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   await page.goto("/");
   const canvas = page.locator(".operations-map .maplibregl-canvas");
   await page.waitForTimeout(1_000);
-  await canvas.click({ position: { x: 570, y: 160 }, button: "right" });
+  // The widened station-keeping layout places Block Guard around this
+  // rendered hull cluster at the release viewport.
+  await canvas.click({ position: { x: 560, y: 237 }, button: "right" });
   const groupMenu = page.getByRole("menu");
   await expect(groupMenu.getByRole("menuitem", { name: "Select operational group" })).toBeEnabled();
   await groupMenu.getByRole("menuitem", { name: "Select operational group" }).click();
@@ -156,11 +159,12 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   await canvas.dispatchEvent("click", { detail: 4, bubbles: true, clientX: 700, clientY: 250 });
   await expectSelected(page, 48);
   await page.keyboard.press("Escape");
-  await canvas.click({ position: { x: 700, y: 250 }, button: "right" });
+  await canvas.click({ position: { x: 900, y: 450 }, button: "right" });
   const allMenu = page.getByRole("menu");
   await allMenu.getByRole("menuitem", { name: "Select all vessels" }).click();
   await expectSelected(page, 48);
-  await canvas.click({ position: { x: 700, y: 250 }, button: "right" });
+  await page.waitForTimeout(250);
+  await canvas.click({ position: { x: 560, y: 237 }, button: "right" });
   await page.getByRole("menu").getByRole("menuitem", { name: "Clear selection" }).click();
   await expectSelected(page, 0);
 });
@@ -495,9 +499,10 @@ test("mission chat starts blank and exposes streamlined voice controls", async (
   const microphone = planner.getByRole("button", { name: "Hold to talk" });
   await expect(microphone).toBeVisible();
   const autoRead = planner.getByRole("checkbox", { name: "Read AI replies aloud" });
-  await expect(autoRead).not.toBeChecked();
+  await expect(autoRead).toBeChecked();
+  await autoRead.uncheck();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("keelmesh.auto-read.v2"))).toBe("false");
   await autoRead.check();
-  await expect.poll(() => page.evaluate(() => localStorage.getItem("keelmesh.auto-read"))).toBe("true");
   const box = await microphone.boundingBox();
   expect(box).not.toBeNull();
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
@@ -509,6 +514,37 @@ test("mission chat starts blank and exposes streamlined voice controls", async (
     { timeout: 25_000 },
   );
   await expect(planner.getByRole("textbox", { name: "Message mission AI" })).toHaveValue("");
+});
+
+test("spoken multi-leg cardinal intent creates multiple plans and requests Morgan speech", async ({ page }) => {
+  test.setTimeout(45_000);
+  let speechRequests = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/api/v2/speech:synthesize")) speechRequests++;
+  });
+  await page.goto("/");
+  const rail = page.getByRole("region", { name: "Fleet / Groups" });
+  await rail.getByRole("button", { name: "BG Block Guard", exact: true }).click();
+  await rail.getByRole("button", { name: "Create mission from 6 selected" }).click();
+  const planner = page.getByRole("region", { name: "Mission Planner" });
+  await planner.getByRole("textbox", { name: "Message mission AI" }).fill(
+    "I want this group to go two nautical miles south then two nautical miles west and then hold position.",
+  );
+  await planner.getByRole("button", { name: "Send to mission AI" }).click();
+  await expect.poll(() => planner.locator(".candidate-list > article").count(), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+  await expect(page.getByText(/COMMAND_AMBIGUOUS/)).toHaveCount(0);
+  await expect.poll(() => speechRequests).toBeGreaterThan(0);
+  const fleet = await (await page.request.get("/api/v2/fleet")).json();
+  const active = fleet.missions.find((candidate: { id: string }) => candidate.id === fleet.missions[0].id);
+  expect(active.geometry.waypoints).toHaveLength(2);
+  await planner.getByRole("button", { name: "Expand window" }).click();
+  const messages = planner.locator(".chat-message");
+  await expect(messages).toHaveCount(2);
+  for (let index = 0; index < 2; index++) {
+    const box = await messages.nth(index).boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeLessThan(180);
+  }
 });
 
 test("beach intent resolves a depth-aware one-nautical-mile coastal patrol", async ({ page }) => {

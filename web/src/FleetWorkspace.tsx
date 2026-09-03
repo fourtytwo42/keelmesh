@@ -110,7 +110,7 @@ export function FleetWorkspace() {
     [busy, setBusy] = useState(false),
     [connected, setConnected] = useState(true),
     [autoRead, setAutoRead] = useState(
-      () => localStorage.getItem("keelmesh.auto-read") === "true",
+      () => localStorage.getItem("keelmesh.auto-read.v2") !== "false",
     ),
     [pendingDeleteID, setPendingDeleteID] = useState("");
   const audio = useRef<HTMLAudioElement | null>(null),
@@ -178,7 +178,7 @@ export function FleetWorkspace() {
     document.documentElement.dataset.theme = pirate ? "pirate" : "navy";
   }, [pirate]);
   useEffect(() => {
-    localStorage.setItem("keelmesh.auto-read", String(autoRead));
+    localStorage.setItem("keelmesh.auto-read.v2", String(autoRead));
   }, [autoRead]);
   const refresh = useCallback(async () => {
     const value = await api<FleetSnapshotV2>("/api/v2/fleet");
@@ -900,7 +900,11 @@ export function FleetWorkspace() {
       const response = await fetch("/api/v2/speech:synthesize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ request_id: requestID("speech"), voice, text }),
+        body: JSON.stringify({
+          request_id: requestID("speech"),
+          voice,
+          text: speechText(text),
+        }),
         signal: controller.signal,
       });
       if (!response.ok)
@@ -1116,6 +1120,7 @@ export function FleetWorkspace() {
             speechState.startsWith("listening")
           }
           onVoice={setVoice}
+          onSpeak={(text) => void speak(text)}
           onAutoRead={setAutoRead}
           onTranscriptionStart={() => void beginTranscription()}
           onTranscriptionStop={endTranscription}
@@ -2471,6 +2476,15 @@ function Metric({ k, v, sub }: { k: string; v: string; sub: string }) {
     </div>
   );
 }
+
+function speechText(markdown: string) {
+  return markdown
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/[`*_>#~-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 function EditableTitle({
   value,
   label,
@@ -2559,6 +2573,7 @@ function Planner({
   autoRead,
   recording,
   onVoice,
+  onSpeak,
   onAutoRead,
   onTranscriptionStart,
   onTranscriptionStop,
@@ -2590,6 +2605,7 @@ function Planner({
   autoRead: boolean;
   recording: boolean;
   onVoice: (v: string) => void;
+  onSpeak: (text: string) => void;
   onAutoRead: (enabled: boolean) => void;
   onTranscriptionStart: () => void;
   onTranscriptionStop: () => void;
@@ -2670,7 +2686,7 @@ function Planner({
         {(mission.conversation ?? []).map((message) => (
           <article className={`chat-message ${message.role}`} key={message.id}>
             <header>
-              {message.role === "operator" ? <strong>YOU</strong> : <><Sparkles /><strong>KEELMESH AI</strong></>}
+              {message.role === "operator" ? <strong>YOU</strong> : <><Sparkles /><strong>KEELMESH AI</strong><button className="chat-replay" aria-label="Read this AI reply aloud" title="Read aloud" onClick={() => onSpeak(message.markdown)}><Volume2 /></button></>}
               <time>{new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
             </header>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.markdown}</ReactMarkdown>

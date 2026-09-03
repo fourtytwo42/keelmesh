@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: the first guarded group-autonomy and external MCP vertical slice is deployed on VM 214 and all twelve vessel nodes at commit `9b9027c`.
-- Last meaningful change: group snapshots elect the lowest reachable inference-capable vessel ID as the predictable advisory decision node; trajectory adjustments carry decision scope/node and fail closed to safe hold plus `instruction_requested` when PNT or reserve leaves the signed envelope. Three fictional transparent pirate vessel classes replace normal map/inspector assets in Pirate mode. A separately authenticated typed control MCP exposes read/draft/plan/preview/workspace capabilities without model-owned effect authority.
-- Next step: extend this foundation with signed multi-vessel adaptation proposals, all-affected arming/future activation, simulated leader loss, and pre-authorized signal-seek/return-home corridors.
+- Current task: the spoken multi-leg route, mission strategy, Morgan playback, and expanded-chat density repair is deployed on VM 214 and all twelve vessel nodes.
+- Last meaningful change: ordered cardinal legs such as “two nautical miles south, then two nautical miles west, then hold” compile into exact sequential waypoints without requiring hand-drawn geometry. The real advisor summary now proceeds to multiple deterministic plan candidates. AI replies default to Morgan auto-read, retain a per-message replay control, and expanded chat cards size to content instead of stretching vertically.
+- Next step: resume signed multi-vessel adaptation proposals, all-affected arming/future activation, simulated leader loss, and pre-authorized signal-seek/return-home corridors.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
 ## Current State
@@ -141,6 +141,15 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+### 2026-09-02 - Spoken multi-leg routes, audible replies, and compact expanded chat
+
+- Context: A six-vessel command to travel two nautical miles south, then two nautical miles west, then hold received a valid model summary but failed deterministic route generation with `COMMAND_AMBIGUOUS`; auto-read was off in a fresh browser and expanded chat messages stretched into large empty cards.
+- Decision: Parse bounded ordered numeric or spoken-number cardinal legs into sequential geometry before strategy planning; default the versioned Morgan auto-read preference on unless explicitly disabled; provide replay on every AI reply; and make chat rows/content cards intrinsically sized in both compact and expanded layouts.
+- Files: `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, `web/src/FleetWorkspace.tsx`, `web/src/app.css`, `web/e2e/mission.spec.ts`.
+- Commands/tests: full Go test suite and `go vet`; strict TypeScript; seven Vitest assertions; production Docker build; direct Morgan synthesis returned HTTP 200 `audio/wav` with 280,364 bytes; all fifteen Playwright workflows passed, including the exact reported command, two generated waypoints, multiple strategy cards, Morgan synthesis request, and compact maximized cards.
+- Result: VM 214 and all twelve vessel nodes are healthy on binary SHA-256 `25de728c6163557c26f3a125a4a561c65e56220d725d522b279c010259ee6aa4`. No GitHub-hosted workflow or Proxmox snapshot ran.
+- Follow-up: Browser playback can still be blocked by browser/device autoplay policy; the visible per-message speaker button provides an explicit retry path.
 
 ### 2026-09-02 - Streamlined mission voice loop
 

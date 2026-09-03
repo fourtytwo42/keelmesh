@@ -453,6 +453,51 @@ func TestCompileResolvesRelativeSeawardRoundTripAndBuildsAdvisorStrategies(t *te
 	}
 }
 
+func TestCompileResolvesSpokenMultiLegCardinalRouteAndHold(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	targets := snapshot.Groups[3].MemberIDs
+	start := m.targetCentroidLocked(targets)
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation: Mutation{RequestID: "multileg-mission", IdempotencyKey: "multileg-mission", ExpectedVersion: snapshot.FleetVersion},
+		Name:     "Cardinal hold", TargetIDs: targets,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation: Mutation{RequestID: "multileg-compile", IdempotencyKey: "multileg-compile", ExpectedVersion: mission.Version},
+		Text:     "I want this group to go two nautical miles south then two nautical miles west and then hold position.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(draft.Ambiguities) != 0 || draft.GeometrySource != "intent:relative-multileg:2" || draft.GuidanceKind != "hold" {
+		t.Fatalf("multi-leg intent was not resolved: %#v", draft)
+	}
+	if len(draft.Waypoints) != 2 || draft.Waypoints[0][1] >= start[1] || draft.Waypoints[1][0] >= draft.Waypoints[0][0] {
+		t.Fatalf("ordered south/west route is wrong: start=%v route=%v", start, draft.Waypoints)
+	}
+	current := m.missions[mission.ID]
+	advisor := deterministicAdvisor(len(targets), draft.GuidanceKind, "test")
+	draft, err = m.ApplyAdvisor(draft.ID, advisor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans, err := m.GeneratePlans(mission.ID, PlansRequest{Mutation: Mutation{RequestID: "multileg-plans", IdempotencyKey: "multileg-plans", ExpectedVersion: current.Version}, DraftID: draft.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) < 2 || len(plans) > 4 {
+		t.Fatalf("expected multiple executable strategies, got %d", len(plans))
+	}
+	for _, plan := range plans {
+		if len(plan.Assignments) != len(targets) || len(plan.Assignments[0].Route) != 3 {
+			t.Fatalf("multi-leg strategy lost route or targets: %#v", plan)
+		}
+	}
+}
+
 func TestAdvisorSelectsDepthValidatedMissionGeometry(t *testing.T) {
 	m := New("", slog.Default())
 	snapshot := m.Snapshot()

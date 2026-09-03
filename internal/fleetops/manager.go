@@ -145,6 +145,7 @@ var reserveAfterLabel = regexp.MustCompile(`(?i)(?:reserve|battery)[^0-9]{0,24}(
 var reserveBeforeLabel = regexp.MustCompile(`(?i)([0-9]{1,3})\s*%\s*(?:reserve|battery)`)
 var coastalDistance = regexp.MustCompile(`(?i)(?:within|inside|no more than|max(?:imum)?(?: distance)?(?: of)?)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:nm|nmi|nautical\s*miles?)`)
 var relativeTravelDistance = regexp.MustCompile(`(?i)\b(?:travel|go|proceed|sail|run|head|move)?\s*([0-9]+(?:\.[0-9]+)?)\s*(nm|nmi|nautical\s*miles?|km|kilometers?|mi|miles?)\b`)
+var relativeCardinalLeg = regexp.MustCompile(`(?i)\b([0-9]+(?:\.[0-9]+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)[ -]*(nm|nmi|nautical[ -]*miles?|km|kilometers?|mi|miles?)[ ,]*(?:to(?:ward|wards)?(?: the)? |due )?(north(?:ward)?|north[ -]?east|northeast|east(?:ward)?|south[ -]?east|southeast|south(?:ward)?|south[ -]?west|southwest|west(?:ward)?|north[ -]?west|northwest)\b`)
 var explicitHeading = regexp.MustCompile(`(?i)\b(?:heading|bearing|course)\s*(?:of|to|at)?\s*([0-9]{1,3}(?:\.[0-9]+)?)\s*(?:deg(?:rees?)?|°)?\b`)
 var waypointColor = regexp.MustCompile(`(?i)\b(amber|red|green|cyan|blue|violet|purple|white)\s+(?:waypoints?|route|markers?)\b`)
 var numberedMissionName = regexp.MustCompile(`(?i)^(mission|voyage)\s+([0-9]+)$`)
@@ -1456,6 +1457,41 @@ func coordinatesToPoints(coordinates [][]float64) []domain.GeoPointV2 {
 // deterministic code owns coordinates and preserves the exact requested
 // distance for policy evaluation.
 func (m *Manager) resolveRelativeGeometry(text string, targets []string) ([][]float64, []domain.GeoPointV2, string, string, bool) {
+	lower := strings.ToLower(text)
+	centroid := m.targetCentroidLocked(targets)
+	if matches := relativeCardinalLeg.FindAllStringSubmatch(lower, -1); len(matches) > 0 {
+		route := make([]domain.GeoPointV2, 0, len(matches)+1)
+		current := centroid
+		directions := make([]string, 0, len(matches))
+		totalM := 0.0
+		for _, match := range matches {
+			value, ok := distanceValue(match[1])
+			if !ok {
+				return nil, nil, "", "", false
+			}
+			distanceM, unitLabel := distanceMetres(value, match[2])
+			if distanceM <= 0 || distanceM > 50*1852 || totalM+distanceM > 75*1852 {
+				return nil, nil, "", "", false
+			}
+			bearing, direction, ok := requestedBearing(match[3])
+			if !ok {
+				return nil, nil, "", "", false
+			}
+			current = destinationPoint(current, bearing, distanceM)
+			route = append(route, current)
+			directions = append(directions, fmt.Sprintf("%.1f%s %s", value, unitLabel, direction))
+			totalM += distanceM
+		}
+		if strings.Contains(lower, "return") || strings.Contains(lower, "come back") || strings.Contains(lower, "round trip") || strings.Contains(lower, "round-trip") {
+			route = append(route, centroid)
+		}
+		all := append([]domain.GeoPointV2{centroid}, route...)
+		polygon := routeBounds(all, 926)
+		source := fmt.Sprintf("intent:relative-multileg:%d", len(matches))
+		description := fmt.Sprintf("Resolved %d ordered relative legs from the selected fleet centroid (%s). The exact waypoints, hold behavior, and %.1f nautical-mile review corridor are shown before authorization.", len(matches), strings.Join(directions, " → "), totalM/1852)
+		return polygon, route, source, description, true
+	}
+
 	match := relativeTravelDistance.FindStringSubmatch(text)
 	if len(match) != 3 {
 		return nil, nil, "", "", false
@@ -1464,15 +1500,7 @@ func (m *Manager) resolveRelativeGeometry(text string, targets []string) ([][]fl
 	if err != nil || value <= 0 {
 		return nil, nil, "", "", false
 	}
-	unit := strings.ToLower(match[2])
-	distanceM := value * 1852
-	unitLabel := "nm"
-	switch {
-	case strings.HasPrefix(unit, "km"), strings.HasPrefix(unit, "kilometer"):
-		distanceM, unitLabel = value*1000, "km"
-	case unit == "mi", strings.HasPrefix(unit, "mile"):
-		distanceM, unitLabel = value*1609.344, "mi"
-	}
+	distanceM, unitLabel := distanceMetres(value, match[2])
 	// Keep natural-language resolution bounded. Larger requests require
 	// explicit geometry so an accidental transcription cannot create a huge
 	// route before the operator sees it.
@@ -1480,19 +1508,10 @@ func (m *Manager) resolveRelativeGeometry(text string, targets []string) ([][]fl
 		return nil, nil, "", "", false
 	}
 
-	lower := strings.ToLower(text)
 	bearing, direction, ok := requestedBearing(lower)
 	if !ok {
 		return nil, nil, "", "", false
 	}
-	centroid := domain.GeoPointV2{}
-	for _, id := range targets {
-		position := m.vessels[id].Telemetry.Position
-		centroid[0] += position[0]
-		centroid[1] += position[1]
-	}
-	centroid[0] /= float64(len(targets))
-	centroid[1] /= float64(len(targets))
 	outbound := destinationPoint(centroid, bearing, distanceM)
 	route := []domain.GeoPointV2{outbound}
 	returning := strings.Contains(lower, "return") || strings.Contains(lower, "come back") || strings.Contains(lower, "round trip") || strings.Contains(lower, "round-trip")
@@ -1504,6 +1523,39 @@ func (m *Manager) resolveRelativeGeometry(text string, targets []string) ([][]fl
 	source := fmt.Sprintf("intent:relative-%s:%.1f%s", direction, value, unitLabel)
 	description := fmt.Sprintf("Resolved a %.1f %s %s leg from the selected asset position%s; exact coordinates and the return leg are shown for review before authorization.", value, unitLabel, direction, map[bool]string{true: " with a return to the starting position", false: ""}[returning])
 	return polygon, route, source, description, true
+}
+
+func (m *Manager) targetCentroidLocked(targets []string) domain.GeoPointV2 {
+	centroid := domain.GeoPointV2{}
+	for _, id := range targets {
+		position := m.vessels[id].Telemetry.Position
+		centroid[0] += position[0]
+		centroid[1] += position[1]
+	}
+	centroid[0] /= float64(len(targets))
+	centroid[1] /= float64(len(targets))
+	return centroid
+}
+
+func distanceValue(raw string) (float64, bool) {
+	if value, err := strconv.ParseFloat(raw, 64); err == nil {
+		return value, value > 0
+	}
+	words := map[string]float64{"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50}
+	value, ok := words[strings.ToLower(raw)]
+	return value, ok
+}
+
+func distanceMetres(value float64, rawUnit string) (float64, string) {
+	unit := strings.ToLower(strings.ReplaceAll(rawUnit, "-", " "))
+	switch {
+	case strings.HasPrefix(unit, "km"), strings.HasPrefix(unit, "kilometer"):
+		return value * 1000, "km"
+	case unit == "mi", strings.HasPrefix(unit, "mile"):
+		return value * 1609.344, "mi"
+	default:
+		return value * 1852, "nm"
+	}
 }
 
 func requestedBearing(lower string) (float64, string, bool) {
