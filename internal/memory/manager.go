@@ -36,7 +36,12 @@ type Config struct {
 }
 
 func ConfigFromEnv(databaseURL string, brokers []string) Config {
-	return Config{DatabaseURL: databaseURL, Brokers: brokers, EmbedURL: env("KEELMESH_EMBED_URL", "http://ai:8090/private/v1/embed"), EmbedTokenFile: env("KEELMESH_CORE_AI_TOKEN_FILE", "/run/secrets/core_to_ai_token"), MCPTokenFile: env("KEELMESH_MCP_INVESTIGATOR_TOKEN_FILE", "/run/secrets/mcp_investigator_token"), NodeID: env("KEELMESH_NODE_ID", "core-214"), LocalPath: env("KEELMESH_MEMORY_LOCAL_PATH", "/data/memory")}
+	nodeID := env("KEELMESH_NODE_ID", "core-214")
+	localPath := "/data/memory"
+	if nodeID != "core-214" {
+		localPath = "/var/lib/keelmesh-node/memory"
+	}
+	return Config{DatabaseURL: databaseURL, Brokers: brokers, EmbedURL: env("KEELMESH_EMBED_URL", "http://ai:8090/private/v1/embed"), EmbedTokenFile: env("KEELMESH_CORE_AI_TOKEN_FILE", "/run/secrets/core_to_ai_token"), MCPTokenFile: env("KEELMESH_MCP_INVESTIGATOR_TOKEN_FILE", "/run/secrets/mcp_investigator_token"), NodeID: nodeID, LocalPath: env("KEELMESH_MEMORY_LOCAL_PATH", localPath)}
 }
 func env(key, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {

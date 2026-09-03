@@ -14,6 +14,7 @@ wait_ready() {
 verify_scenarios() {
   for milestone in 1 2 3 4 5 6; do python3 "$ROOT/scripts/verify_m${milestone}.py" "$BASE_URL"; done
   python3 "$ROOT/scripts/verify_m7.py" --base-url "$BASE_URL"
+  python3 "$ROOT/scripts/verify_m11.py" "$BASE_URL"
 }
 case "${1:-status}" in
   start)
@@ -46,6 +47,8 @@ fleet = json.load(urllib.request.urlopen(base + "/api/v2/fleet"))
 print(f"  M6 Fleet Operations: {len(fleet['vessels'])} vessels, {len(fleet['missions'])} retained missions")
 arena=json.load(urllib.request.urlopen(base+'/api/v3/infrastructure'))
 print(f"  M7 Fleet Arena: {len(arena['nodes'])} vessel VMs, phase {arena['phase']}, coordinators " + ', '.join(c['node_id'] for c in arena['coordinators']))
+memory=json.load(urllib.request.urlopen(base+'/api/v5/memory'))
+print(f"  M11 Memory: {memory['phase']} ({memory['retrieval_mode']}, {memory['embedding_state']} embeddings, {memory['committed_items']} items)")
 PY
     docker system df
     ;;
@@ -153,6 +156,21 @@ PY
     echo "Rehearsal $mode: M6 mission operations → M7 Fleet Arena/failover → M2 resilience → M5 Quiet Fleet → Cutaway → Engineer"
     verify_scenarios
     ;;
+  memory-status)
+    curl -fsS "$BASE_URL/api/v5/memory" | python3 -m json.tool
+    ;;
+  memory-verify)
+    python3 "$ROOT/scripts/verify_m11.py" "$BASE_URL"
+    ;;
+  memory-export)
+    stamp=$(date -u +%Y%m%dT%H%M%SZ); out="$ROOT/evidence/memory/$stamp"; mkdir -p "$out"
+    curl -fsS "$BASE_URL/api/v5/memory" > "$out/snapshot.json"
+    python3 "$ROOT/scripts/verify_m11.py" "$BASE_URL" > "$out/verification.json"
+    printf '# KeelMesh M11 memory evidence\n\nGenerated: `%s`\n\nContains bounded state and checksums only; no raw audio, credentials, or environment values.\n' "$stamp" > "$out/README.md"
+    find "$out" -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > "$out/SHA256SUMS"
+    test "$(du -sm "$out" | cut -f1)" -le 256
+    echo "$out"
+    ;;
   stop) "${OFFLINE_COMPOSE[@]}" stop ;;
-  *) echo "usage: scripts/keelmesh {start|status|reset-demo|verify|offline-verify|restart-verify|export-evidence|rehearse|stop}" >&2; exit 2 ;;
+  *) echo "usage: scripts/keelmesh {start|status|reset-demo|verify|offline-verify|restart-verify|export-evidence|rehearse|memory-status|memory-verify|memory-export|stop}" >&2; exit 2 ;;
 esac

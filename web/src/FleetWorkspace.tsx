@@ -1763,7 +1763,7 @@ export function FleetWorkspace() {
         height: Math.min(740, window.innerHeight - 146),
       },
       content: (
-        <EngineerView value={agent} onChange={setAgent} onError={setError} />
+        <EngineerView value={agent} memory={memory} onChange={setAgent} onError={setError} />
       ),
     });
   if (windows.has("cutaway") && platform && legacy)

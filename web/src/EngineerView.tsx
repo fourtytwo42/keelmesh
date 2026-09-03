@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { api, KeelMeshError, requestID } from "./api";
-import type { AgentSnapshot, EvalCandidate, EvalRun, InvestigationRun, ReplayResult } from "./types";
+import type { AgentSnapshot, EvalCandidate, EvalRun, InvestigationRun, MemorySnapshotV1, ReplayResult } from "./types";
 
-type Props = { value: AgentSnapshot; onChange:(next:AgentSnapshot)=>void; onError:(message:string)=>void };
+type Props = { value: AgentSnapshot; memory:MemorySnapshotV1|null; onChange:(next:AgentSnapshot)=>void; onError:(message:string)=>void };
 
-export function EngineerView({ value, onChange, onError }: Props) {
+export function EngineerView({ value, memory, onChange, onError }: Props) {
   const [busy, setBusy] = useState(false);
   const incident = value.incidents[0];
   const receipts = value.investigation?.tool_receipts ?? [];
@@ -28,6 +28,10 @@ export function EngineerView({ value, onChange, onError }: Props) {
     </header>
 
     <div className="engineer-grid">
+      <article className="engineer-card memory-card"><header><span>M11</span><div><small>DISTRIBUTED AGENT MEMORY</small><h2>Scoped context assembly</h2></div><strong>{memory?.retrieval_mode ?? "offline"}</strong></header>
+        <div className="tool-grid"><div><span>✓</span><b>{memory?.conversation_turns ?? 0} durable turns</b><small>latest 12 exact turns per assembly</small></div><div><span>✓</span><b>{memory?.committed_items ?? 0} committed memories</b><small>{memory?.pending_candidates ?? 0} awaiting review · {memory?.tombstones ?? 0} tombstones</small></div><div><span>✓</span><b>{memory?.embedding_state ?? "unavailable"} embeddings</b><small>{memory?.embedding_version ?? "keyword fallback"}</small></div></div>
+        <p>{memory?.last_context ? `${memory.last_context.estimated_tokens}/${memory.last_context.token_budget} estimated context tokens · ${memory.last_context.semantic_memories.length} semantic · ${memory.last_context.procedural_chunks.length} runbook · ${memory.last_context.operational_episodes.length} episode` : memory?.summary ?? "Memory state is unavailable; mission authority remains independent."}</p>
+      </article>
       <article className="engineer-card evidence-card"><header><span>01</span><div><small>IMMUTABLE INCIDENT</small><h2>Bounded evidence</h2></div><code>{incident.state_checksum.slice(7,19)}</code></header>
         <div className="incident-track">{incident.evidence.map((item)=><div key={item.id}><b>{item.tick ?? "—"}</b><i/><span><strong>{item.kind}</strong>{item.summary}</span></div>)}</div>
         <footer><span>Seed {incident.scenario_seed}</span><span>{incident.classification}</span><span>fixture provenance</span></footer>
