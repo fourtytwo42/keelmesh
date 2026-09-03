@@ -920,6 +920,7 @@ export function FleetWorkspace() {
   }
   async function beginTranscription() {
     if (recorder.current?.state === "recording") return;
+    const targetMission = mission;
     stopRequested.current = false;
     setError("");
     setSpeechState("requesting microphone");
@@ -985,13 +986,14 @@ export function FleetWorkspace() {
           setSpeechState(
             `${result.route} · RTF ${result.real_time_factor ?? "—"}`,
           );
+          if (targetMission) await createPlans(targetMission, result.text);
         } catch (e) {
           setSpeechState("typed fallback");
           setError((e as Error).message);
         }
       };
       active.start(200);
-      setSpeechState("listening · release to transcribe");
+      setSpeechState("listening · release to send");
     } catch {
       setSpeechState("typed fallback");
       setError(
@@ -1106,14 +1108,14 @@ export function FleetWorkspace() {
           voice={voice}
           speechState={speechState}
           autoRead={autoRead}
-          recording={speechState.startsWith("listening")}
+          recording={
+            speechState === "requesting microphone" ||
+            speechState.startsWith("listening")
+          }
           onVoice={setVoice}
           onAutoRead={setAutoRead}
-          onTranscriptionToggle={() =>
-            speechState.startsWith("listening")
-              ? endTranscription()
-              : void beginTranscription()
-          }
+          onTranscriptionStart={() => void beginTranscription()}
+          onTranscriptionStop={endTranscription}
           onFormation={(f) => updateMission({ formation: f })}
           onArea={(kind) => setTool(kind)}
           onTool={setTool}
@@ -2541,7 +2543,8 @@ function Planner({
   recording,
   onVoice,
   onAutoRead,
-  onTranscriptionToggle,
+  onTranscriptionStart,
+  onTranscriptionStop,
   onFormation,
   onArea,
   onTool,
@@ -2571,7 +2574,8 @@ function Planner({
   recording: boolean;
   onVoice: (v: string) => void;
   onAutoRead: (enabled: boolean) => void;
-  onTranscriptionToggle: () => void;
+  onTranscriptionStart: () => void;
+  onTranscriptionStop: () => void;
   onFormation: (v: string) => void;
   onArea: (k: "include" | "exclude") => void;
   onTool: (t: Tool) => void;
@@ -2681,11 +2685,35 @@ function Planner({
         <div className="chat-composer-actions">
           <button
             className={`chat-mic ${recording ? "recording" : ""}`}
-            aria-label={recording ? "Stop voice input" : "Start voice input"}
+            aria-label={recording ? "Release to send voice message" : "Hold to talk"}
             aria-pressed={recording}
-            title={recording ? "Stop and transcribe" : "Speak to mission AI"}
+            title={recording ? "Release to transcribe and send" : "Hold to talk"}
             disabled={busy}
-            onClick={onTranscriptionToggle}
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              onTranscriptionStart();
+            }}
+            onPointerUp={(event) => {
+              event.preventDefault();
+              if (event.currentTarget.hasPointerCapture(event.pointerId))
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              onTranscriptionStop();
+            }}
+            onPointerCancel={onTranscriptionStop}
+            onKeyDown={(event) => {
+              if ((event.key === " " || event.key === "Enter") && !event.repeat) {
+                event.preventDefault();
+                onTranscriptionStart();
+              }
+            }}
+            onKeyUp={(event) => {
+              if (event.key === " " || event.key === "Enter") {
+                event.preventDefault();
+                onTranscriptionStop();
+              }
+            }}
           >
             <Mic />
           </button>

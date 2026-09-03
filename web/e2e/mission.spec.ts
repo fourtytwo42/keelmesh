@@ -432,6 +432,48 @@ test("single-vessel intent uses the real advisor boundary and never offers fleet
 });
 
 test("mission chat starts blank and exposes streamlined voice controls", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async () => ({
+          getTracks: () => [{ stop: () => undefined }],
+        }),
+      },
+    });
+    class TestMediaRecorder {
+      static isTypeSupported() {
+        return true;
+      }
+      state = "inactive";
+      mimeType = "audio/webm";
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      start() {
+        this.state = "recording";
+      }
+      stop() {
+        this.state = "inactive";
+        this.ondataavailable?.({ data: new Blob(["voice fixture"]) });
+        this.onstop?.();
+      }
+    }
+    Object.defineProperty(window, "MediaRecorder", {
+      configurable: true,
+      value: TestMediaRecorder,
+    });
+  });
+  await page.route("**/api/v2/transcription?*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        text: "patrol the shoreline and keep 35% reserve",
+        route: "colocated-node",
+        real_time_factor: 0.12,
+      }),
+    }),
+  );
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
   await rail.getByPlaceholder("Callsign, class, group, status…").fill("Gannet");
@@ -439,11 +481,23 @@ test("mission chat starts blank and exposes streamlined voice controls", async (
   await rail.getByRole("button", { name: "Create mission from 1 selected" }).click();
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await expect(planner.getByRole("textbox", { name: "Message mission AI" })).toHaveValue("");
-  await expect(planner.getByRole("button", { name: "Start voice input" })).toBeVisible();
+  const microphone = planner.getByRole("button", { name: "Hold to talk" });
+  await expect(microphone).toBeVisible();
   const autoRead = planner.getByRole("checkbox", { name: "Read AI replies aloud" });
   await expect(autoRead).not.toBeChecked();
   await autoRead.check();
   await expect.poll(() => page.evaluate(() => localStorage.getItem("keelmesh.auto-read"))).toBe("true");
+  const box = await microphone.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await expect(planner.getByRole("button", { name: "Release to send voice message" })).toBeVisible();
+  await page.mouse.up();
+  await expect(planner.locator(".chat-message.operator")).toContainText(
+    "patrol the shoreline and keep 35% reserve",
+    { timeout: 25_000 },
+  );
+  await expect(planner.getByRole("textbox", { name: "Message mission AI" })).toHaveValue("");
 });
 
 test("beach intent resolves a depth-aware one-nautical-mile coastal patrol", async ({ page }) => {
