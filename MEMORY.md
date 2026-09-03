@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: neutral-contact context following and authoritative simulation-speed controls are implemented, verified, and deployed; commit/push is the remaining handoff step.
+- Current task: neutral-contact context following and authoritative simulation-speed controls are implemented, verified, deployed, and pushed in commit `35a1171`.
 - Last meaningful change: right-clicking non-commandable traffic with one complete group selected creates an AI-assisted follow draft, while the bottom status bar controls pause, 1×, 5×, 20×, 100×, or 500× authoritative time without skipping 200 ms safety/trajectory steps.
-- Next step: continue the adaptive group-autonomy or receding-horizon follow-target work after this checkpoint.
+- Next step: continue the adaptive group-autonomy or receding-horizon follow-target work from this clean checkpoint.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
 ## Current State
@@ -616,7 +616,7 @@ When sources conflict, use this order:
 - Decision: Keep contacts non-commandable; resolve follow by stable Boat ID through the existing AI advisor and deterministic plan/preview/authorization boundary. Expose only pause, 1×, 5×, 20×, 100×, and 500× and implement acceleration by repeating the same 200 ms authoritative step.
 - Files: `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, `internal/api/fleetops.go`, `internal/api/server.go`, `web/src/types.ts`, `web/src/OperationsMap.tsx`, `web/src/FleetWorkspace.tsx`, `web/src/app.css`, and `README.md`.
 - Commands/tests: strict TypeScript, seven Vitest assertions, production Vite build, full Go tests/vet, live pause/5×/500× API timing, browser control state/interaction, central health and Quick Tunnel health, and twelve-node binary/health verification.
-- Result: A complete selected group can right-click neutral traffic and create a bounded follow proposal. Fleet Operations can pause or accelerate controlled vessels and neutral surface traffic on one clock without skipping route, energy, or guardrail evaluation. VM 214 and all twelve nodes run binary SHA-256 `b4d25948f17da32b4811888bc5ef99c2c9aaca3c9ffbe7a47cb5cd1eee05d332`. LAN and Quick Tunnel health both return 200. No snapshot or hosted workflow.
+- Result: A complete selected group can right-click neutral traffic and create a bounded follow proposal. Fleet Operations can pause or accelerate controlled vessels and neutral surface traffic on one clock without skipping route, energy, or guardrail evaluation. Implementation commit `35a1171` is pushed. VM 214 and all twelve nodes run binary SHA-256 `b4d25948f17da32b4811888bc5ef99c2c9aaca3c9ffbe7a47cb5cd1eee05d332`. LAN and Quick Tunnel health both return 200. No snapshot or hosted workflow.
 - Follow-up: Arena retains its separate deterministic 20× clock; unify it with the operator control only if cross-workspace time coupling is desired.
 
 ## Open Follow-ups
