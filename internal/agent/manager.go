@@ -62,6 +62,13 @@ type Manager struct {
 	candidates     map[string]domain.EvalCandidateV1
 	evaluations    map[string]domain.EvalRunV1
 	traces         map[string]domain.TraceSnapshotV1
+	scenes         map[string]domain.CommandSceneV1
+	sceneOrder     []string
+	activeScenes   map[string]string
+	turns          map[string]domain.AssistantTurnV2
+	sceneEvents    []domain.SceneEventV1
+	nextSceneEvent int64
+	proactiveSeen  map[string]string
 	subs           map[chan domain.AgentSnapshotV1]struct{}
 }
 
@@ -76,7 +83,10 @@ func NewManager(cfg Config, logger *slog.Logger) *Manager {
 		},
 		idempotency: map[string]string{}, investigations: map[string]domain.InvestigationRunV1{},
 		candidates: map[string]domain.EvalCandidateV1{}, evaluations: map[string]domain.EvalRunV1{},
-		traces: map[string]domain.TraceSnapshotV1{}, subs: map[chan domain.AgentSnapshotV1]struct{}{},
+		traces: map[string]domain.TraceSnapshotV1{}, scenes: map[string]domain.CommandSceneV1{},
+		activeScenes: map[string]string{}, turns: map[string]domain.AssistantTurnV2{}, nextSceneEvent: 1,
+		proactiveSeen: map[string]string{},
+		subs:          map[chan domain.AgentSnapshotV1]struct{}{},
 	}
 }
 

@@ -684,19 +684,43 @@ def mission_command_format(request: MissionCommandRequest) -> dict[str, Any]:
             "type": "object",
             "additionalProperties": False,
             "required": [
-                "guidance_kind", "contact_id", "contact_behavior", "dynamic_target",
-                "formation", "standoff_m", "minimum_reserve", "maximum_speed_mps",
-                "hold_at_end", "summary",
+                "guidance_kind",
+                "contact_id",
+                "contact_behavior",
+                "dynamic_target",
+                "formation",
+                "standoff_m",
+                "minimum_reserve",
+                "maximum_speed_mps",
+                "hold_at_end",
+                "summary",
             ],
             "properties": {
-                "guidance_kind": {"type": "string", "enum": [
-                    "transit", "patrol", "search", "follow_contact", "approach_contact",
-                    "orbit_contact", "hold", "waypoints",
-                ]},
+                "guidance_kind": {
+                    "type": "string",
+                    "enum": [
+                        "transit",
+                        "patrol",
+                        "search",
+                        "follow_contact",
+                        "approach_contact",
+                        "orbit_contact",
+                        "hold",
+                        "waypoints",
+                    ],
+                },
                 "contact_id": {"type": "string", "enum": contact_ids},
-                "contact_behavior": {"type": "string", "enum": [
-                    "none", "follow", "intercept", "approach", "observe", "surround",
-                ]},
+                "contact_behavior": {
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "follow",
+                        "intercept",
+                        "approach",
+                        "observe",
+                        "surround",
+                    ],
+                },
                 "dynamic_target": {"type": "boolean"},
                 "formation": {"type": "string", "enum": sorted(ALLOWED_FORMATIONS)},
                 "standoff_m": {"type": "number", "minimum": 0, "maximum": 5000},
@@ -758,7 +782,14 @@ async def openai_mission_command_attempt(request: MissionCommandRequest) -> tupl
 
 def deterministic_mission_command(request: MissionCommandRequest) -> dict[str, Any]:
     lower = request.intent.lower()
-    contact = next((item for item in request.surface_contacts if any(alias.lower() in lower for alias in (item.name, item.callsign, item.boat_id))), None)
+    contact = next(
+        (
+            item
+            for item in request.surface_contacts
+            if any(alias.lower() in lower for alias in (item.name, item.callsign, item.boat_id))
+        ),
+        None,
+    )
     behavior = "none"
     guidance = "waypoints"
     if contact is not None:
@@ -772,7 +803,11 @@ def deterministic_mission_command(request: MissionCommandRequest) -> dict[str, A
             behavior, guidance = "intercept", "follow_contact"
         else:
             behavior, guidance = "follow", "follow_contact"
-    formation = "independent" if len(request.target_ids) == 1 else ("ring" if behavior == "surround" else request.current_formation or "column")
+    formation = (
+        "independent"
+        if len(request.target_ids) == 1
+        else ("ring" if behavior == "surround" else request.current_formation or "column")
+    )
     return {
         "guidance_kind": guidance,
         "contact_id": contact.id if contact else "",
@@ -787,9 +822,7 @@ def deterministic_mission_command(request: MissionCommandRequest) -> dict[str, A
     }
 
 
-def parse_target_selection(
-    text: str, request: MissionTargetSelectionRequest
-) -> tuple[list[str], str]:
+def parse_target_selection(text: str, request: MissionTargetSelectionRequest) -> tuple[list[str], str]:
     cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE)
     value = json.loads(cleaned)
     ids = value.get("target_ids") if isinstance(value, dict) else None
@@ -798,12 +831,12 @@ def parse_target_selection(
         raise ValueError("provider returned no valid target selection")
     available = {vessel.id for vessel in request.vessels if vessel.available}
     normalized = [str(identifier) for identifier in ids]
-    if len(normalized) != len(set(normalized)) or any(identifier not in available for identifier in normalized):
+    if len(normalized) != len(set(normalized)) or any(
+        identifier not in available for identifier in normalized
+    ):
         raise ValueError("provider selected an unavailable or duplicate vessel")
     if re.search(r"\b(?:a|one|this|the)\s+(?:available\s+)?(?:group|team)\b", request.intent, re.I):
-        complete_groups = {
-            tuple(sorted(group.member_ids)) for group in request.groups if group.available
-        }
+        complete_groups = {tuple(sorted(group.member_ids)) for group in request.groups if group.available}
         if tuple(sorted(normalized)) not in complete_groups:
             raise ValueError("provider must select one complete group for a singular group request")
     return normalized, explanation.strip()[:320]
@@ -844,10 +877,17 @@ def deterministic_target_selection(
     lower = request.intent.lower()
     groups = sorted((group for group in request.groups if group.available), key=lambda group: group.code)
     for group in groups:
-        aliases = (group.name.lower(), group.code.lower(), f"{group.color_name} group", f"{group.color_name} team")
+        aliases = (
+            group.name.lower(),
+            group.code.lower(),
+            f"{group.color_name} group",
+            f"{group.color_name} team",
+        )
         if any(re.search(rf"\b{re.escape(alias)}\b", lower) for alias in aliases):
             return list(group.member_ids), f"Resolved {group.code} · {group.name} from the operator wording."
-    vessels = sorted((vessel for vessel in request.vessels if vessel.available), key=lambda vessel: vessel.designation)
+    vessels = sorted(
+        (vessel for vessel in request.vessels if vessel.available), key=lambda vessel: vessel.designation
+    )
     for vessel in vessels:
         if vessel.callsign.lower() in lower or vessel.designation.lower() in lower:
             return [vessel.id], f"Resolved {vessel.name} from the operator wording."
@@ -855,7 +895,9 @@ def deterministic_target_selection(
         return [vessel.id for vessel in vessels], f"Selected all {len(vessels)} available vessels."
     if groups:
         group = groups[0]
-        return list(group.member_ids), f"Selected the first complete available group, {group.code} · {group.name}."
+        return list(
+            group.member_ids
+        ), f"Selected the first complete available group, {group.code} · {group.name}."
     if vessels:
         return [vessels[0].id], f"Selected the first available vessel, {vessels[0].name}."
     raise ValueError("no available mission targets")
@@ -1537,27 +1579,41 @@ async def mission_command(request: MissionCommandRequest) -> dict[str, Any]:
             started_iso, started = now(), time.monotonic()
             try:
                 result, status = await openai_mission_command_attempt(request)
-                attempts.append({
-                    "provider": "openai", "model": STATE.openai_model, "state": "accepted",
-                    "started_at": started_iso,
-                    "latency_ms": int((time.monotonic() - started) * 1000),
-                    "status_code": status,
-                })
+                attempts.append(
+                    {
+                        "provider": "openai",
+                        "model": STATE.openai_model,
+                        "state": "accepted",
+                        "started_at": started_iso,
+                        "latency_ms": int((time.monotonic() - started) * 1000),
+                        "status_code": status,
+                    }
+                )
                 span.set_attribute("provider.selected", "openai")
                 span.set_attribute("mission.dynamic_target", bool(result["dynamic_target"]))
                 return {**result, "provider": "openai", "model": STATE.openai_model, "attempts": attempts}
             except Exception as exc:
-                attempts.append({
-                    "provider": "openai", "model": STATE.openai_model, "state": "failed",
-                    "started_at": started_iso,
-                    "latency_ms": int((time.monotonic() - started) * 1000),
-                    "error_code": type(exc).__name__, "error_detail": str(exc)[:180],
-                })
+                attempts.append(
+                    {
+                        "provider": "openai",
+                        "model": STATE.openai_model,
+                        "state": "failed",
+                        "started_at": started_iso,
+                        "latency_ms": int((time.monotonic() - started) * 1000),
+                        "error_code": type(exc).__name__,
+                        "error_detail": str(exc)[:180],
+                    }
+                )
         elif STATE.fail_cloud_next:
             STATE.fail_cloud_next = False
         result = deterministic_mission_command(request)
         span.set_attribute("provider.selected", "deterministic")
-        return {**result, "provider": "deterministic", "model": "keelmesh-command-resolver-v1", "attempts": attempts}
+        return {
+            **result,
+            "provider": "deterministic",
+            "model": "keelmesh-command-resolver-v1",
+            "attempts": attempts,
+        }
 
 
 @app.post("/v1/mission-options", dependencies=[Depends(require_core)])

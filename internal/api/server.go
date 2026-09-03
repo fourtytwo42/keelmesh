@@ -169,12 +169,21 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v3/workspaces/{session_id}/actions", s.workspaceActionV3)
 	mux.HandleFunc("POST /api/v3/assistant:command", s.workspaceAssistantV3)
 	mux.HandleFunc("POST /api/v3/scenarios/fleet-arena:reset", s.resetArenaV3)
+	mux.HandleFunc("POST /api/v4/assistant/turns", s.assistantTurnV4)
+	mux.HandleFunc("POST /api/v4/assistant/turns/{action}", s.cancelAssistantTurnV4)
+	mux.HandleFunc("GET /api/v4/assistant/turns/{id}/events", s.assistantTurnEventsV4)
+	mux.HandleFunc("GET /api/v4/scenes", s.scenesV4)
+	mux.HandleFunc("GET /api/v4/scenes/{id}", s.sceneV4)
+	mux.HandleFunc("POST /api/v4/scenes/{action}", s.sceneMutationV4)
+	mux.HandleFunc("POST /api/v4/scenes/{id}/actions", s.sceneActionV4)
+	mux.HandleFunc("GET /api/v4/assistant/history", s.assistantHistoryV4)
+	mux.HandleFunc("GET /api/v4/catalogs/keelmesh-operations-v1", s.sceneCatalogV4)
 	mux.Handle("GET /", spaHandler(s.web))
 	return requestLog(s.logger, mux)
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m7", "started_at": s.startedAt.Format(time.RFC3339)})
+	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m10", "started_at": s.startedAt.Format(time.RFC3339)})
 }
 func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})

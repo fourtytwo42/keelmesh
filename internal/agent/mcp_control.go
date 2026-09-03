@@ -34,6 +34,9 @@ func (m *Manager) MCPControlHandler(fleet *fleetops.Manager, arenaManager *arena
 		{"arena.get_player_state", "Read only one faction's server-filtered knowledge projection.", factionSchema},
 		{"arena.get_infrastructure", "Read referee infrastructure state; deployment should reserve this tool for trusted diagnostic identities.", emptySchema},
 		{"workspace.apply", "Apply a presentation-only workspace action such as selection, framing, windows, map view, or annotation.", workspaceSchema},
+		{"scene.list", "List trusted command scenes visible to one operator session.", `{"type":"object","additionalProperties":false,"properties":{"actor_id":{"type":"string","minLength":1},"session_id":{"type":"string","minLength":1}},"required":["actor_id","session_id"]}`},
+		{"scene.get", "Read one trusted command scene visible to an operator session, including A2UI messages, live bindings, annotations, and receipts.", `{"type":"object","additionalProperties":false,"properties":{"scene_id":{"type":"string","minLength":1},"actor_id":{"type":"string","minLength":1},"session_id":{"type":"string","minLength":1}},"required":["scene_id","actor_id","session_id"]}`},
+		{"scene.compose", "Compose a trusted A2UI command scene from operator-visible fleet context; effects still require a separate human approval.", `{"type":"object","additionalProperties":false,"properties":{"request_id":{"type":"string","minLength":1},"idempotency_key":{"type":"string","minLength":1},"expected_version":{"type":"integer","minimum":1},"actor_id":{"type":"string","minLength":1},"session_id":{"type":"string","minLength":1},"text":{"type":"string","minLength":1,"maxLength":1600},"persona":{"type":"string","enum":["navy","pirate"]},"selected_ids":{"type":"array","maxItems":48,"uniqueItems":true,"items":{"type":"string"}}},"required":["request_id","idempotency_key","expected_version","actor_id","session_id","text","persona"]}`},
 		{"effect.request_approval", "Describe the immutable human approval boundary for a proposed movement or simulated effect.", `{"type":"object","additionalProperties":false,"properties":{"effect_kind":{"type":"string"},"proposal_hash":{"type":"string"},"summary":{"type":"string","maxLength":1000}},"required":["effect_kind","proposal_hash","summary"]}`},
 	}
 	for _, item := range tools {
@@ -41,7 +44,7 @@ func (m *Manager) MCPControlHandler(fleet *fleetops.Manager, arenaManager *arena
 		server.AddTool(&mcp.Tool{Name: item.name, Description: item.description, InputSchema: json.RawMessage(item.schema)}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			return callControlTool(callCtx, fleet, arenaManager, item.name, req.Params.Arguments)
+			return m.callControlTool(callCtx, fleet, arenaManager, item.name, req.Params.Arguments)
 		})
 	}
 	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 32 << 10})
@@ -62,7 +65,7 @@ func bearerHandler(tokenFile string, next http.Handler, denied func()) http.Hand
 	})
 }
 
-func callControlTool(ctx context.Context, fleet *fleetops.Manager, arenaManager *arena.Manager, name string, raw json.RawMessage) (*mcp.CallToolResult, error) {
+func (m *Manager) callControlTool(ctx context.Context, fleet *fleetops.Manager, arenaManager *arena.Manager, name string, raw json.RawMessage) (*mcp.CallToolResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -90,6 +93,9 @@ func callControlTool(ctx context.Context, fleet *fleetops.Manager, arenaManager 
 		EffectKind      string              `json:"effect_kind"`
 		ProposalHash    string              `json:"proposal_hash"`
 		Summary         string              `json:"summary"`
+		SceneID         string              `json:"scene_id"`
+		Persona         string              `json:"persona"`
+		SelectedIDs     []string            `json:"selected_ids"`
 	}
 	_ = json.Unmarshal(raw, &args)
 	mutation := fleetops.Mutation{RequestID: args.RequestID, IdempotencyKey: args.IdempotencyKey, ExpectedVersion: args.ExpectedVersion}
@@ -129,6 +135,12 @@ func callControlTool(ctx context.Context, fleet *fleetops.Manager, arenaManager 
 		value = arenaManager.InfrastructureSnapshot()
 	case "workspace.apply":
 		value, err = arenaManager.WorkspaceAction(arena.ActionRequest{ArenaMutationV1: domain.ArenaMutationV1{RequestID: args.RequestID, IdempotencyKey: args.IdempotencyKey, ExpectedVersion: args.ExpectedVersion, ActorID: args.ActorID}, SessionID: args.SessionID, Faction: args.Faction, Kind: args.Kind, Arguments: args.Arguments})
+	case "scene.list":
+		value = m.Scenes(args.ActorID, args.SessionID)
+	case "scene.get":
+		value, err = m.SceneForSession(args.SceneID, args.ActorID, args.SessionID)
+	case "scene.compose":
+		value, err = m.CreateAssistantTurn(ctx, domain.AssistantTurnRequestV2{WorkspaceAssistantRequestV1: domain.WorkspaceAssistantRequestV1{SchemaVersion: 1, RequestID: args.RequestID, IdempotencyKey: args.IdempotencyKey, Text: args.Text, Persona: args.Persona, SelectedIDs: args.SelectedIDs}, ActorIdentity: args.ActorID, SessionID: args.SessionID, WorkspaceVersion: args.ExpectedVersion}, fleet.Snapshot())
 	case "effect.request_approval":
 		value = map[string]any{"state": "awaiting_human_approval", "code": "HUMAN_APPROVAL_REQUIRED", "effect_kind": args.EffectKind, "proposal_hash": args.ProposalHash, "summary": args.Summary}
 	}
@@ -140,6 +152,13 @@ func callControlTool(ctx context.Context, fleet *fleetops.Manager, arenaManager 
 		return nil, err
 	}
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil
+}
+
+// callControlTool keeps the package-level test seam used by the original M9
+// boundary. Runtime requests use the manager method above so scene state is
+// shared with the UI and /api/v4.
+func callControlTool(ctx context.Context, fleet *fleetops.Manager, arenaManager *arena.Manager, name string, raw json.RawMessage) (*mcp.CallToolResult, error) {
+	return NewManager(Config{}, nil).callControlTool(ctx, fleet, arenaManager, name, raw)
 }
 
 const emptySchema = `{"type":"object","additionalProperties":false}`

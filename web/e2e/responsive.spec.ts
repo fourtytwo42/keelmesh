@@ -75,7 +75,7 @@ test.describe("touch-first responsive workspace", () => {
   test("phone navigation toggles a viewport-safe planner", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "New mission" }).click();
-    const planner = page.getByRole("region", { name: "Mission Planner" });
+    const planner = page.getByRole("region", { name: "Mission Canvas" });
     await expect(planner).toBeVisible();
     const bounds = await planner.boundingBox();
     expect(bounds).not.toBeNull();
@@ -86,7 +86,7 @@ test.describe("touch-first responsive workspace", () => {
     await planner.getByRole("button", { name: "Minimize" }).click();
     await expect(planner).toHaveCount(0);
     await page.getByRole("button", { name: "Mission", exact: true }).click();
-    await expect(page.getByRole("region", { name: "Mission Planner" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Mission Canvas" })).toBeVisible();
   });
 });
 

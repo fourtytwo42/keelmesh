@@ -11,13 +11,17 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@a2ui/react": "0.11.0",
+    "@a2ui/web_core": "0.10.7",
+    "@a2ui/markdown-it": "0.1.1",
     "@watergis/maplibre-gl-terradraw": "1.16.0",
     "lucide-react": "1.39.0",
     "maplibre-gl": "6.6.0",
-    "react": "19.1.1",
-    "react-dom": "19.1.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "react-markdown": "10.1.0",
-    "remark-gfm": "4.0.1"
+    "remark-gfm": "4.0.1",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

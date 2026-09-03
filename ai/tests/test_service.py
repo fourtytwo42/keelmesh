@@ -19,22 +19,38 @@ from keelmesh_ai.service import (
 
 
 def test_mission_command_binds_surround_to_live_contact() -> None:
-    request = MissionCommandRequest.model_validate({
-        "mission_id": "mission-1",
-        "intent": "approach and surround Safe Haven",
-        "target_ids": ["vessel-1", "vessel-2"],
-        "current_formation": "column",
-        "constraints": {},
-        "surface_contacts": [{
-            "id": "surface-16", "boat_id": "NPC-4116", "name": "MT Safe Haven",
-            "callsign": "SAFE HAVEN", "class": "tanker", "activity": "anchored",
-            "color_name": "aqua", "color": "#63b9b4", "position": [-71.275, 41.285],
-            "heading_deg": 0, "speed_mps": 0, "speed_knots": 0, "length_m": 138,
-            "draft_m": 8.2, "navigation_state": "at anchor", "route_name": "anchorage",
-            "route": [[-71.275, 41.285]], "looping": False,
-            "updated_at": "2026-09-03T12:00:00Z",
-        }],
-    })
+    request = MissionCommandRequest.model_validate(
+        {
+            "mission_id": "mission-1",
+            "intent": "approach and surround Safe Haven",
+            "target_ids": ["vessel-1", "vessel-2"],
+            "current_formation": "column",
+            "constraints": {},
+            "surface_contacts": [
+                {
+                    "id": "surface-16",
+                    "boat_id": "NPC-4116",
+                    "name": "MT Safe Haven",
+                    "callsign": "SAFE HAVEN",
+                    "class": "tanker",
+                    "activity": "anchored",
+                    "color_name": "aqua",
+                    "color": "#63b9b4",
+                    "position": [-71.275, 41.285],
+                    "heading_deg": 0,
+                    "speed_mps": 0,
+                    "speed_knots": 0,
+                    "length_m": 138,
+                    "draft_m": 8.2,
+                    "navigation_state": "at anchor",
+                    "route_name": "anchorage",
+                    "route": [[-71.275, 41.285]],
+                    "looping": False,
+                    "updated_at": "2026-09-03T12:00:00Z",
+                }
+            ],
+        }
+    )
     result = parse_mission_command(
         '{"guidance_kind":"orbit_contact","contact_id":"surface-16","contact_behavior":"surround","dynamic_target":true,"formation":"ring","standoff_m":120,"minimum_reserve":0,"maximum_speed_mps":0,"hold_at_end":true,"summary":"Surround the identified tanker."}',
         request,
@@ -106,9 +122,7 @@ def test_target_selection_requires_complete_group_for_generic_group_request() ->
     assert ids == ["vessel-1", "vessel-2"]
     assert explanation == "Best reserve."
     try:
-        parse_target_selection(
-            '{"target_ids":["vessel-1"],"explanation":"Partial group."}', request
-        )
+        parse_target_selection('{"target_ids":["vessel-1"],"explanation":"Partial group."}', request)
     except ValueError:
         pass
     else:

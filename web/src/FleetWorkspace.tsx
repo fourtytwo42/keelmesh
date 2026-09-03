@@ -21,7 +21,10 @@ import type {
   VesselProfileV2,
   WorkspaceAssistantActionV1,
   WorkspaceAssistantResponseV1,
+  AssistantTurnV2,
+  CommandSceneV1,
 } from "./types";
+import { KeelMeshA2UISurface } from "./A2UISurface";
 import { OperationsMap, type WaypointColor } from "./OperationsMap";
 import { WindowManager, type WindowDefinition } from "./WindowManager";
 import { HoverHelp } from "./HoverHelp";
@@ -47,6 +50,8 @@ import {
   MousePointer2,
   Network,
   Pause,
+  Pin,
+  History,
   Pencil,
   Play,
   Plus,
@@ -105,7 +110,17 @@ const groupPalette = [
 const vesselAsset = (classID: string, pirate: boolean) =>
   `/assets/vessels/${pirate ? "pirate-" : ""}${classID}.png`;
 
+function commandSceneSessionID() {
+  const key = "keelmesh.command-scene-session.v1";
+  const existing = sessionStorage.getItem(key);
+  if (existing) return existing;
+  const value = crypto.randomUUID();
+  sessionStorage.setItem(key, value);
+  return value;
+}
+
 export function FleetWorkspace() {
+  const sceneSessionID = useRef(commandSceneSessionID()).current;
   const [fleet, setFleet] = useState<FleetSnapshotV2 | null>(null),
     [legacy, setLegacy] = useState<Bootstrap | null>(null),
     [platform, setPlatform] = useState<PlatformSnapshot | null>(null),
@@ -140,7 +155,10 @@ export function FleetWorkspace() {
     [busy, setBusy] = useState(false),
     [connected, setConnected] = useState(true),
     [pendingDeleteID, setPendingDeleteID] = useState(""),
-    [pendingPlanID, setPendingPlanID] = useState("");
+    [pendingPlanID, setPendingPlanID] = useState(""),
+    [commandScenes, setCommandScenes] = useState<CommandSceneV1[]>([]),
+    [activeSceneID, setActiveSceneID] = useState(""),
+    [historyVisible, setHistoryVisible] = useState(false);
   const audio = useRef<HTMLAudioElement | null>(null),
     speechAbort = useRef<AbortController | null>(null),
     recorder = useRef<MediaRecorder | null>(null),
@@ -223,6 +241,14 @@ export function FleetWorkspace() {
       api<PlatformSnapshot>("/api/v1/platform").then(setPlatform),
       api<AgentSnapshot>("/api/v1/ai").then(setAgent),
       api<ArenaSnapshotV1>("/api/v3/arena?faction=A").then(setArena),
+      api<{ scenes: CommandSceneV1[] }>(`/api/v4/scenes?actor_identity=demo-operator&session_id=${encodeURIComponent(sceneSessionID)}`).then((value) => {
+        const visible = value.scenes.filter((scene) => scene.state === "active" || scene.pinned);
+        setCommandScenes(value.scenes);
+        setActiveSceneID(visible[0]?.id ?? "");
+        const hasMissionCanvas = visible.some((scene) => scene.type === "mission_canvas");
+        setWindows((current) => new Set([...current, ...(hasMissionCanvas ? ["planner"] : []), ...visible.filter((scene) => scene.type !== "mission_canvas").map((scene) => `scene-${scene.id}`)]));
+        if (hasMissionCanvas) setPlannerVisible(true);
+      }),
     ]);
     const t = window.setInterval(() => {
       refresh()
@@ -231,9 +257,19 @@ export function FleetWorkspace() {
       api<ArenaSnapshotV1>("/api/v3/arena?faction=A")
         .then(setArena)
         .catch(() => {});
+      api<{ scenes: CommandSceneV1[] }>(`/api/v4/scenes?actor_identity=demo-operator&session_id=${encodeURIComponent(sceneSessionID)}`)
+        .then((value) => {
+          setCommandScenes(value.scenes);
+          const active = value.scenes.find((scene) => scene.critical && scene.state === "active");
+          if (active) {
+            setActiveSceneID(active.id);
+            setWindows((current) => current.has(`scene-${active.id}`) ? current : new Set([...current, `scene-${active.id}`]));
+          }
+        })
+        .catch(() => {});
     }, 1000);
     return () => window.clearInterval(t);
-  }, [refresh]);
+  }, [refresh, sceneSessionID]);
   const rawMission =
     fleet?.missions.find((m) => m.id === activeMissionID) ??
     fleet?.missions[0] ??
@@ -1389,7 +1425,7 @@ export function FleetWorkspace() {
   }
 
   async function askWorkspaceAssistant(text: string) {
-    return api<WorkspaceAssistantResponseV1>("/api/v3/assistant:command", {
+    const turn = await api<AssistantTurnV2>("/api/v4/assistant/turns", {
       method: "POST",
       body: JSON.stringify({
         schema_version: 1,
@@ -1401,6 +1437,48 @@ export function FleetWorkspace() {
         open_windows: [...windows],
         active_mission_id: mission?.id ?? "",
         plan_options: planOptionPayload(),
+        actor_identity: "demo-operator",
+        session_id: sceneSessionID,
+        workspace_version: fleet?.fleet_version ?? 0,
+      }),
+    });
+    setCommandScenes((current) => [turn.scene, ...current.map((scene) => scene.state === "active" && !scene.pinned && !scene.critical && !scene.pending_approval ? { ...scene, state: "replaced" } : scene).filter((scene) => scene.id !== turn.scene.id)].slice(0, 50));
+    setActiveSceneID(turn.scene.id);
+    if (turn.scene.type === "mission_canvas") open("planner");
+    else open(`scene-${turn.scene.id}`);
+    return turn.assistant;
+  }
+
+  async function mutateScene(scene: CommandSceneV1, operation: "pin" | "unpin" | "dismiss") {
+    const value = await api<CommandSceneV1>(`/api/v4/scenes/${scene.id}:${operation}`, {
+      method: "POST",
+      body: JSON.stringify({
+        request_id: requestID(`scene-${operation}`),
+        idempotency_key: requestID(`scene-${operation}-key`),
+        actor_identity: "demo-operator",
+        session_id: sceneSessionID,
+        workspace_version: scene.workspace_version,
+      }),
+    });
+    setCommandScenes((current) => operation === "dismiss" ? current.filter((item) => item.id !== scene.id) : current.map((item) => item.id === scene.id ? value : item));
+    if (operation === "dismiss") setWindows((current) => { const next = new Set(current); next.delete(`scene-${scene.id}`); return next; });
+  }
+
+  async function applySceneAction(scene: CommandSceneV1, action: CommandSceneV1["suggested_actions"][number]) {
+    if (action.kind === "pin_scene") { await mutateScene(scene, "pin"); return; }
+    if (action.kind === "dismiss_scene") { await mutateScene(scene, "dismiss"); return; }
+    if (action.kind === "frame_entities" && scene.map_camera) {
+      setActiveSceneID(scene.id);
+      return;
+    }
+    if (action.kind === "open_window") open("planner");
+    if (action.kind === "open_edit_drawer") open("planner");
+    await api<CommandSceneV1>(`/api/v4/scenes/${scene.id}/actions`, {
+      method: "POST",
+      body: JSON.stringify({
+        request_id: requestID("scene-action"), idempotency_key: requestID("scene-action-key"),
+        actor_identity: "demo-operator", session_id: sceneSessionID, workspace_version: scene.workspace_version,
+        action_id: action.id, action_hash: action.action_hash, confirmed: action.authority_class !== "effect",
       }),
     });
   }
@@ -1589,11 +1667,11 @@ export function FleetWorkspace() {
       autoSize: false,
       minWidth: 350,
       minHeight: 245,
-      title: pirate ? "Voyage Plotter" : "Mission Planner",
+      title: pirate ? "Voyage Canvas" : "Mission Canvas",
       icon: <Route />,
       initial: { x: window.innerWidth - 370, y: 92, width: 350, height: 680 },
       content: (
-        <Planner
+        <MissionCanvas
           pirate={pirate}
           mission={mission}
           groups={fleet.groups}
@@ -1641,6 +1719,7 @@ export function FleetWorkspace() {
           onStatus={(status) => mission && setMissionStatus(mission.id, status)}
           onRename={(name) => mission && renameMission(mission.id, name)}
           onDelete={() => mission && deleteMission(mission.id)}
+          scene={commandScenes.find((value) => value.type === "mission_canvas" && value.state === "active") ?? null}
         />
       ),
     });
@@ -1785,6 +1864,27 @@ export function FleetWorkspace() {
           onError={setError}
         />
       ),
+    });
+  for (const [index, scene] of commandScenes.entries()) {
+    if (scene.state !== "active" || scene.type === "mission_canvas" || !windows.has(`scene-${scene.id}`)) continue;
+    defs.push({
+      id: `scene-${scene.id}`,
+      kind: "context",
+      activation: windowActivations[`scene-${scene.id}`],
+      minWidth: 320,
+      minHeight: 220,
+      maximizable: true,
+      title: scene.title,
+      icon: <Sparkles />,
+      initial: { x: Math.max(280, window.innerWidth - 760 - index * 24), y: 110 + index * 26, width: 420, height: 390 },
+      content: <SceneArtifact scene={scene} onAction={(action) => void applySceneAction(scene, action)} onPin={() => void mutateScene(scene, scene.pinned ? "unpin" : "pin")} onDismiss={() => void mutateScene(scene, "dismiss")} />,
+    });
+  }
+  if (historyVisible && windows.has("assistant-history"))
+    defs.push({
+      id: "assistant-history", kind: "context", title: pirate ? "Captain's Log" : "Assistant History", icon: <History />,
+      initial: { x: Math.max(20, window.innerWidth - 500), y: 100, width: 460, height: 560 }, minWidth: 320, minHeight: 260,
+      content: <SceneHistory scenes={commandScenes} onOpen={(scene) => { setActiveSceneID(scene.id); if (scene.type === "mission_canvas") open("planner"); else open(`scene-${scene.id}`); }} />,
     });
   return (
     <main className="m6-shell">
@@ -1941,7 +2041,10 @@ export function FleetWorkspace() {
         }
         onArea={addPolygon}
         onToolDone={() => setTool("select")}
+        sceneAnnotations={commandScenes.find((scene) => scene.id === activeSceneID && scene.state === "active")?.map_annotations ?? []}
+        sceneCamera={commandScenes.find((scene) => scene.id === activeSceneID && scene.state === "active")?.map_camera}
       />
+      <button className="scene-history-trigger" aria-label="Open assistant scene history" title="Assistant scene and audit history" onClick={() => { setHistoryVisible(true); open("assistant-history"); }}><History /></button>
       {pendingDeleteMission && (
         <div className="mission-delete-backdrop">
           <section
@@ -1996,7 +2099,7 @@ export function FleetWorkspace() {
             <header>
               <ShieldCheck />
               <div>
-                <small>{pirate ? "CONFIRM COURSE" : `CONFIRM OPTION ${String.fromCharCode(65 + plans.findIndex((value) => value.id === pendingPlan.id))}`}</small>
+                <small>{pirate ? "CAPTAIN'S APPROVAL CARD" : `APPROVAL CARD · OPTION ${String.fromCharCode(65 + plans.findIndex((value) => value.id === pendingPlan.id))}`}</small>
                 <h2 id="plan-confirm-title">{pendingPlan.name}</h2>
               </div>
             </header>
@@ -3254,7 +3357,7 @@ function EditableTitle({
     </form>
   );
 }
-function Planner({
+function MissionCanvas({
   pirate,
   mission,
   groups,
@@ -3287,6 +3390,7 @@ function Planner({
   onStatus,
   onRename,
   onDelete,
+  scene,
 }: {
   pirate: boolean;
   mission: MissionWorkspaceV2 | null;
@@ -3322,11 +3426,13 @@ function Planner({
   onStatus: (status: "paused" | "executing") => void;
   onRename: (name: string) => void;
   onDelete: () => void;
+  scene: CommandSceneV1 | null;
 }) {
   const chatEnd = useRef<HTMLDivElement | null>(null);
   const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set());
   const [missionType, setMissionType] = useState("patrol");
   const [manualObjective, setManualObjective] = useState(mission?.objective ?? "");
+  const [historyOpen, setHistoryOpen] = useState(false);
   useEffect(() => {
     if (contactSeed) setMissionType("follow_contact");
   }, [contactSeed]);
@@ -3365,6 +3471,7 @@ function Planner({
     <div className="planner">
       <div className="planner-layout">
       <section className="planner-chat-pane">
+      {scene && <div className="mission-scene-surface"><KeelMeshA2UISurface surface={scene.primary_surface} /></div>}
       <div className="mission-summary">
         <div className="mission-summary-actions">
           <span>{mission.status}</span>
@@ -3418,7 +3525,11 @@ function Planner({
           {mission.loop ? "LOOP" : "HOLD AT END"}
         </button>
       </div>
-      <div className="mission-chat" aria-live="polite">
+      <div className="mission-canvas-command-row">
+        <b>{pirate ? "SHIP'S INTELLIGENCE" : "AI COMMAND"}</b>
+        <button type="button" onClick={() => setHistoryOpen((value) => !value)} aria-expanded={historyOpen}><History /> {historyOpen ? "Hide history" : "History"}</button>
+      </div>
+      {historyOpen && <div className="mission-chat" aria-live="polite">
         {(mission.conversation ?? []).length === 0 && (
           <div className="chat-empty">
             <Bot />
@@ -3447,7 +3558,7 @@ function Planner({
           </div>
         )}
         <div ref={chatEnd} />
-      </div>
+      </div>}
       <div className="chat-composer">
         <textarea
           aria-label={pirate ? "Captain's orders" : "Message mission AI"}
@@ -3639,6 +3750,21 @@ function Planner({
       </div>
     </div>
   );
+}
+
+function SceneArtifact({ scene, onAction, onPin, onDismiss }: { scene: CommandSceneV1; onAction: (action: CommandSceneV1["suggested_actions"][number]) => void; onPin: () => void; onDismiss: () => void }) {
+  return <div className={`scene-artifact ${scene.critical ? "critical" : ""}`}>
+    <div className="scene-state-strip"><span><Sparkles /> LIVE COMMAND SCENE</span><em>{scene.catalog_id}</em></div>
+    <KeelMeshA2UISurface surface={scene.primary_surface} />
+    <div className="scene-action-row">
+      {scene.suggested_actions.map((action) => <button key={action.id} className={action.authority_class === "effect" ? "amber" : ""} onClick={() => onAction(action)}>{action.label}</button>)}
+    </div>
+    <footer><span>{scene.bindings.length} live binding{scene.bindings.length === 1 ? "" : "s"}</span><span>{scene.receipts.length} receipt{scene.receipts.length === 1 ? "" : "s"}</span><button onClick={onPin} aria-pressed={scene.pinned}><Pin />{scene.pinned ? "Unpin" : "Keep"}</button><button onClick={onDismiss}><X />Dismiss</button></footer>
+  </div>;
+}
+
+function SceneHistory({ scenes, onOpen }: { scenes: CommandSceneV1[]; onOpen: (scene: CommandSceneV1) => void }) {
+  return <div className="scene-history"><header><History /><span><b>COMMAND HISTORY</b><small>Provider turns, trusted surfaces, bindings, and receipts</small></span></header>{scenes.length === 0 ? <p>No command scenes have been composed in this session.</p> : scenes.map((scene) => <button key={scene.id} onClick={() => onOpen(scene)}><Sparkles /><span><b>{scene.title}</b><small>{scene.summary}</small></span><em>{scene.pinned ? "PINNED" : scene.state}</em></button>)}</div>;
 }
 function Constraints({
   mission,

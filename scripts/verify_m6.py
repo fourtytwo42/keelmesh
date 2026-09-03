@@ -51,9 +51,9 @@ assert len({v["id"] for v in fleet["vessels"]}) == 48
 assert len({v["callsign"] for v in fleet["vessels"]}) == 48
 assert fleet["environment"]["label"] == "NOAA-derived simulation fixture"
 contacts = fleet["surface_contacts"]
-assert len(contacts) == 12
-assert len({contact["boat_id"] for contact in contacts}) == 12
-assert len({contact["color_name"] for contact in contacts}) == 12
+assert len(contacts) == 16
+assert len({contact["boat_id"] for contact in contacts}) == 16
+assert len({contact["color_name"] for contact in contacts}) == 16
 assert {contact["class"] for contact in contacts} == {"container", "tanker", "ferry", "trawler", "patrol", "yacht"}
 contact = call(f"/api/v2/surface-contacts/{contacts[0]['id']}")
 assert contact["boat_id"] == "NPC-4101" and contact["looping"] and len(contact["route"]) >= 2
@@ -165,9 +165,10 @@ draft = call(
     201,
 )
 assert draft["target_ids"] == mission["target_ids"] and draft["geometry_revision"] == geometry["geometry"]["revision"]
+compiled_mission = call(f"/api/v2/missions/{mission['id']}")
 plans = call(
     f"/api/v2/missions/{mission['id']}/plans",
-    {**mutation("plans", geometry["version"]), "draft_id": draft["id"]},
+    {**mutation("plans", compiled_mission["version"]), "draft_id": draft["id"]},
     201,
 )["plans"]
 assert 2 <= len(plans) <= 4 and sum(plan["recommended"] for plan in plans) == 1

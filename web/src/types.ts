@@ -981,6 +981,68 @@ export type WorkspaceAssistantResponseV1 = {
   model: string;
   attempts: ProviderAttempt[];
 };
+export type WorkspaceSurfaceV1 = {
+  id: string;
+  role: "primary" | "supporting";
+  title: string;
+  sequence: number;
+  messages: Record<string, unknown>[];
+};
+export type SceneMapAnnotationV1 = {
+  id: string;
+  kind: "callout" | "arrow" | "range_ring" | "formation" | "route" | "corridor" | "region";
+  label: string;
+  color: string;
+  points: Point[];
+  radius_m?: number;
+  entity_id?: string;
+};
+export type ArtifactActionV1 = {
+  id: string;
+  kind: string;
+  label: string;
+  authority_class: "presentation" | "draft" | "safer" | "effect";
+  target_id?: string;
+  payload?: Record<string, unknown>;
+  action_hash: string;
+};
+export type CommandSceneV1 = {
+  schema_version: 1;
+  id: string;
+  actor_identity: string;
+  session_id: string;
+  type: "operational_brief" | "decision_board" | "comparison_matrix" | "evidence_chain" | "mission_canvas" | "simulation_sandbox" | "status_matrix" | "approval_card";
+  title: string;
+  summary: string;
+  state: string;
+  pinned: boolean;
+  critical: boolean;
+  pending_approval: boolean;
+  workspace_version: number;
+  catalog_id: string;
+  primary_surface: WorkspaceSurfaceV1;
+  supporting_surfaces: WorkspaceSurfaceV1[];
+  bindings: { id: string; entity_type: string; entity_id: string; field: string; path: string }[];
+  map_camera?: { center: Point; zoom: number; bearing: number; pitch: number };
+  map_annotations: SceneMapAnnotationV1[];
+  spoken_summary: string;
+  suggested_actions: ArtifactActionV1[];
+  receipts: { id: string; kind: string; state: string; detail: string; created_at: string }[];
+  created_at: string;
+  updated_at: string;
+};
+export type AssistantTurnV2 = {
+  schema_version: 2;
+  id: string;
+  actor_identity: string;
+  session_id: string;
+  state: string;
+  stages: string[];
+  scene: CommandSceneV1;
+  assistant: WorkspaceAssistantResponseV1;
+  created_at: string;
+  completed_at: string;
+};
 export type ArenaNodeV1 = {
   id: string;
   faction: "A" | "B";

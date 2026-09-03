@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type {
   GeoJSONSource,
@@ -15,6 +15,7 @@ import type {
   MissionWorkspaceV2,
   Point,
   SurfaceContactV2,
+  SceneMapAnnotationV1,
 } from "./types";
 
 maplibregl.setWorkerUrl(maplibreWorkerURL);
@@ -52,11 +53,19 @@ type Props = {
   onHoldGroupAtVessel: (groupID: string, vesselID: string) => void;
   onArea: (kind: "include" | "exclude", polygon: Point[]) => void;
   onToolDone: () => void;
+  sceneAnnotations: SceneMapAnnotationV1[];
+  sceneCamera?: { center: Point; zoom: number; bearing: number; pitch: number };
 };
 const empty: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
   features: [],
 };
+function sceneAnnotationData(values: SceneMapAnnotationV1[]): GeoJSON.FeatureCollection {
+  return { type: "FeatureCollection", features: values.flatMap((value) => {
+    if (value.points.length === 0) return [];
+    return [{ type: "Feature" as const, properties: { id: value.id, kind: value.kind, label: value.label, color: value.color }, geometry: value.points.length === 1 ? { type: "Point" as const, coordinates: value.points[0] } : { type: "LineString" as const, coordinates: value.points } }];
+  }) };
+}
 const style: StyleSpecification = {
   version: 8,
   sources: {
@@ -499,6 +508,8 @@ export function OperationsMap({
   onHoldGroupAtVessel,
   onArea,
   onToolDone,
+  sceneAnnotations,
+  sceneCamera,
 }: Props) {
   const host = useRef<HTMLDivElement>(null),
     mapRef = useRef<MLMap | null>(null),
@@ -578,6 +589,7 @@ export function OperationsMap({
   );
   useEffect(() => {
     if (!host.current || mapRef.current) return;
+    let disposed = false;
     const map = new maplibregl.Map({
       container: host.current,
       style,
@@ -610,10 +622,12 @@ export function OperationsMap({
     map.on("load", async () => {
       for (const name of ["kestrel", "mariner", "atlas"]) {
         const image = await map.loadImage(`/assets/vessels/${name}-2p5d.png`);
+        if (disposed || mapRef.current !== map) return;
         map.addImage(`vessel-${name}`, image.data, { pixelRatio: 8 });
         const pirateImage = await map.loadImage(
           `/assets/vessels/pirate-${name}.png`,
         );
+        if (disposed || mapRef.current !== map) return;
         map.addImage(`pirate-vessel-${name}`, pirateImage.data, {
           pixelRatio: 8,
         });
@@ -627,8 +641,10 @@ export function OperationsMap({
         "yacht",
       ]) {
         const image = await map.loadImage(`/assets/traffic/${name}.png`);
+        if (disposed || mapRef.current !== map) return;
         map.addImage(`traffic-${name}`, image.data, { pixelRatio: 2 });
       }
+      if (disposed || mapRef.current !== map || !map.getSource("coast")) return;
       map.addLayer({
         id: "depth-contours",
         type: "line",
@@ -714,6 +730,10 @@ export function OperationsMap({
         },
       });
       map.addSource("mission-geometry", { type: "geojson", data: empty });
+      map.addSource("command-scene", { type: "geojson", data: empty });
+      map.addLayer({ id: "command-scene-lines", type: "line", source: "command-scene", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": ["get", "color"], "line-width": 3, "line-dasharray": [2, 2], "line-opacity": 0.9 } });
+      map.addLayer({ id: "command-scene-points", type: "circle", source: "command-scene", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 11, "circle-color": "#101718", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 3 } });
+      map.addLayer({ id: "command-scene-labels", type: "symbol", source: "command-scene", filter: ["==", ["geometry-type"], "Point"], layout: { "text-field": ["get", "label"], "text-size": 11, "text-offset": [0, 1.8], "text-anchor": "top", "text-allow-overlap": true }, paint: { "text-color": "#f4ead6", "text-halo-color": "#101718", "text-halo-width": 2 } });
       map.addLayer({
         id: "mission-areas",
         type: "fill",
@@ -1137,6 +1157,7 @@ export function OperationsMap({
       setReady(true);
     });
     return () => {
+      disposed = true;
       map.remove();
       mapRef.current = null;
     };
@@ -1164,7 +1185,12 @@ export function OperationsMap({
     (mapRef.current.getSource("group-assembly") as GeoJSONSource)?.setData(
       visibleHoldGroups,
     );
-  }, [ready, fleet, activePlan, mission, contactMissionOverlay, visibleHoldGroups]);
+    (mapRef.current.getSource("command-scene") as GeoJSONSource)?.setData(sceneAnnotationData(sceneAnnotations));
+  }, [ready, fleet, activePlan, mission, contactMissionOverlay, visibleHoldGroups, sceneAnnotations]);
+  useEffect(() => {
+    if (!ready || !mapRef.current || !sceneCamera) return;
+    mapRef.current.easeTo({ center: sceneCamera.center, zoom: sceneCamera.zoom, bearing: sceneCamera.bearing, pitch: sceneCamera.pitch, duration: 550 });
+  }, [ready, sceneCamera?.center[0], sceneCamera?.center[1], sceneCamera?.zoom, sceneCamera?.bearing, sceneCamera?.pitch]);
   useEffect(() => {
     if (!ready || !mapRef.current || !mission || !focusedGeometry) return;
     let point: Point | undefined;
@@ -1272,34 +1298,6 @@ export function OperationsMap({
         { selected: selected.has(v.id) },
       );
   }, [ready, selected, fleet.vessels]);
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!ready || !map) return;
-    const canvas = map.getCanvas();
-    const gesture = (event: MouseEvent) => {
-      if (event.detail < 3) return;
-      event.preventDefault();
-      event.stopPropagation();
-      onSelect(
-        event.detail >= 4
-          ? fleetRef.current.vessels.map((v) => v.id)
-          : visibleVesselIDs(),
-        "replace",
-      );
-    };
-    const suppressFourthDouble = (event: MouseEvent) => {
-      if (event.detail >= 4) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-    };
-    canvas.addEventListener("click", gesture, true);
-    canvas.addEventListener("dblclick", suppressFourthDouble, true);
-    return () => {
-      canvas.removeEventListener("click", gesture, true);
-      canvas.removeEventListener("dblclick", suppressFourthDouble, true);
-    };
-  }, [ready, onSelect]);
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map) return;
@@ -1833,6 +1831,17 @@ export function OperationsMap({
     contextMenu?.kind === "contact"
       ? fleet.surface_contacts.find((contact) => contact.id === contextMenu.contact)
       : undefined;
+  const handleMultiClickCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.detail < 3 || !(event.target instanceof HTMLCanvasElement)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onSelect(
+      event.detail >= 4
+        ? fleetRef.current.vessels.map((v) => v.id)
+        : visibleVesselIDs(),
+      "replace",
+    );
+  };
   return (
     <div
       className="operations-map"
@@ -1841,6 +1850,7 @@ export function OperationsMap({
       aria-label="Fleet operating map. Tap to select. Long press for contextual actions."
       data-rendezvous-status={rendezvousStatus || undefined}
       data-visible-hold-groups={visibleHoldGroups.features.length}
+      onClickCapture={handleMultiClickCapture}
       onPointerLeave={() => setMapHover(null)}
     >
       {box && (
@@ -1970,7 +1980,7 @@ export function OperationsMap({
           </button>
           <button
             role="menuitem"
-            title="Open Mission Planner with this contact as an uncommitted objective"
+            title="Open Mission Canvas with this contact as an uncommitted objective"
             onClick={() => {
               onPlanContact(contextContact.id);
               setContextMenu(null);
@@ -1981,7 +1991,7 @@ export function OperationsMap({
           <p>
             {pirate
               ? "Opens the plotter only; no voyage or authority is created."
-              : "Opens Mission Planner only. No mission or movement is created."}
+              : "Opens Mission Canvas only. No mission or movement is created."}
           </p>
         </div>
       )}

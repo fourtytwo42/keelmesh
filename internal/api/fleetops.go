@@ -140,6 +140,9 @@ func (s *Server) resetFleetOperationsV2(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	v, err := s.fleetops.ResetOperations(req)
+	if err == nil && s.agent != nil {
+		s.agent.ResetCommandScenes("demo-operator", false)
+	}
 	respondV2(w, v, err, http.StatusOK)
 }
 func (s *Server) patchMissionV2(w http.ResponseWriter, r *http.Request) {
