@@ -21,6 +21,10 @@ func (s *Server) vesselV2(w http.ResponseWriter, r *http.Request) {
 	v, err := s.fleetops.Vessel(r.PathValue("id"))
 	respondV2(w, v, err, http.StatusOK)
 }
+func (s *Server) surfaceContactV2(w http.ResponseWriter, r *http.Request) {
+	v, err := s.fleetops.SurfaceContact(r.PathValue("id"))
+	respondV2(w, v, err, http.StatusOK)
+}
 func (s *Server) patchVesselV2(w http.ResponseWriter, r *http.Request) {
 	var req fleetops.PatchVesselRequest
 	if !decode(w, r, &req) {

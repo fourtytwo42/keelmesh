@@ -17,6 +17,7 @@ import type {
   PlatformSnapshot,
   Point,
   ReachabilityV2,
+  SurfaceContactV2,
   VesselProfileV2,
   VoiceV2,
 } from "./types";
@@ -130,6 +131,7 @@ export function FleetWorkspace() {
     recordingChunks = useRef<BlobPart[]>([]),
     stopRequested = useRef(false);
   const [inspectVesselID, setInspectVesselID] = useState(""),
+    [inspectContactID, setInspectContactID] = useState(""),
     [windowActivations, setWindowActivations] = useState<
       Record<string, number>
     >({});
@@ -326,6 +328,9 @@ export function FleetWorkspace() {
     mission.target_ids.every((id) => selected.has(id));
   const inspectedVessel = inspectVesselID
     ? vesselsByID.get(inspectVesselID)
+    : undefined;
+  const inspectedContact = inspectContactID
+    ? fleet?.surface_contacts.find((contact) => contact.id === inspectContactID)
     : undefined;
   useEffect(() => {
     if (!inspectedVessel) {
@@ -1097,6 +1102,16 @@ export function FleetWorkspace() {
         />
       ),
     });
+  if (windows.has("contact-inspector") && inspectedContact)
+    defs.push({
+      id: "contact-inspector",
+      kind: "context",
+      activation: windowActivations["contact-inspector"],
+      title: inspectedContact.name,
+      icon: <Ship />,
+      initial: { x: 370, y: 105, width: 360, height: 540 },
+      content: <SurfaceContactInspector contact={inspectedContact} />,
+    });
   if (windows.has("planner"))
     defs.push({
       id: "planner",
@@ -1290,6 +1305,7 @@ export function FleetWorkspace() {
           <span>
             {fleet.groups.length} {words.groups}
           </span>
+          <span>{fleet.surface_contacts.length} CONTACTS</span>
           <span>
             {fleet.missions.filter((m) => m.status === "executing").length}{" "}
             {words.active}
@@ -1411,6 +1427,10 @@ export function FleetWorkspace() {
           select(ids, mode);
         }}
         onGroup={selectGroup}
+        onContact={(id) => {
+          setInspectContactID(id);
+          open("contact-inspector");
+        }}
         onWaypoint={addWaypoint}
         onDeleteWaypoint={deleteWaypoint}
         onClearWaypoints={clearWaypoints}
@@ -2455,6 +2475,67 @@ function VesselInspector({
       <div className="authority-note">
         <b>Reachability ≠ authority</b>
         <span>{reachability?.authority ?? "Loading scoped authority…"}</span>
+      </div>
+    </div>
+  );
+}
+
+function SurfaceContactInspector({ contact }: { contact: SurfaceContactV2 }) {
+  return (
+    <div className="surface-contact-inspector">
+      <div className="surface-contact-hero">
+        <img src={`/assets/traffic/${contact.class}.png`} alt="" />
+        <div>
+          <span style={{ color: contact.color }}>
+            {contact.color_name.toUpperCase()} CONTACT · {contact.class.toUpperCase()}
+          </span>
+          <h2>{contact.name}</h2>
+          <p>{contact.boat_id} · {contact.callsign}</p>
+        </div>
+      </div>
+      <div className="contact-simulation-note">
+        FICTIONAL SURFACE TRAFFIC · SIMULATED AIS-LIKE TRACK
+      </div>
+      <div className="metric-grid">
+        <Metric
+          k="POSITION"
+          v={`${contact.position[1].toFixed(4)}° N`}
+          sub={`${Math.abs(contact.position[0]).toFixed(4)}° W`}
+        />
+        <Metric
+          k="COURSE"
+          v={`${Math.round(contact.heading_deg)}°`}
+          sub={contact.navigation_state}
+        />
+        <Metric
+          k="SPEED"
+          v={`${contact.speed_knots.toFixed(1)} kn`}
+          sub={`${contact.speed_mps.toFixed(1)} m/s`}
+        />
+        <Metric
+          k="DIMENSIONS"
+          v={`${contact.length_m.toFixed(0)} m`}
+          sub={`${contact.draft_m.toFixed(1)} m draft`}
+        />
+      </div>
+      <h3>CURRENT ACTIVITY</h3>
+      <p className="contact-activity">{contact.activity}</p>
+      <h3>PROGRAMMED TRACK</h3>
+      <div className="contact-route">
+        <i style={{ background: contact.color }} />
+        <span>
+          <b>{contact.route_name}</b>
+          <small>
+            {contact.route.length} route points · {contact.looping ? "continuous loop" : "one way"}
+          </small>
+        </span>
+      </div>
+      <div className="authority-note">
+        <b>Observable, not commandable</b>
+        <span>
+          Tell KeelMesh AI “follow {contact.name}” or “follow {contact.boat_id}”
+          to create policy-checked intercept and trail options.
+        </span>
       </div>
     </div>
   );

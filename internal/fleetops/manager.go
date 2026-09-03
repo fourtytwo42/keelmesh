@@ -175,6 +175,59 @@ var coastalRouteNames = []string{
 	"Block Island West Watch",
 }
 
+type surfaceTrafficSpec struct {
+	ID, BoatID, Name, Callsign, Class, Activity, ColorName, Color, RouteName string
+	SpeedMPS, LengthM, DraftM                                                float64
+	Route                                                                    []domain.GeoPointV2
+}
+
+var surfaceTraffic = []surfaceTrafficSpec{
+	{"surface-01", "NPC-4101", "MV Copper Horizon", "COPPER HORIZON", "container", "container service · New York to Boston", "red", "#ef6a62", "Atlantic coastwise lane", 6.4, 216, 10.8, []domain.GeoPointV2{{-71.62, 41.10}, {-71.42, 41.12}, {-71.12, 41.16}, {-70.84, 41.24}, {-71.12, 41.16}, {-71.42, 41.12}}},
+	{"surface-02", "NPC-4102", "MV Atlantic Beacon", "ATLANTIC BEACON", "container", "eastbound container service", "orange", "#ed8b47", "Rhode Island Sound eastbound", 7.1, 248, 12.1, []domain.GeoPointV2{{-71.58, 41.25}, {-71.36, 41.24}, {-71.10, 41.28}, {-70.82, 41.34}, {-71.10, 41.28}, {-71.36, 41.24}}},
+	{"surface-03", "NPC-4103", "MT Resolute Tide", "RESOLUTE TIDE", "tanker", "coastal product tanker", "yellow", "#e3c85a", "Point Judith tanker approach", 5.6, 184, 9.4, []domain.GeoPointV2{{-71.58, 41.30}, {-71.48, 41.34}, {-71.39, 41.39}, {-71.34, 41.45}, {-71.39, 41.39}, {-71.48, 41.34}}},
+	{"surface-04", "NPC-4104", "MT Silver Current", "SILVER CURRENT", "tanker", "ballast transit · simulated", "lime", "#a7cf62", "Sakonnet offshore lane", 5.1, 162, 8.7, []domain.GeoPointV2{{-71.12, 41.18}, {-71.08, 41.30}, {-71.12, 41.44}, {-71.18, 41.52}, {-71.12, 41.44}, {-71.08, 41.30}}},
+	{"surface-05", "NPC-4105", "MV Bay Courier", "BAY COURIER", "ferry", "scheduled passenger crossing", "green", "#64c982", "Newport–Block Island ferry", 8.0, 61, 3.2, []domain.GeoPointV2{{-71.34, 41.48}, {-71.38, 41.40}, {-71.46, 41.29}, {-71.56, 41.18}, {-71.46, 41.29}, {-71.38, 41.40}}},
+	{"surface-06", "NPC-4106", "MV Island Runner", "ISLAND RUNNER", "ferry", "vehicle and passenger ferry", "teal", "#55c6b0", "Point Judith–Block Island ferry", 7.4, 72, 3.6, []domain.GeoPointV2{{-71.49, 41.36}, {-71.53, 41.27}, {-71.57, 41.18}, {-71.53, 41.27}}},
+	{"surface-07", "NPC-4107", "FV North Star", "NORTH STAR", "trawler", "commercial trawling pattern", "cyan", "#5fc8dd", "Block Island fishing grounds", 2.6, 28, 2.8, []domain.GeoPointV2{{-71.62, 41.14}, {-71.67, 41.20}, {-71.63, 41.27}, {-71.55, 41.25}, {-71.52, 41.18}, {-71.58, 41.12}}},
+	{"surface-08", "NPC-4108", "FV Sea Robin", "SEA ROBIN", "trawler", "gear retrieval and slow transit", "blue", "#67aee8", "Rhode Island Sound fishing grounds", 2.2, 24, 2.4, []domain.GeoPointV2{{-71.28, 41.16}, {-71.20, 41.19}, {-71.16, 41.25}, {-71.25, 41.28}, {-71.31, 41.23}}},
+	{"surface-09", "NPC-4109", "NS Vigilant", "VIGILANT", "patrol", "fictional naval training patrol", "indigo", "#7888df", "Offshore security circuit", 6.8, 94, 4.6, []domain.GeoPointV2{{-71.02, 41.16}, {-70.90, 41.24}, {-70.94, 41.38}, {-71.08, 41.42}, {-71.16, 41.30}}},
+	{"surface-10", "NPC-4110", "NS Sentinel", "SENTINEL", "patrol", "fictional readiness exercise", "violet", "#b68bdc", "Narragansett outer patrol", 6.1, 82, 4.1, []domain.GeoPointV2{{-71.46, 41.18}, {-71.36, 41.22}, {-71.28, 41.30}, {-71.36, 41.35}, {-71.48, 41.29}}},
+	{"surface-11", "NPC-4111", "SV Wayfarer", "WAYFARER", "yacht", "recreational coastal passage", "magenta", "#df78bc", "Newport sailing circuit", 3.4, 18, 2.1, []domain.GeoPointV2{{-71.35, 41.48}, {-71.31, 41.43}, {-71.32, 41.37}, {-71.39, 41.40}}},
+	{"surface-12", "NPC-4112", "SV Blue Finch", "BLUE FINCH", "yacht", "recreational island passage", "white", "#e9e7dc", "Jamestown–Block Island passage", 3.0, 15, 1.8, []domain.GeoPointV2{{-71.40, 41.47}, {-71.44, 41.36}, {-71.51, 41.25}, {-71.57, 41.18}, {-71.51, 41.25}, {-71.44, 41.36}}},
+}
+
+func surfaceContactAt(spec surfaceTrafficSpec, at time.Time, offsetSeconds float64) domain.SurfaceContactV2 {
+	lengths, total := make([]float64, len(spec.Route)), 0.0
+	for i := range spec.Route {
+		next := (i + 1) % len(spec.Route)
+		lengths[i] = routeDistance([]domain.GeoPointV2{spec.Route[i], spec.Route[next]}) * 1000
+		total += lengths[i]
+	}
+	distance := math.Mod(float64(at.Unix())*spec.SpeedMPS+offsetSeconds*spec.SpeedMPS+float64(len(spec.ID))*731, total)
+	segment := 0
+	for segment < len(lengths)-1 && distance > lengths[segment] {
+		distance -= lengths[segment]
+		segment++
+	}
+	next := (segment + 1) % len(spec.Route)
+	fraction := 0.0
+	if lengths[segment] > 0 {
+		fraction = distance / lengths[segment]
+	}
+	a, b := spec.Route[segment], spec.Route[next]
+	position := domain.GeoPointV2{a[0] + (b[0]-a[0])*fraction, a[1] + (b[1]-a[1])*fraction}
+	heading := math.Mod(math.Atan2((b[0]-a[0])*math.Cos(position[1]*math.Pi/180), b[1]-a[1])*180/math.Pi+360, 360)
+	return domain.SurfaceContactV2{ID: spec.ID, BoatID: spec.BoatID, Name: spec.Name, Callsign: spec.Callsign, Class: spec.Class, Activity: spec.Activity, ColorName: spec.ColorName, Color: spec.Color, Position: position, HeadingDeg: heading, SpeedMPS: spec.SpeedMPS, SpeedKnots: spec.SpeedMPS * 1.94384, LengthM: spec.LengthM, DraftM: spec.DraftM, NavigationState: "under way using engine", RouteName: spec.RouteName, Route: clonePoints(spec.Route), Looping: true, UpdatedAt: at.UTC()}
+}
+
+func surfaceContactsAt(at time.Time) []domain.SurfaceContactV2 {
+	contacts := make([]domain.SurfaceContactV2, 0, len(surfaceTraffic))
+	for _, spec := range surfaceTraffic {
+		contacts = append(contacts, surfaceContactAt(spec, at, 0))
+	}
+	return contacts
+}
+
 func New(databaseURL string, logger *slog.Logger) *Manager {
 	m := &Manager{logger: logger, databaseURL: databaseURL, secret: []byte("keelmesh-m6-runtime-authority"), fleetVersion: 1, vessels: map[string]domain.VesselProfileV2{}, groups: map[string]domain.OperationalGroupV2{}, collections: map[string]domain.SavedCollectionV2{}, missions: map[string]domain.MissionWorkspaceV2{}, drafts: map[string]domain.CommandDraftV2{}, plans: map[string]domain.FleetPlanV2{}, leases: map[string]domain.FleetLeaseV2{}, idempotency: map[string]string{}, startedPlans: map[string]string{}, programs: map[string]domain.TrajectoryProgramV1{}}
 	m.seed()
@@ -364,6 +417,7 @@ func (m *Manager) Snapshot() domain.FleetSnapshotV2 {
 	return m.snapshotLocked()
 }
 func (m *Manager) snapshotLocked() domain.FleetSnapshotV2 {
+	now := time.Now().UTC()
 	vs := make([]domain.VesselProfileV2, 0, len(m.vessels))
 	for _, v := range m.vessels {
 		vs = append(vs, v)
@@ -389,7 +443,16 @@ func (m *Manager) snapshotLocked() domain.FleetSnapshotV2 {
 		ms = append(ms, v)
 	}
 	sort.Slice(ms, func(i, j int) bool { return ms[i].UpdatedAt.After(ms[j].UpdatedAt) })
-	return domain.FleetSnapshotV2{SchemaVersion: 2, FleetVersion: m.fleetVersion, GeneratedAt: time.Now().UTC(), Vessels: vs, Groups: gs, Collections: cs, Missions: ms, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, 0), Map: map[string]any{"name": "Narragansett Bay & Rhode Island Sound", "center": domain.GeoPointV2{-71.34, 41.34}, "bounds": [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, "fixture": true, "navigation_warning": "Simulation only — not for navigation"}}
+	return domain.FleetSnapshotV2{SchemaVersion: 2, FleetVersion: m.fleetVersion, GeneratedAt: now, Vessels: vs, SurfaceContacts: surfaceContactsAt(now), Groups: gs, Collections: cs, Missions: ms, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, 0), Map: map[string]any{"name": "Narragansett Bay & Rhode Island Sound", "center": domain.GeoPointV2{-71.34, 41.34}, "bounds": [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, "fixture": true, "navigation_warning": "Simulation only — not for navigation"}}
+}
+
+func (m *Manager) SurfaceContact(id string) (domain.SurfaceContactV2, error) {
+	for _, contact := range surfaceContactsAt(time.Now().UTC()) {
+		if contact.ID == id || strings.EqualFold(contact.BoatID, id) {
+			return contact, nil
+		}
+	}
+	return domain.SurfaceContactV2{}, &Error{"SURFACE_CONTACT_NOT_FOUND", "Surface contact not found."}
 }
 
 func (m *Manager) Vessel(id string) (domain.VesselProfileV2, error) {
@@ -1072,6 +1135,17 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	}
 	geometrySource := ""
 	notes := []string{}
+	followContactID := ""
+	if spec, contact, ok := resolveSurfaceContact(req.Text, time.Now().UTC()); ok {
+		wps = make([]domain.GeoPointV2, 0, 12)
+		for seconds := 60.0; seconds <= 720; seconds += 60 {
+			wps = append(wps, surfaceContactAt(spec, contact.UpdatedAt, seconds).Position)
+		}
+		kind = "follow_contact"
+		followContactID = contact.ID
+		geometrySource = "intent:surface-contact:" + contact.ID
+		notes = append(notes, fmt.Sprintf("Resolved %s (%s, %s contact) and generated a twelve-minute predicted track. Fleet routes remain policy-validated and may be revised as the simulated contact moves.", contact.Name, contact.BoatID, contact.ColorName))
+	}
 	selectedWaypointColor := requestedWaypointColor(req.Text)
 	if selectedWaypointColor != "" {
 		wps = nil
@@ -1140,7 +1214,7 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	if len(wps) == 0 && len(mission.Geometry.IncludedAreas) == 0 {
 		amb = append(amb, "Choose an area or waypoint before route generation.")
 	}
-	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, Ambiguities: amb}
+	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, FollowContactID: followContactID, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, Ambiguities: amb}
 	draft.ContentHash = hashWithout(draft)
 	m.drafts[draft.ID] = draft
 	messageID := "message-" + shortHash(req.IdempotencyKey)
@@ -1181,7 +1255,16 @@ func (m *Manager) PlanningContext(draftID string) (domain.MissionPlanningContext
 	if len(conversation) > 12 {
 		conversation = conversation[len(conversation)-12:]
 	}
-	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, 0), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, GeometryOptions: geometryOptions, MapBounds: [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, FormationCurrent: mission.Formation, Conversation: append([]domain.MissionChatMessageV2(nil), conversation...)}, nil
+	contacts := surfaceContactsAt(time.Now().UTC())
+	var follow *domain.SurfaceContactV2
+	for i := range contacts {
+		if contacts[i].ID == draft.FollowContactID {
+			value := contacts[i]
+			follow = &value
+			break
+		}
+	}
+	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, 0), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, GeometryOptions: geometryOptions, MapBounds: [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, FormationCurrent: mission.Formation, Conversation: append([]domain.MissionChatMessageV2(nil), conversation...), SurfaceContacts: contacts, FollowContact: follow}, nil
 }
 
 // ApplyAdvisor validates and freezes advisory strategies into the immutable
@@ -1358,6 +1441,36 @@ func normalizeWaypointColor(color string) string {
 	default:
 		return ""
 	}
+}
+
+func resolveSurfaceContact(text string, at time.Time) (surfaceTrafficSpec, domain.SurfaceContactV2, bool) {
+	lower := strings.ToLower(text)
+	wantsFollow := false
+	for _, verb := range []string{"follow", "shadow", "trail", "escort", "track", "keep pace with", "stay with"} {
+		if strings.Contains(lower, verb) {
+			wantsFollow = true
+			break
+		}
+	}
+	if !wantsFollow {
+		return surfaceTrafficSpec{}, domain.SurfaceContactV2{}, false
+	}
+	for _, spec := range surfaceTraffic {
+		aliases := []string{strings.ToLower(spec.Name), strings.ToLower(spec.Callsign), strings.ToLower(spec.BoatID)}
+		parts := strings.Fields(strings.ToLower(spec.Name))
+		if len(parts) > 1 {
+			aliases = append(aliases, strings.Join(parts[1:], " "))
+		}
+		for _, noun := range []string{"boat", "ship", "vessel", "contact", "target", "team"} {
+			aliases = append(aliases, strings.ToLower(spec.ColorName+" "+noun))
+		}
+		for _, alias := range aliases {
+			if alias != "" && strings.Contains(lower, alias) {
+				return spec, surfaceContactAt(spec, at, 0), true
+			}
+		}
+	}
+	return surfaceTrafficSpec{}, domain.SurfaceContactV2{}, false
 }
 
 func (m *Manager) resolveNamedGeometry(text string, targets []string) ([][]float64, []domain.GeoPointV2, string, bool) {
@@ -1964,6 +2077,17 @@ func validAdvisor(advisor domain.MissionAdvisorV2, targetCount int) bool {
 func deterministicAdvisor(targetCount int, guidance, reason string) domain.MissionAdvisorV2 {
 	if guidance == "" {
 		guidance = "patrol"
+	}
+	if guidance == "follow_contact" {
+		formation := "column"
+		if targetCount == 1 {
+			formation = "independent"
+		}
+		return domain.MissionAdvisorV2{State: "fallback", Provider: "deterministic", Model: "keelmesh-target-aware-v2", Summary: "A moving surface contact was resolved from the operating picture. These options vary stand-off distance, observation geometry, and reserve use; exact intercept routes remain deterministic and approval-bound.", MissionName: "Operation Moving Watch", Strategies: []domain.MissionStrategyV2{
+			{ID: "close-trail", Name: "Close Trail", Description: "Intercept the predicted track and maintain a compact stern-quarter trail with conservative collision margins.", Formation: formation, GuidanceKind: guidance, SpeedFactor: .78, ReserveBias: .4, Maneuvers: []string{"intercept predicted contact track", "settle astern at safe separation", "match course and speed", "replan on track change"}},
+			{ID: "wide-shadow", Name: "Wide Shadow", Description: "Observe from a wider lateral offset to reduce maneuvering and preserve separation from unrelated traffic.", Formation: formation, GuidanceKind: guidance, SpeedFactor: .62, ReserveBias: .62, Maneuvers: []string{"approach outside contact corridor", "establish lateral stand-off", "parallel predicted track", "hold if confidence degrades"}},
+			{ID: "reserve-watch", Name: "Reserve-First Watch", Description: "Use an economical intercept and accept a larger following distance to protect the configured reserve floor.", Formation: formation, GuidanceKind: guidance, SpeedFactor: .46, ReserveBias: .84, Maneuvers: []string{"intercept at economy speed", "maintain long trail", "monitor reserve and separation", "disengage to safe hold"}},
+		}}
 	}
 	if targetCount == 1 {
 		return domain.MissionAdvisorV2{State: "fallback", Provider: "deterministic", Model: "keelmesh-target-aware-v2", Summary: "Target-aware fallback used: " + reason, MissionName: "Operation Coastal Watch", Strategies: []domain.MissionStrategyV2{

@@ -121,6 +121,8 @@ VM-local runtime artifact outside Git. Browser capture requires HTTPS, so the
 temporary Cloudflare Quick Tunnel is used for microphone demos while the LAN URL
 continues to provide the rest of the workspace.
 
+The operating picture includes twelve fictional, non-commandable surface contacts on deterministic looped routes. Six original transparent traffic sprites cover container ship, tanker, ferry, fishing trawler, patrol ship, and sailing yacht classes and remain visually unchanged in Pirate mode. Names, simulated boat IDs, colors, motion, and predicted tracks are available to the bounded mission advisor for policy-checked intercept and follow plans.
+
 ```bash
 scripts/keelmesh status
 python3 scripts/verify_m6.py http://localhost:8080

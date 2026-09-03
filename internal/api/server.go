@@ -117,6 +117,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/scenarios/ai-tooling:reset", s.resetAI)
 	mux.HandleFunc("GET /api/v2/fleet", s.fleetV2)
 	mux.HandleFunc("GET /api/v2/vessels/{id}", s.vesselV2)
+	mux.HandleFunc("GET /api/v2/surface-contacts/{id}", s.surfaceContactV2)
 	mux.HandleFunc("PATCH /api/v2/vessels/{id}", s.patchVesselV2)
 	mux.HandleFunc("GET /api/v2/vessels/{id}/reachability", s.reachabilityV2)
 	mux.HandleFunc("GET /api/v2/groups", s.groupsV2)

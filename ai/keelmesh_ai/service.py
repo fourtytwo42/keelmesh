@@ -104,6 +104,29 @@ class MissionVessel(BaseModel):
     communications: str
 
 
+class SurfaceContact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    boat_id: str
+    name: str
+    callsign: str
+    class_: str = Field(alias="class")
+    activity: str
+    color_name: str
+    color: str
+    position: tuple[float, float]
+    heading_deg: float = Field(ge=0, lt=360)
+    speed_mps: float = Field(ge=0, le=30)
+    speed_knots: float = Field(ge=0, le=60)
+    length_m: float = Field(gt=0, le=500)
+    draft_m: float = Field(gt=0, le=30)
+    navigation_state: str
+    route_name: str
+    route: list[tuple[float, float]] = Field(min_length=2, max_length=24)
+    looping: bool
+    updated_at: str
+
+
 class MissionGeometryOption(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
@@ -143,6 +166,8 @@ class MissionOptionsRequest(BaseModel):
     map_bounds: list[tuple[float, float]] = Field(default_factory=list, max_length=2)
     formation_current: str
     conversation: list[MissionChatMessage] = Field(default_factory=list, max_length=12)
+    surface_contacts: list[SurfaceContact] = Field(default_factory=list, max_length=32)
+    follow_contact: SurfaceContact | None = None
 
 
 ALLOWED_FORMATIONS = {
@@ -437,6 +462,7 @@ def mission_system_prompt(target_count: int, waypoint_count: int, geometry_ids: 
         f"{formation_rule} {geometry_rule} Supported formations: {sorted(ALLOWED_FORMATIONS)}. "
         "Use vessel count, class, reserve, environment, constraints, map geometry, and the operator's exact intent. "
         "Treat each target's group_name, group_code, and group_color_name as equivalent human-facing identifiers; a color-team phrase must resolve only to the supplied group metadata. "
+        "Surface contacts are fictional non-commandable traffic. Resolve a requested follow target only from surface_contacts by name, callsign, boat_id, class, or unique color; when follow_contact is present, propose safe intercept, trail, and stand-off choices around that exact contact. "
         f"There are {waypoint_count} current waypoints; candidate geometry may replace them only through geometry_option_id. "
         "You propose bounded strategies only. Never invent coordinates, routes, authority, policy changes, weapons, or hidden information."
     )
@@ -647,6 +673,55 @@ async def local_mission_attempt(
 
 
 def deterministic_mission_options(request: MissionOptionsRequest) -> list[dict[str, Any]]:
+    if request.guidance_kind == "follow_contact":
+        formation = "independent" if request.target_count == 1 else "column"
+        return [
+            {
+                "id": "close-trail",
+                "name": "Close Trail",
+                "description": "Intercept the predicted contact track and maintain a compact stern-quarter trail with conservative collision margins.",
+                "formation": formation,
+                "guidance_kind": request.guidance_kind,
+                "speed_factor": 0.78,
+                "reserve_bias": 0.4,
+                "maneuvers": [
+                    "intercept predicted contact track",
+                    "settle astern at safe separation",
+                    "match course and speed",
+                    "replan on track change",
+                ],
+            },
+            {
+                "id": "wide-shadow",
+                "name": "Wide Shadow",
+                "description": "Observe from a wider lateral offset to reduce maneuvering and preserve separation from unrelated traffic.",
+                "formation": formation,
+                "guidance_kind": request.guidance_kind,
+                "speed_factor": 0.62,
+                "reserve_bias": 0.62,
+                "maneuvers": [
+                    "approach outside contact corridor",
+                    "establish lateral stand-off",
+                    "parallel predicted track",
+                    "hold if confidence degrades",
+                ],
+            },
+            {
+                "id": "reserve-watch",
+                "name": "Reserve-First Watch",
+                "description": "Use an economical intercept and accept a larger following distance to protect the configured reserve floor.",
+                "formation": formation,
+                "guidance_kind": request.guidance_kind,
+                "speed_factor": 0.46,
+                "reserve_bias": 0.84,
+                "maneuvers": [
+                    "intercept at economy speed",
+                    "maintain long trail",
+                    "monitor reserve and separation",
+                    "disengage to safe hold",
+                ],
+            },
+        ]
     if request.target_count == 1:
         return [
             {
@@ -751,7 +826,9 @@ async def route_mission_provider(
         if circuit.ready():
             started_iso, started = now(), time.monotonic()
             try:
-                strategies, geometry_option_id, assistant_markdown, status = await openai_mission_attempt(request)
+                strategies, geometry_option_id, assistant_markdown, status = await openai_mission_attempt(
+                    request
+                )
                 circuit.success()
                 attempts.append(
                     {
@@ -763,7 +840,14 @@ async def route_mission_provider(
                         "status_code": status,
                     }
                 )
-                return strategies, geometry_option_id, assistant_markdown, attempts, "openai", STATE.openai_model
+                return (
+                    strategies,
+                    geometry_option_id,
+                    assistant_markdown,
+                    attempts,
+                    "openai",
+                    STATE.openai_model,
+                )
             except Exception as exc:
                 circuit.failure()
                 attempts.append(
@@ -795,7 +879,9 @@ async def route_mission_provider(
                 continue
             started_iso, started = now(), time.monotonic()
             try:
-                strategies, geometry_option_id, assistant_markdown, status = await openrouter_mission_attempt(model, request)
+                strategies, geometry_option_id, assistant_markdown, status = await openrouter_mission_attempt(
+                    model, request
+                )
                 circuit.success()
                 attempts.append(
                     {
@@ -1129,7 +1215,14 @@ async def fault(command: FaultRequest) -> dict[str, str]:
 @app.post("/v1/mission-options", dependencies=[Depends(require_core)])
 async def mission_options(request: MissionOptionsRequest) -> dict[str, Any]:
     with TRACER.start_as_current_span("mission.options") as span:
-        strategies, geometry_option_id, assistant_markdown, attempts, provider, model = await route_mission_provider(request)
+        (
+            strategies,
+            geometry_option_id,
+            assistant_markdown,
+            attempts,
+            provider,
+            model,
+        ) = await route_mission_provider(request)
         span.set_attribute("mission.target_count", request.target_count)
         span.set_attribute("provider.selected", provider)
         span.set_attribute("model.selected", model)

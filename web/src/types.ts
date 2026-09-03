@@ -803,12 +803,34 @@ export type CommandDraftV2 = {
   constraints: ConstraintSetV2;
   formation_preference: string;
   guidance_kind: string;
+  follow_contact_id?: string;
   waypoints: Point[];
   geometry_source?: string;
   resolution_notes?: string[];
   unresolved_ambiguities: string[];
   advisor: MissionAdvisorV2;
   content_hash: string;
+};
+export type SurfaceContactV2 = {
+  id: string;
+  boat_id: string;
+  name: string;
+  callsign: string;
+  class: "container" | "tanker" | "ferry" | "trawler" | "patrol" | "yacht";
+  activity: string;
+  color_name: string;
+  color: string;
+  position: Point;
+  heading_deg: number;
+  speed_mps: number;
+  speed_knots: number;
+  length_m: number;
+  draft_m: number;
+  navigation_state: string;
+  route_name: string;
+  route: Point[];
+  looping: boolean;
+  updated_at: string;
 };
 export type FleetAssignmentV2 = {
   vessel_id: string;
@@ -863,6 +885,7 @@ export type FleetSnapshotV2 = {
   fleet_version: number;
   generated_at: string;
   vessels: VesselProfileV2[];
+  surface_contacts: SurfaceContactV2[];
   groups: OperationalGroupV2[];
   collections: SavedCollectionV2[];
   missions: MissionWorkspaceV2[];

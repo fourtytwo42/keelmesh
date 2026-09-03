@@ -191,12 +191,38 @@ type CommandDraftV2 struct {
 	Constraints         ConstraintSetV2  `json:"constraints"`
 	FormationPreference string           `json:"formation_preference"`
 	GuidanceKind        string           `json:"guidance_kind"`
+	FollowContactID     string           `json:"follow_contact_id,omitempty"`
 	Waypoints           []GeoPointV2     `json:"waypoints"`
 	GeometrySource      string           `json:"geometry_source,omitempty"`
 	ResolutionNotes     []string         `json:"resolution_notes,omitempty"`
 	Ambiguities         []string         `json:"unresolved_ambiguities"`
 	Advisor             MissionAdvisorV2 `json:"advisor"`
 	ContentHash         string           `json:"content_hash"`
+}
+
+// SurfaceContactV2 is fictional non-fleet traffic in the local operating
+// picture. It carries no KeelMesh command authority and is safe to expose to
+// the operator and bounded mission advisor.
+type SurfaceContactV2 struct {
+	ID              string       `json:"id"`
+	BoatID          string       `json:"boat_id"`
+	Name            string       `json:"name"`
+	Callsign        string       `json:"callsign"`
+	Class           string       `json:"class"`
+	Activity        string       `json:"activity"`
+	ColorName       string       `json:"color_name"`
+	Color           string       `json:"color"`
+	Position        GeoPointV2   `json:"position"`
+	HeadingDeg      float64      `json:"heading_deg"`
+	SpeedMPS        float64      `json:"speed_mps"`
+	SpeedKnots      float64      `json:"speed_knots"`
+	LengthM         float64      `json:"length_m"`
+	DraftM          float64      `json:"draft_m"`
+	NavigationState string       `json:"navigation_state"`
+	RouteName       string       `json:"route_name"`
+	Route           []GeoPointV2 `json:"route"`
+	Looping         bool         `json:"looping"`
+	UpdatedAt       time.Time    `json:"updated_at"`
 }
 
 // MissionStrategyV2 is advisory model output. It may choose a bounded planning
@@ -266,6 +292,8 @@ type MissionPlanningContextV2 struct {
 	MapBounds        [][]float64               `json:"map_bounds"`
 	FormationCurrent string                    `json:"formation_current"`
 	Conversation     []MissionChatMessageV2    `json:"conversation,omitempty"`
+	SurfaceContacts  []SurfaceContactV2        `json:"surface_contacts"`
+	FollowContact    *SurfaceContactV2         `json:"follow_contact,omitempty"`
 }
 
 type FleetAssignmentV2 struct {
@@ -321,15 +349,16 @@ type FleetLeaseV2 struct {
 }
 
 type FleetSnapshotV2 struct {
-	SchemaVersion int                  `json:"schema_version"`
-	FleetVersion  int64                `json:"fleet_version"`
-	GeneratedAt   time.Time            `json:"generated_at"`
-	Vessels       []VesselProfileV2    `json:"vessels"`
-	Groups        []OperationalGroupV2 `json:"groups"`
-	Collections   []SavedCollectionV2  `json:"collections"`
-	Missions      []MissionWorkspaceV2 `json:"missions"`
-	Environment   EnvironmentV2        `json:"environment"`
-	Map           map[string]any       `json:"map"`
+	SchemaVersion   int                  `json:"schema_version"`
+	FleetVersion    int64                `json:"fleet_version"`
+	GeneratedAt     time.Time            `json:"generated_at"`
+	Vessels         []VesselProfileV2    `json:"vessels"`
+	SurfaceContacts []SurfaceContactV2   `json:"surface_contacts"`
+	Groups          []OperationalGroupV2 `json:"groups"`
+	Collections     []SavedCollectionV2  `json:"collections"`
+	Missions        []MissionWorkspaceV2 `json:"missions"`
+	Environment     EnvironmentV2        `json:"environment"`
+	Map             map[string]any       `json:"map"`
 }
 
 type VoiceV2 struct {

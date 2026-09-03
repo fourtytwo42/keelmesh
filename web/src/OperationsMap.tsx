@@ -14,6 +14,7 @@ import type {
   MissionWaypointV2,
   MissionWorkspaceV2,
   Point,
+  SurfaceContactV2,
 } from "./types";
 
 maplibregl.setWorkerUrl(maplibreWorkerURL);
@@ -31,6 +32,7 @@ type Props = {
   pirate: boolean;
   onSelect: (ids: string[], mode: "replace" | "toggle") => void;
   onGroup: (id: string) => void;
+  onContact: (id: string) => void;
   onWaypoint: (p: Point, color: WaypointColor) => void;
   onDeleteWaypoint: (index: number) => void;
   onClearWaypoints: (color?: WaypointColor) => void;
@@ -117,6 +119,43 @@ function vesselData(fleet: FleetSnapshotV2): GeoJSON.FeatureCollection {
         mode: v.telemetry.mode,
       },
       geometry: { type: "Point", coordinates: v.telemetry.position },
+    })),
+  };
+}
+function surfaceContactData(fleet: FleetSnapshotV2): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: fleet.surface_contacts.map((contact) => ({
+      type: "Feature",
+      id: contact.id,
+      properties: {
+        id: contact.id,
+        name: contact.name,
+        boatID: contact.boat_id,
+        class: contact.class,
+        color: contact.color,
+        colorName: contact.color_name,
+        heading: contact.heading_deg,
+        speed: contact.speed_knots,
+        scale: ["container", "tanker"].includes(contact.class)
+          ? 1.45
+          : contact.class === "trawler" || contact.class === "yacht"
+            ? 0.78
+            : 1,
+      },
+      geometry: { type: "Point", coordinates: contact.position },
+    })),
+  };
+}
+function surfaceRouteData(
+  contacts: SurfaceContactV2[],
+): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: contacts.map((contact) => ({
+      type: "Feature",
+      properties: { id: contact.id, color: contact.color },
+      geometry: { type: "LineString", coordinates: contact.route },
     })),
   };
 }
@@ -253,6 +292,7 @@ export function OperationsMap({
   pirate,
   onSelect,
   onGroup,
+  onContact,
   onWaypoint,
   onDeleteWaypoint,
   onClearWaypoints,
@@ -347,6 +387,17 @@ export function OperationsMap({
         map.addImage(`pirate-vessel-${name}`, pirateImage.data, {
           pixelRatio: 8,
         });
+      }
+      for (const name of [
+        "container",
+        "tanker",
+        "ferry",
+        "trawler",
+        "patrol",
+        "yacht",
+      ]) {
+        const image = await map.loadImage(`/assets/traffic/${name}.png`);
+        map.addImage(`traffic-${name}`, image.data, { pixelRatio: 2 });
       }
       map.addLayer({
         id: "depth-contours",
@@ -568,6 +619,70 @@ export function OperationsMap({
           "line-opacity": 0.9,
         },
       });
+      map.addSource("surface-contact-routes", {
+        type: "geojson",
+        data: surfaceRouteData(fleet.surface_contacts),
+      });
+      map.addLayer({
+        id: "surface-contact-routes",
+        type: "line",
+        source: "surface-contact-routes",
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 1,
+          "line-dasharray": [2, 5],
+          "line-opacity": 0.22,
+        },
+      });
+      map.addSource("surface-contacts", {
+        type: "geojson",
+        data: surfaceContactData(fleet),
+      });
+      map.addLayer({
+        id: "surface-contact-halos",
+        type: "circle",
+        source: "surface-contacts",
+        paint: {
+          "circle-radius": 13,
+          "circle-color": ["get", "color"],
+          "circle-opacity": 0.12,
+          "circle-stroke-color": ["get", "color"],
+          "circle-stroke-width": 1.5,
+        },
+      });
+      map.addLayer({
+        id: "surface-contact-symbols",
+        type: "symbol",
+        source: "surface-contacts",
+        layout: {
+          "icon-image": ["concat", "traffic-", ["get", "class"]],
+          "icon-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            7,
+            ["*", 0.07, ["get", "scale"]],
+            11,
+            ["*", 0.14, ["get", "scale"]],
+            15,
+            ["*", 0.25, ["get", "scale"]],
+          ],
+          "icon-rotate": ["get", "heading"],
+          "icon-rotation-alignment": "map",
+          "icon-pitch-alignment": "map",
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+          "text-field": ["step", ["zoom"], "", 10, ["get", "name"]],
+          "text-size": 9,
+          "text-offset": [0, 2.6],
+          "text-optional": true,
+        },
+        paint: {
+          "text-color": ["get", "color"],
+          "text-halo-color": "#111718",
+          "text-halo-width": 2,
+        },
+      });
       map.addSource("vessels", {
         type: "geojson",
         data: vesselData(fleet),
@@ -713,6 +828,12 @@ export function OperationsMap({
     (mapRef.current.getSource("routes") as GeoJSONSource)?.setData(
       routeData(activePlan),
     );
+    (mapRef.current.getSource("surface-contacts") as GeoJSONSource)?.setData(
+      surfaceContactData(fleet),
+    );
+    (
+      mapRef.current.getSource("surface-contact-routes") as GeoJSONSource
+    )?.setData(surfaceRouteData(fleet.surface_contacts));
     (mapRef.current.getSource("mission-geometry") as GeoJSONSource)?.setData(
       geometryData(mission),
     );
@@ -883,6 +1004,17 @@ export function OperationsMap({
         return;
       }
       if (detail === 2) return;
+      const contactBox: [[number, number], [number, number]] = [
+        [e.point.x - 18, e.point.y - 18],
+        [e.point.x + 18, e.point.y + 18],
+      ];
+      const contact = map.queryRenderedFeatures(contactBox, {
+        layers: ["surface-contact-symbols", "surface-contact-halos"],
+      })[0];
+      if (contact?.properties?.id) {
+        onContact(String(contact.properties.id));
+        return;
+      }
       const hit = map.queryRenderedFeatures(e.point, {
         layers: ["vessel-symbols", "group-halos"],
       })[0];
@@ -1053,6 +1185,7 @@ export function OperationsMap({
     mission,
     onSelect,
     onGroup,
+    onContact,
     onWaypoint,
     onDeleteWaypoint,
     onClearGroupAssembly,
@@ -1279,8 +1412,8 @@ export function OperationsMap({
         </strong>
         <span>
           {pirate
-            ? "Natural Earth + NOAA ETOPO · not for navigation"
-            : "Natural Earth + NOAA ETOPO · local/offline"}
+            ? `${fleet.surface_contacts.length} neutral contacts · not for navigation`
+            : `${fleet.surface_contacts.length} moving surface contacts · local/offline`}
         </span>
       </div>
       <div

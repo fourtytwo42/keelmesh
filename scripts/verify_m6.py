@@ -50,6 +50,43 @@ assert len(fleet["groups"]) >= 8
 assert len({v["id"] for v in fleet["vessels"]}) == 48
 assert len({v["callsign"] for v in fleet["vessels"]}) == 48
 assert fleet["environment"]["label"] == "NOAA-derived simulation fixture"
+contacts = fleet["surface_contacts"]
+assert len(contacts) == 12
+assert len({contact["boat_id"] for contact in contacts}) == 12
+assert len({contact["color_name"] for contact in contacts}) == 12
+assert {contact["class"] for contact in contacts} == {"container", "tanker", "ferry", "trawler", "patrol", "yacht"}
+contact = call(f"/api/v2/surface-contacts/{contacts[0]['id']}")
+assert contact["boat_id"] == "NPC-4101" and contact["looping"] and len(contact["route"]) >= 2
+
+follow_mission = call(
+    "/api/v2/missions",
+    {
+        **mutation("follow-mission", fleet["fleet_version"]),
+        "name": "Surface Contact Watch",
+        "objective": "Follow a selected fictional contact",
+        "target_ids": fleet["groups"][0]["member_ids"],
+    },
+    201,
+)
+follow_draft = call(
+    f"/api/v2/missions/{follow_mission['id']}/commands:compile",
+    {
+        **mutation("follow-compile", follow_mission["version"]),
+        "text": "Have amber team follow NPC-4101 at a safe distance",
+        "target_ids": follow_mission["target_ids"],
+    },
+    201,
+)
+assert follow_draft["follow_contact_id"] == "surface-01"
+assert follow_draft["guidance_kind"] == "follow_contact"
+assert len(follow_draft["waypoints"]) == 12 and not follow_draft["unresolved_ambiguities"]
+follow_current = call(f"/api/v2/missions/{follow_mission['id']}")
+call(
+    f"/api/v2/missions/{follow_mission['id']}",
+    mutation("follow-delete", follow_current["version"]),
+    method="DELETE",
+)
+fleet = call("/api/v2/fleet")
 
 for group in fleet["groups"][:8]:
     members = [v for v in fleet["vessels"] if v["id"] in group["member_ids"]]
@@ -184,6 +221,7 @@ print(
         {
             "status": "pass",
             "vessels": 48,
+            "surface_contacts": len(contacts),
             "primary_groups": 8,
             "concurrent_missions": 3,
             "reachability_peers": len(reach["direct_peers"]) + len(reach["relayed_peers"]),

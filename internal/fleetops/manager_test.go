@@ -938,3 +938,51 @@ func TestMoveGroupMemberFailsClosedDuringMission(t *testing.T) {
 		t.Fatal("failed move changed vessel membership")
 	}
 }
+
+func TestSurfaceTrafficHasStableIdentityAndMovingTracks(t *testing.T) {
+	first := surfaceContactsAt(time.Unix(1_800_000_000, 0))
+	second := surfaceContactsAt(time.Unix(1_800_000_030, 0))
+	if len(first) != 12 || len(second) != 12 {
+		t.Fatalf("expected twelve surface contacts, got %d and %d", len(first), len(second))
+	}
+	seen := map[string]bool{}
+	for i := range first {
+		if first[i].ID != second[i].ID || first[i].BoatID != second[i].BoatID || seen[first[i].BoatID] {
+			t.Fatalf("surface contact identity is not stable/unique: %#v", first[i])
+		}
+		seen[first[i].BoatID] = true
+		if first[i].Position == second[i].Position || len(first[i].Route) < 2 || !first[i].Looping {
+			t.Fatalf("surface contact is not moving on a looped track: %#v", first[i])
+		}
+	}
+}
+
+func TestFollowSurfaceContactCompilesPredictedTrack(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation:  Mutation{RequestID: "follow-create", IdempotencyKey: "follow-create", ExpectedVersion: snapshot.FleetVersion},
+		Name:      "Copper Horizon Watch",
+		TargetIDs: snapshot.Groups[0].MemberIDs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation: Mutation{RequestID: "follow-compile", IdempotencyKey: "follow-compile", ExpectedVersion: mission.Version},
+		Text:     "Have amber team follow NPC-4101 at a safe distance",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.FollowContactID != "surface-01" || draft.GuidanceKind != "follow_contact" || len(draft.Waypoints) != 12 || len(draft.Ambiguities) != 0 {
+		t.Fatalf("follow command did not compile to the expected track: %#v", draft)
+	}
+	planning, err := m.PlanningContext(draft.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planning.FollowContact == nil || planning.FollowContact.BoatID != "NPC-4101" || len(planning.SurfaceContacts) != 12 {
+		t.Fatalf("advisor context is missing bounded traffic state: %#v", planning)
+	}
+}

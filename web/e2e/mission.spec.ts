@@ -87,6 +87,21 @@ test("map-first workspace exposes the persistent 48-vessel operating picture", a
   expect(rasterRequests).toEqual([]);
 });
 
+test("fictional surface traffic moves on stable identified routes", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("12 CONTACTS", { exact: true })).toBeVisible();
+  const first = await (await page.request.get("/api/v2/fleet")).json();
+  expect(first.surface_contacts).toHaveLength(12);
+  expect(new Set(first.surface_contacts.map((contact: { boat_id: string }) => contact.boat_id)).size).toBe(12);
+  expect(new Set(first.surface_contacts.map((contact: { color_name: string }) => contact.color_name)).size).toBe(12);
+  const contact = await (await page.request.get(`/api/v2/surface-contacts/${first.surface_contacts[0].id}`)).json();
+  expect(contact.route.length).toBeGreaterThan(1);
+  expect(contact.looping).toBe(true);
+  await page.waitForTimeout(1100);
+  const second = await (await page.request.get("/api/v2/fleet")).json();
+  expect(second.surface_contacts[0].position).not.toEqual(first.surface_contacts[0].position);
+});
+
 test("pirate watch changes nomenclature, agent voice, and returns cleanly to navy mode", async ({ page }) => {
   const pirateRequests: string[] = [];
   page.on("request", request => {
