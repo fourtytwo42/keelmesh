@@ -247,8 +247,8 @@ def parse_mission_json(
             cleaned = cleaned[start : end + 1]
     value = json.loads(cleaned)
     strategies = value.get("strategies") if isinstance(value, dict) else None
-    if not isinstance(strategies, list) or not 2 <= len(strategies) <= 4:
-        raise ValueError("provider must return two to four strategies")
+    if not isinstance(strategies, list) or len(strategies) != 3:
+        raise ValueError("provider must return exactly three strategies")
     result: list[dict[str, Any]] = []
     ids: set[str] = set()
     for index, item in enumerate(strategies):
@@ -507,8 +507,8 @@ def mission_system_prompt(target_count: int, waypoint_count: int, geometry_ids: 
         else "Return geometry_option_id as an empty string because operator geometry is already fixed."
     )
     return (
-        "You are a conversational maritime simulation mission advisor. Return only JSON with assistant_markdown, geometry_option_id, and a strategies array of two to four genuinely distinct options. "
-        "assistant_markdown must directly answer the latest operator message, briefly explain the important tradeoffs, and use compact Markdown when useful; never return a generic strategy-count status line. "
+        "You are a conversational maritime simulation mission advisor. Return only JSON with assistant_markdown, geometry_option_id, and exactly three genuinely distinct strategies ordered A, B, and C. "
+        "assistant_markdown must directly answer the latest operator message, briefly explain the important tradeoffs, and end by asking the operator to confirm Option A, B, or C; never return a generic strategy-count status line. "
         "Each option requires id, name, description, formation, speed_factor (0.25..1), reserve_bias (0..1), and maneuvers (2..6 short steps). "
         f"{formation_rule} {geometry_rule} Supported formations: {sorted(ALLOWED_FORMATIONS)}. "
         "Use vessel count, class, reserve, environment, constraints, map geometry, and the operator's exact intent. "
@@ -542,8 +542,8 @@ def mission_response_format(target_count: int, geometry_ids: list[str]) -> dict[
                     },
                     "strategies": {
                         "type": "array",
-                        "minItems": 2,
-                        "maxItems": 4,
+                        "minItems": 3,
+                        "maxItems": 3,
                         "items": {
                             "type": "object",
                             "additionalProperties": False,
@@ -1224,7 +1224,7 @@ async def route_mission_provider(
     return (
         deterministic_mission_options(request),
         geometry_option_id,
-        "I prepared three bounded routes from the selected assets and current mission context. Compare the faster option with the reserve-first alternative; every route still goes through deterministic depth, separation, energy, and authority checks before anything moves.",
+        "I prepared three bounded routes from the selected assets and current mission context. Compare the faster option with the reserve-first alternative; every route still goes through deterministic depth, separation, energy, and authority checks before anything moves. Confirm Option A, B, or C to execute the selected exact plan.",
         attempts,
         "mock",
         "keelmesh-target-aware-v2",

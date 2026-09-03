@@ -191,7 +191,7 @@ func (m *Manager) WorkspaceCommand(ctx context.Context, request domain.Workspace
 		m.logger.Warn("workspace assistant provider returned malformed output; using bounded fallback", "error", err)
 		return deterministicWorkspaceCommand(request, fleet), nil
 	}
-	if err := validateWorkspaceCommand(result, fleet); err != nil {
+	if err := validateWorkspaceCommand(result, request, fleet); err != nil {
 		m.logger.Warn("workspace assistant provider returned an invalid action; using bounded fallback", "error", err)
 		return deterministicWorkspaceCommand(request, fleet), nil
 	}
@@ -234,7 +234,7 @@ func workspaceContext(request domain.WorkspaceAssistantRequestV1, fleet domain.F
 	for _, value := range fleet.Missions {
 		missions = append(missions, mission{value.ID, value.Name, value.Status, value.Objective, len(value.TargetIDs)})
 	}
-	return map[string]any{"utterance": request.Text, "persona": request.Persona, "selected_ids": request.SelectedIDs, "open_windows": request.OpenWindows, "authority_status": "healthy", "simulation_rate": fleet.SimulationRate, "simulation_tick_ms": fleet.SimulationTick, "environment": fleet.Environment, "vessels": vessels, "groups": groups, "surface_contacts": contacts, "missions": missions, "available_windows": []string{"fleet", "mission", "engineer", "cutaway", "arena", "resilience", "quiet"}}
+	return map[string]any{"utterance": request.Text, "persona": request.Persona, "selected_ids": request.SelectedIDs, "open_windows": request.OpenWindows, "active_mission_id": request.ActiveMissionID, "plan_options": request.PlanOptions, "authority_status": "healthy", "simulation_rate": fleet.SimulationRate, "simulation_tick_ms": fleet.SimulationTick, "environment": fleet.Environment, "vessels": vessels, "groups": groups, "surface_contacts": contacts, "missions": missions, "available_windows": []string{"fleet", "mission", "engineer", "cutaway", "arena", "resilience", "quiet"}}
 }
 
 func workspaceCommandInstructions(persona string) string {
@@ -242,7 +242,7 @@ func workspaceCommandInstructions(persona string) string {
 	if persona == "pirate" {
 		style = "Respond concisely in a theatrical, friendly pirate voice."
 	}
-	return "You are the voice interface for a fictional maritime autonomy simulation. Classify the utterance as conversation, workspace, or mission. " + style + " Use only supplied IDs and facts. Questions should normally be conversation with no UI action. Explicit requests to show, open, close, inspect, select, change simulation speed, or change theme are workspace actions. Requests that draft, move, patrol, search, follow, intercept, surround, hold, route, or otherwise task vessels are mission requests: preserve the complete utterance in mission_intent and include create_mission. Never authorize, start, pause, delete, fire, jam, or apply effects. For those, open the relevant window and explain that confirmation is required. Do not mention JSON, tools, hidden context, or provider mechanics."
+	return "You are the voice interface for a fictional maritime autonomy simulation. Classify the utterance as conversation, workspace, or mission. " + style + " Use only supplied IDs and facts. Questions should normally be conversation with no UI action. Explicit requests to show, open, close, inspect, select, change simulation speed, or change theme are workspace actions. If plan_options are supplied and the operator clearly chooses option A, B, or C (including first, second, third, or the option name), return workspace mode with exactly one choose_plan action whose target is the supplied label. That utterance is the operator's single exact-plan confirmation. Do not create a new mission for a plan choice. Requests that draft, move, patrol, search, follow, intercept, surround, hold, route, or otherwise task vessels are mission requests: preserve the complete utterance in mission_intent and include create_mission. Never invent a plan choice, delete, fire, jam, or apply effects. A choose_plan action only requests core's existing preview, exact-hash authorization, and start checks; it does not bypass them. Do not mention JSON, tools, hidden context, or provider mechanics."
 }
 
 func workspaceCommandSchema() map[string]any {
@@ -251,21 +251,21 @@ func workspaceCommandSchema() map[string]any {
 		"speech":         map[string]any{"type": "string", "minLength": 1, "maxLength": 800},
 		"mission_intent": map[string]any{"type": "string", "maxLength": 1600},
 		"actions": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"kind", "target", "value"}, "properties": map[string]any{
-			"kind":   map[string]any{"type": "string", "enum": []string{"open_window", "close_window", "select_group", "select_vessel", "select_all", "clear_selection", "inspect_group", "inspect_vessel", "inspect_contact", "set_simulation_rate", "set_theme", "create_mission", "none"}},
+			"kind":   map[string]any{"type": "string", "enum": []string{"open_window", "close_window", "select_group", "select_vessel", "select_all", "clear_selection", "inspect_group", "inspect_vessel", "inspect_contact", "set_simulation_rate", "set_theme", "create_mission", "choose_plan", "none"}},
 			"target": map[string]any{"type": "string", "maxLength": 120},
 			"value":  map[string]any{"type": "number", "minimum": 0, "maximum": 500},
 		}}},
 	}}
 }
 
-func validateWorkspaceCommand(value domain.WorkspaceAssistantResponseV1, fleet domain.FleetSnapshotV2) error {
+func validateWorkspaceCommand(value domain.WorkspaceAssistantResponseV1, request domain.WorkspaceAssistantRequestV1, fleet domain.FleetSnapshotV2) error {
 	if value.Mode != "conversation" && value.Mode != "workspace" && value.Mode != "mission" {
 		return errors.New("invalid assistant mode")
 	}
 	if strings.TrimSpace(value.Speech) == "" || (value.Mode == "mission" && strings.TrimSpace(value.MissionIntent) == "") {
 		return errors.New("incomplete assistant response")
 	}
-	allowed := map[string]bool{"open_window": true, "close_window": true, "select_group": true, "select_vessel": true, "select_all": true, "clear_selection": true, "inspect_group": true, "inspect_vessel": true, "inspect_contact": true, "set_simulation_rate": true, "set_theme": true, "create_mission": true, "none": true}
+	allowed := map[string]bool{"open_window": true, "close_window": true, "select_group": true, "select_vessel": true, "select_all": true, "clear_selection": true, "inspect_group": true, "inspect_vessel": true, "inspect_contact": true, "set_simulation_rate": true, "set_theme": true, "create_mission": true, "choose_plan": true, "none": true}
 	windows := map[string]bool{"fleet": true, "mission": true, "mission_planner": true, "planner": true, "engineer": true, "autonomy_engineer": true, "cutaway": true, "infrastructure": true, "arena": true, "fleet_arena": true, "resilience": true, "resilience_drill": true, "quiet": true, "quiet_fleet": true}
 	groups, vessels, contacts := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, item := range fleet.Groups {
@@ -281,6 +281,15 @@ func validateWorkspaceCommand(value domain.WorkspaceAssistantResponseV1, fleet d
 	for _, item := range fleet.SurfaceContacts {
 		for _, alias := range []string{item.ID, item.Name, item.BoatID, item.Callsign} {
 			contacts[strings.ToLower(alias)] = true
+		}
+	}
+	planOptions := map[string]bool{}
+	for _, option := range request.PlanOptions {
+		if option.PlanID == "" || option.ContentHash == "" || option.PolicyStatus == "prohibited" {
+			continue
+		}
+		for _, alias := range []string{option.Label, option.PlanID, option.Name} {
+			planOptions[strings.ToLower(strings.TrimSpace(alias))] = true
 		}
 	}
 	for _, action := range value.Actions {
@@ -313,6 +322,10 @@ func validateWorkspaceCommand(value domain.WorkspaceAssistantResponseV1, fleet d
 			if target != "navy" && target != "pirate" {
 				return errors.New("unsupported theme")
 			}
+		case "choose_plan":
+			if request.ActiveMissionID == "" || !planOptions[target] {
+				return errors.New("unknown or prohibited plan choice")
+			}
 		}
 	}
 	return nil
@@ -321,6 +334,12 @@ func validateWorkspaceCommand(value domain.WorkspaceAssistantResponseV1, fleet d
 func deterministicWorkspaceCommand(request domain.WorkspaceAssistantRequestV1, fleet domain.FleetSnapshotV2) domain.WorkspaceAssistantResponseV1 {
 	lower := strings.ToLower(request.Text)
 	result := domain.WorkspaceAssistantResponseV1{SchemaVersion: 1, Mode: "conversation", Speech: "I can answer questions, arrange the workspace, or help draft a mission. Please try that request again with the specific view or objective you want.", Actions: []domain.WorkspaceAssistantActionV1{}, Provider: "mock", Model: "deterministic-workspace-v1"}
+	if option := deterministicPlanChoice(lower, request.PlanOptions); option != nil {
+		result.Mode = "workspace"
+		result.Speech = fmt.Sprintf("Option %s confirmed. I am validating and starting %s now.", option.Label, option.Name)
+		result.Actions = []domain.WorkspaceAssistantActionV1{{Kind: "choose_plan", Target: option.Label, Value: 0}}
+		return result
+	}
 	missionWords := []string{"move ", "patrol", "search", "follow", "intercept", "surround", "hold position", "waypoint", "route ", "go to", "approach"}
 	for _, word := range missionWords {
 		if strings.Contains(lower, word) {
@@ -348,13 +367,35 @@ func deterministicWorkspaceCommand(request domain.WorkspaceAssistantRequestV1, f
 	return result
 }
 
+func deterministicPlanChoice(lower string, options []domain.WorkspacePlanOptionV1) *domain.WorkspacePlanOptionV1 {
+	aliases := [][]string{{"option a", "choice a", "first option", "option one", "go with a"}, {"option b", "choice b", "second option", "option two", "go with b"}, {"option c", "choice c", "third option", "option three", "go with c"}}
+	for index := range options {
+		if options[index].PolicyStatus == "prohibited" || options[index].PlanID == "" || options[index].ContentHash == "" {
+			continue
+		}
+		for _, alias := range aliases[min(index, len(aliases)-1)] {
+			if strings.Contains(lower, alias) {
+				return &options[index]
+			}
+		}
+		if strings.Contains(lower, strings.ToLower(options[index].Name)) {
+			return &options[index]
+		}
+	}
+	return nil
+}
+
 // MissionOptions asks the bounded provider router for advisory planning
 // strategies. It cannot return routes, mutate mission state, or authorize an
 // effect; those responsibilities remain in fleetops and policy.
 func (m *Manager) MissionOptions(ctx context.Context, planning domain.MissionPlanningContextV2) (domain.MissionAdvisorV2, error) {
-	advisor, err := m.missionOptionsService(ctx, planning)
+	directCtx, cancelDirect := context.WithTimeout(ctx, 12*time.Second)
+	advisor, err := m.openAIMissionOptions(directCtx, planning)
+	cancelDirect()
 	if err != nil {
-		advisor, err = m.openAIMissionOptions(ctx, planning)
+		serviceCtx, cancelService := context.WithTimeout(ctx, 8*time.Second)
+		advisor, err = m.missionOptionsService(serviceCtx, planning)
+		cancelService()
 	}
 	if err != nil {
 		return domain.MissionAdvisorV2{}, err
@@ -715,7 +756,7 @@ func (m *Manager) openAIMissionOptions(ctx context.Context, planning domain.Miss
 	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"assistant_markdown", "geometry_option_id", "strategies"}, "properties": map[string]any{
 		"assistant_markdown": map[string]any{"type": "string", "minLength": 1, "maxLength": 1200},
 		"geometry_option_id": map[string]any{"type": "string", "enum": geometryOptionIDs},
-		"strategies":         map[string]any{"type": "array", "minItems": 2, "maxItems": 4, "items": strategySchema},
+		"strategies":         map[string]any{"type": "array", "minItems": 3, "maxItems": 3, "items": strategySchema},
 	}}
 	planningJSON, _ := json.Marshal(planning)
 	geometryRule := "Return geometry_option_id as an empty string because operator geometry is already fixed."
@@ -724,7 +765,7 @@ func (m *Manager) openAIMissionOptions(ctx context.Context, planning domain.Miss
 	}
 	payload := map[string]any{
 		"model":        m.cfg.OpenAIModel,
-		"instructions": fmt.Sprintf("You are a conversational maritime simulation mission advisor. Return a concise assistant_markdown reply plus two to four genuinely distinct bounded options. The reply must directly answer the latest operator message, explain the important tradeoffs in plain language, and may use compact Markdown. Do not merely restate a generic strategy count. %s %s Use the selected vessels, recent conversation, constraints, environment, map context, and exact operator intent. Treat each target's group_name, group_code, and group_color_name as equivalent human-facing identifiers, so phrases such as 'amber team', 'Watch Shoal', and 'WS' resolve to the same supplied group and never to an invented group. Surface contacts are fictional non-commandable traffic: resolve a requested follow target only from the supplied name, callsign, boat_id, class, or unique color. If follow_contact is present, offer safe intercept, trail, and stand-off strategies around that exact moving contact. There are %d explicit waypoints. Never invent coordinates, routes, authority, policy changes, weapons, or hidden information.", formationRule, geometryRule, planning.WaypointCount),
+		"instructions": fmt.Sprintf("You are a conversational maritime simulation mission advisor. Return a concise assistant_markdown reply plus exactly three genuinely distinct bounded options ordered A, B, and C. The reply must directly answer the latest operator message, explain the important tradeoffs in plain language, and end by asking the operator to confirm Option A, B, or C. Do not merely restate a generic strategy count. %s %s Use the selected vessels, recent conversation, constraints, environment, map context, and exact operator intent. Treat each target's group_name, group_code, and group_color_name as equivalent human-facing identifiers, so phrases such as 'amber team', 'Watch Shoal', and 'WS' resolve to the same supplied group and never to an invented group. Surface contacts are fictional non-commandable traffic: resolve a requested follow target only from the supplied name, callsign, boat_id, class, or unique color. If follow_contact is present, offer safe intercept, trail, and stand-off strategies around that exact moving contact. There are %d explicit waypoints. Never invent coordinates, routes, authority, policy changes, weapons, or hidden information.", formationRule, geometryRule, planning.WaypointCount),
 		"input":        string(planningJSON), "reasoning": map[string]any{"effort": "none"},
 		"text":              map[string]any{"verbosity": "low", "format": map[string]any{"type": "json_schema", "name": "keelmesh_mission_strategies", "strict": true, "schema": schema}},
 		"max_output_tokens": 1800, "store": false,
@@ -773,7 +814,7 @@ func (m *Manager) openAIMissionOptions(ctx context.Context, planning domain.Miss
 		GeometryOptionID  string                     `json:"geometry_option_id"`
 		Strategies        []domain.MissionStrategyV2 `json:"strategies"`
 	}
-	if output == "" || json.Unmarshal([]byte(output), &proposed) != nil || strings.TrimSpace(proposed.AssistantMarkdown) == "" || len(proposed.Strategies) < 2 || len(proposed.Strategies) > 4 {
+	if output == "" || json.Unmarshal([]byte(output), &proposed) != nil || strings.TrimSpace(proposed.AssistantMarkdown) == "" || len(proposed.Strategies) != 3 {
 		return domain.MissionAdvisorV2{}, problem("MODEL_SCHEMA_INVALID", "OpenAI returned no valid strategy set")
 	}
 	for i := range proposed.Strategies {

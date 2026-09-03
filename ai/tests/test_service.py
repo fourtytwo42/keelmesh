@@ -163,14 +163,14 @@ def test_provider_evaluation_accounts_for_exact_assertion_set() -> None:
 
 def test_single_vessel_mission_options_reject_fleet_formations() -> None:
     valid = parse_mission_json(
-        '{"strategies":[{"id":"one","name":"Close patrol","description":"Depth-safe coastal track","formation":"independent","speed_factor":0.7,"reserve_bias":0.3,"maneuvers":["join corridor","patrol"]},{"id":"two","name":"Reserve patrol","description":"Lower propulsion demand","formation":"independent","speed_factor":0.5,"reserve_bias":0.8,"maneuvers":["economy entry","safe hold"]}]}',
+        '{"strategies":[{"id":"one","name":"Close patrol","description":"Depth-safe coastal track","formation":"independent","speed_factor":0.7,"reserve_bias":0.3,"maneuvers":["join corridor","patrol"]},{"id":"two","name":"Reserve patrol","description":"Lower propulsion demand","formation":"independent","speed_factor":0.5,"reserve_bias":0.8,"maneuvers":["economy entry","safe hold"]},{"id":"three","name":"Current patrol","description":"Current-aware coastal track","formation":"independent","speed_factor":0.6,"reserve_bias":0.6,"maneuvers":["join current","patrol"]}]}',
         1,
         "patrol",
     )
     assert all(item["formation"] == "independent" for item in valid)
     try:
         parse_mission_json(
-            '{"strategies":[{"id":"one","name":"Wedge","description":"wrong target semantics","formation":"wedge","speed_factor":0.7,"reserve_bias":0.3,"maneuvers":["form","patrol"]},{"id":"two","name":"Line","description":"wrong target semantics","formation":"line_abreast","speed_factor":0.5,"reserve_bias":0.8,"maneuvers":["form","hold"]}]}',
+            '{"strategies":[{"id":"one","name":"Wedge","description":"wrong target semantics","formation":"wedge","speed_factor":0.7,"reserve_bias":0.3,"maneuvers":["form","patrol"]},{"id":"two","name":"Line","description":"wrong target semantics","formation":"line_abreast","speed_factor":0.5,"reserve_bias":0.8,"maneuvers":["form","hold"]},{"id":"three","name":"Column","description":"wrong target semantics","formation":"column","speed_factor":0.6,"reserve_bias":0.6,"maneuvers":["form","hold"]}]}',
             1,
             "patrol",
         )
@@ -180,7 +180,7 @@ def test_single_vessel_mission_options_reject_fleet_formations() -> None:
         raise AssertionError("single-vessel advisor must reject fleet formations")
     try:
         parse_mission_json(
-            '{"strategies":[{"id":"one","name":"Solo patrol","description":"Depth-safe coastal track","formation":"independent","speed_factor":0.7,"reserve_bias":0.3,"maneuvers":["patrol coast","regroup on completion"]},{"id":"two","name":"Reserve patrol","description":"Lower propulsion demand","formation":"independent","speed_factor":0.5,"reserve_bias":0.8,"maneuvers":["patrol coast","safe hold"]}]}',
+            '{"strategies":[{"id":"one","name":"Solo patrol","description":"Depth-safe coastal track","formation":"independent","speed_factor":0.7,"reserve_bias":0.3,"maneuvers":["patrol coast","regroup on completion"]},{"id":"two","name":"Reserve patrol","description":"Lower propulsion demand","formation":"independent","speed_factor":0.5,"reserve_bias":0.8,"maneuvers":["patrol coast","safe hold"]},{"id":"three","name":"Current patrol","description":"Current-aware route","formation":"independent","speed_factor":0.6,"reserve_bias":0.6,"maneuvers":["join current","safe hold"]}]}',
             1,
             "patrol",
             0,

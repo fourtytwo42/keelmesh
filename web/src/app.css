@@ -478,3 +478,32 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .mission-tabs .mission-tab{min-width:160px}.mission-tabs .mission-tab-main{padding-left:6px}
   .ops-status .sim-rate button{min-width:32px;padding:0 3px}.ops-status{font-size:6px}
 }
+
+/* Two-turn mission planning: conversation, three bounded choices, one confirmation. */
+.planner-options-pane{display:flex;flex-direction:column;min-height:0}
+.planner-options-pane .objective-section{margin-top:auto}
+.window-planner:not(.maximized) .planner-layout{grid-template-rows:minmax(0,1fr) auto}
+.window-planner:not(.maximized) .planner-chat-pane{min-height:0;overflow:auto;scrollbar-width:thin;scrollbar-color:#9a7435 #171d1b}
+.window-planner:not(.maximized) .planner-options-pane{min-height:70px;max-height:42%;overflow:auto}
+.ai-plan-choices{margin:6px 0 0!important;grid-template-columns:1fr}
+.ai-plan-choices>article{padding:5px 6px!important}
+.ai-plan-choices .candidate-select{display:flex;align-items:center;gap:7px;cursor:pointer}
+.ai-plan-choices .candidate-select:disabled{cursor:not-allowed;opacity:.5}
+.option-letter{display:grid;place-items:center;flex:0 0 23px;height:23px;border:1px solid #a97831;background:#171d1b;color:#efad43;font:800 10px ui-monospace}
+.ai-plan-choices article.recommended .option-letter,.ai-plan-choices article.selected .option-letter{background:#e5a23a;color:#17130d}
+.candidate-quick-metrics{display:flex;gap:8px;margin:3px 0 0 30px;color:#8f968f;font:6px ui-monospace}
+.ai-plan-choices .candidate-detail{display:grid;gap:4px;margin:5px 0 0 30px}
+.ai-plan-choices .candidate-detail small{color:#858d86;font-size:6px;line-height:1.4}
+.ai-plan-choices .candidate-detail code{font-size:5px;color:#656d67}
+.ai-plan-choices article.prohibited{border-color:#68433e}
+.plan-confirm-dialog{border-color:#6f633e}
+.plan-confirm-dialog header{border-color:#554b31;background:#27271f}
+.plan-confirm-dialog header>svg,.plan-confirm-dialog header small{color:#e5a23a}
+.plan-confirm-dialog>dl{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:10px 13px 4px}
+.plan-confirm-dialog>dl span{display:grid;padding:7px;border:1px solid #3d453f;background:#141a19;font:10px ui-monospace}
+.plan-confirm-dialog>dl small{color:#7d847e;font:6px Inter,sans-serif}
+.plan-confirm-dialog>code{display:block;margin:7px 13px;padding:6px;border-left:2px solid #dfa13e;background:#141918;color:#8f968e;font:6px ui-monospace}
+.plan-confirm-dialog .confirmation-note{padding-top:5px;font-size:7px}
+.mission-delete-dialog>div button.confirm{display:flex;align-items:center;justify-content:center;gap:6px;border-color:#d79a39;background:#e5a23a;color:#17130d;font-weight:800}
+.float-window.maximized .ai-plan-choices{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:900px){.float-window.maximized .ai-plan-choices{grid-template-columns:1fr}}

@@ -1745,6 +1745,9 @@ func (m *Manager) ApplyAdvisor(draftID string, advisor domain.MissionAdvisorV2) 
 	if !validAdvisor(advisor, len(draft.TargetIDs)) {
 		advisor = deterministicAdvisor(len(draft.TargetIDs), draft.GuidanceKind, "model response failed validation")
 	}
+	if len(advisor.Strategies) == 3 && !strings.Contains(strings.ToLower(advisor.Summary), "option a") {
+		advisor.Summary = strings.TrimSpace(advisor.Summary) + "\n\nConfirm **Option A**, **B**, or **C** to execute the selected exact plan."
+	}
 	missionChanged := false
 	missionForGeometry := m.missions[draft.MissionID]
 	if advisorGeometryEligible(draft, missionForGeometry) {
@@ -2319,6 +2322,25 @@ func (m *Manager) GeneratePlans(id string, req PlansRequest) ([]domain.FleetPlan
 	m.missions[id] = mission
 	return out, nil
 }
+
+// MissionPlans restores the immutable, currently offered choices after a UI
+// reconnect so conversational references such as "option B" remain bounded to
+// the same server-computed plans.
+func (m *Manager) MissionPlans(id string) ([]domain.FleetPlanV2, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	mission, ok := m.missions[id]
+	if !ok {
+		return nil, &Error{"MISSION_NOT_FOUND", "Mission not found."}
+	}
+	out := make([]domain.FleetPlanV2, 0, len(mission.PlanIDs))
+	for _, planID := range mission.PlanIDs {
+		if plan, exists := m.plans[planID]; exists {
+			out = append(out, plan)
+		}
+	}
+	return out, nil
+}
 func (m *Manager) Preview(mid, pid string, req PlanActionRequest) (domain.FleetPreviewV2, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -2557,7 +2579,7 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 }
 
 func validAdvisor(advisor domain.MissionAdvisorV2, targetCount int) bool {
-	if len(advisor.Strategies) < 2 || len(advisor.Strategies) > 4 || advisor.Provider == "" || advisor.State == "" {
+	if len(advisor.Strategies) != 3 || advisor.Provider == "" || advisor.State == "" {
 		return false
 	}
 	allowed := map[string]bool{"independent": true, "column": true, "line_abreast": true, "wedge": true, "echelon_left": true, "echelon_right": true, "parallel_columns": true, "dispersed_screen": true, "ring": true, "search_grid": true}

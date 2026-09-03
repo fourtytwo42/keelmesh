@@ -30,7 +30,7 @@ func TestMissionOptionsFallsBackToDirectOpenAIWithSingleVesselSchema(t *testing.
 			t.Fatalf("unexpected Responses request: %#v", request)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"assistant_markdown\":\"I mapped two shoreline patrol approaches for Gannet. **Balanced patrol** finishes sooner; **Reserve patrol** keeps a larger battery margin.\",\"geometry_option_id\":\"\",\"strategies\":[{\"id\":\"balanced\",\"name\":\"Balanced patrol\",\"description\":\"Depth-safe shoreline coverage\",\"formation\":\"independent\",\"speed_factor\":0.8,\"reserve_bias\":0.5,\"maneuvers\":[\"enter corridor\",\"patrol shoreline\"]},{\"id\":\"reserve\",\"name\":\"Reserve patrol\",\"description\":\"Conservative independent coverage\",\"formation\":\"independent\",\"speed_factor\":0.5,\"reserve_bias\":0.9,\"maneuvers\":[\"enter slowly\",\"safe hold\"]}]}"}]}]}`))
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"assistant_markdown\":\"I mapped three shoreline patrol approaches for Gannet. Confirm Option A, B, or C.\",\"geometry_option_id\":\"\",\"strategies\":[{\"id\":\"balanced\",\"name\":\"Balanced patrol\",\"description\":\"Depth-safe shoreline coverage\",\"formation\":\"independent\",\"speed_factor\":0.8,\"reserve_bias\":0.5,\"maneuvers\":[\"enter corridor\",\"patrol shoreline\"]},{\"id\":\"reserve\",\"name\":\"Reserve patrol\",\"description\":\"Conservative independent coverage\",\"formation\":\"independent\",\"speed_factor\":0.5,\"reserve_bias\":0.9,\"maneuvers\":[\"enter slowly\",\"safe hold\"]},{\"id\":\"current\",\"name\":\"Current-aware patrol\",\"description\":\"Use favorable simulated current\",\"formation\":\"independent\",\"speed_factor\":0.65,\"reserve_bias\":0.65,\"maneuvers\":[\"join current\",\"patrol shoreline\"]}]}"}]}]}`))
 	}))
 	defer provider.Close()
 
@@ -55,7 +55,7 @@ func TestMissionOptionsFallsBackToDirectOpenAIWithSingleVesselSchema(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Provider != "openai" || result.Model != "gpt-5.6-luna" || len(result.Strategies) != 2 {
+	if result.Provider != "openai" || result.Model != "gpt-5.6-luna" || len(result.Strategies) != 3 {
 		t.Fatalf("unexpected direct provider result: %#v", result)
 	}
 	if result.MissionName != "Operation Balanced patrol" {
@@ -154,5 +154,26 @@ func TestWorkspaceCommandUsesModelForBoundedPresentationAction(t *testing.T) {
 	}
 	if result.Provider != "openai" || result.Mode != "workspace" || len(result.Actions) != 1 || result.Actions[0].Kind != "inspect_vessel" {
 		t.Fatalf("unexpected workspace command: %#v", result)
+	}
+}
+
+func TestWorkspaceCommandConfirmsOnlySuppliedPlanChoice(t *testing.T) {
+	manager := NewManager(Config{}, slog.Default())
+	request := domain.WorkspaceAssistantRequestV1{
+		Text:            "Go with option B.",
+		Persona:         "navy",
+		ActiveMissionID: "mission-1",
+		PlanOptions: []domain.WorkspacePlanOptionV1{
+			{Label: "A", PlanID: "plan-a", Name: "Fast Transit", ContentHash: "hash-a", PolicyStatus: "valid"},
+			{Label: "B", PlanID: "plan-b", Name: "Balanced Transit", ContentHash: "hash-b", PolicyStatus: "valid"},
+			{Label: "C", PlanID: "plan-c", Name: "Reserve Transit", ContentHash: "hash-c", PolicyStatus: "valid"},
+		},
+	}
+	result, err := manager.WorkspaceCommand(context.Background(), request, domain.FleetSnapshotV2{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Mode != "workspace" || len(result.Actions) != 1 || result.Actions[0].Kind != "choose_plan" || result.Actions[0].Target != "B" {
+		t.Fatalf("unexpected plan confirmation: %#v", result)
 	}
 }

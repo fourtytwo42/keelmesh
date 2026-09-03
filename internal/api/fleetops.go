@@ -240,6 +240,11 @@ func (s *Server) plansV2(w http.ResponseWriter, r *http.Request) {
 	v, err := s.fleetops.GeneratePlans(r.PathValue("id"), req)
 	respondV2(w, map[string]any{"plans": v}, err, http.StatusCreated)
 }
+
+func (s *Server) missionPlansV2(w http.ResponseWriter, r *http.Request) {
+	v, err := s.fleetops.MissionPlans(r.PathValue("id"))
+	respondV2(w, map[string]any{"plans": v}, err, http.StatusOK)
+}
 func (s *Server) planActionV2(w http.ResponseWriter, r *http.Request) {
 	action := r.PathValue("action")
 	if id, ok := strings.CutSuffix(action, ":preview"); ok {

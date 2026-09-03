@@ -123,7 +123,7 @@ export function FleetWorkspace() {
     [geometryFocus, setGeometryFocus] = useState<GeometryFocus | null>(null),
     [search, setSearch] = useState(""),
     [command, setCommand] = useState(""),
-    [draft, setDraft] = useState<CommandDraftV2 | null>(null),
+    [, setDraft] = useState<CommandDraftV2 | null>(null),
     [plans, setPlans] = useState<FleetPlanV2[]>([]),
     [planID, setPlanID] = useState(""),
     [preview, setPreview] = useState<FleetPreviewV2 | null>(null),
@@ -138,7 +138,8 @@ export function FleetWorkspace() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [connected, setConnected] = useState(true),
-    [pendingDeleteID, setPendingDeleteID] = useState("");
+    [pendingDeleteID, setPendingDeleteID] = useState(""),
+    [pendingPlanID, setPendingPlanID] = useState("");
   const audio = useRef<HTMLAudioElement | null>(null),
     speechAbort = useRef<AbortController | null>(null),
     recorder = useRef<MediaRecorder | null>(null),
@@ -263,6 +264,7 @@ export function FleetWorkspace() {
   );
   const pendingDeleteMission =
     fleet?.missions.find((item) => item.id === pendingDeleteID) ?? null;
+  const pendingPlan = plans.find((item) => item.id === pendingPlanID) ?? null;
   useEffect(() => {
     if (!activeMissionID && fleet?.missions[0])
       setActiveMissionID(fleet.missions[0].id);
@@ -273,6 +275,16 @@ export function FleetWorkspace() {
     missionSelectionSync.current = marker;
     setSelected(new Set(mission.target_ids));
   }, [plannerVisible, mission?.id, missionTargetKey]);
+  useEffect(() => {
+    if (!mission || (mission.plan_ids ?? []).length === 0 || plans.some((value) => value.mission_id === mission.id)) return;
+    let active = true;
+    void api<{ plans: FleetPlanV2[] }>(`/api/v2/missions/${mission.id}/plans`).then((value) => {
+      if (!active) return;
+      setPlans(value.plans);
+      setPlanID((value.plans.find((plan) => plan.recommended) ?? value.plans[0])?.id ?? "");
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [mission?.id, (mission?.plan_ids ?? []).join("|")]);
   useEffect(() => {
     if (!plannerVisible || !mission) return;
     const marker = `${mission.id}:${missionTargetKey}`;
@@ -984,7 +996,7 @@ export function FleetWorkspace() {
     followContactID = "",
     suppressSpeech = false,
   ) {
-    if (!targetMission) return;
+    if (!targetMission) return null;
     const compiled = await mutate(() =>
       api<CommandDraftV2>(
         `/api/v2/missions/${targetMission.id}/commands:compile`,
@@ -1004,15 +1016,13 @@ export function FleetWorkspace() {
         },
       ),
     ).catch(() => null);
-    if (!compiled) return;
+    if (!compiled) return null;
     setDraft(compiled);
     setCommand("");
-    if (planningMode === "ai_assisted" && compiled.advisor?.summary && !suppressSpeech)
-      void speak(compiled.advisor.summary);
     const current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find(
       (m) => m.id === targetMission.id,
     );
-    if (!current) return;
+    if (!current) return null;
     const result = await mutate(() =>
       api<{ plans: FleetPlanV2[] }>(
         `/api/v2/missions/${targetMission.id}/plans`,
@@ -1036,71 +1046,47 @@ export function FleetWorkspace() {
       setLease(null);
       open("planner");
       await refresh();
+	  if (planningMode === "ai_assisted" && compiled.advisor?.summary && !suppressSpeech)
+		await speak(compiled.advisor.summary);
     }
+	return result ? compiled : null;
   }
-  async function previewPlan() {
-    if (!mission || !activePlan) return;
-    const current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find(
-      (m) => m.id === mission.id,
-    )!;
-    const value = await mutate(() =>
-      api<FleetPreviewV2>(
-        `/api/v2/missions/${mission.id}/plans/${activePlan.id}:preview`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            request_id: requestID("preview"),
-            idempotency_key: requestID("preview-key"),
-            expected_version: current.version,
-          }),
-        },
-      ),
-    ).catch(() => null);
-    if (value) setPreview(value);
-  }
-  async function authorize() {
-    if (!mission || !activePlan) return;
-    const current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find(
-      (m) => m.id === mission.id,
-    )!;
-    const value = await mutate(() =>
-      api<FleetLeaseV2>(
-        `/api/v2/missions/${mission.id}/plans/${activePlan.id}:authorize`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            request_id: requestID("authorize"),
-            idempotency_key: requestID("authorize-key"),
-            expected_version: current.version,
-            plan_hash: activePlan.content_hash,
-            operator_id: "demo-operator",
-          }),
-        },
-      ),
-    ).catch(() => null);
-    if (value) {
-      setLease(value);
-      await refresh();
-    }
-  }
-  async function start() {
-    if (!mission || !activePlan || !lease) return;
-    const current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find(
-      (m) => m.id === mission.id,
-    )!;
-    await mutate(() =>
-      api(`/api/v2/missions/${mission.id}/plans/${activePlan.id}:start`, {
+  async function enactPlan(chosen: FleetPlanV2) {
+    const targetMission = fleet?.missions.find((value) => value.id === chosen.mission_id);
+    if (!targetMission || chosen.policy_status === "prohibited") return;
+    setBusy(true);
+    setError("");
+    try {
+      setActiveMissionID(targetMission.id);
+      setPlanID(chosen.id);
+      open("planner");
+      let current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find((value) => value.id === targetMission.id);
+      if (!current) throw new Error("Mission is no longer available.");
+      const routePreview = await api<FleetPreviewV2>(`/api/v2/missions/${targetMission.id}/plans/${chosen.id}:preview`, {
         method: "POST",
-        body: JSON.stringify({
-          request_id: requestID("start"),
-          idempotency_key: `start-${lease.id}`,
-          expected_version: current.version,
-          plan_hash: activePlan.content_hash,
-          lease_id: lease.id,
-        }),
-      }),
-    );
-    await refresh();
+        body: JSON.stringify({request_id: requestID("preview"), idempotency_key: requestID("preview-key"), expected_version: current.version}),
+      });
+      setPreview(routePreview);
+      current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find((value) => value.id === targetMission.id);
+      if (!current) throw new Error("Mission is no longer available.");
+      const authority = await api<FleetLeaseV2>(`/api/v2/missions/${targetMission.id}/plans/${chosen.id}:authorize`, {
+        method: "POST",
+        body: JSON.stringify({request_id: requestID("authorize"), idempotency_key: requestID("authorize-key"), expected_version: current.version, plan_hash: chosen.content_hash, operator_id: "demo-operator"}),
+      });
+      setLease(authority);
+      current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find((value) => value.id === targetMission.id);
+      if (!current) throw new Error("Mission is no longer available.");
+      await api(`/api/v2/missions/${targetMission.id}/plans/${chosen.id}:start`, {
+        method: "POST",
+        body: JSON.stringify({request_id: requestID("start"), idempotency_key: `start-${authority.id}`, expected_version: current.version, plan_hash: chosen.content_hash, lease_id: authority.id}),
+      });
+      setPendingPlanID("");
+      await refresh();
+    } catch (reason) {
+      setError(reason instanceof KeelMeshError ? `${reason.code}: ${reason.message}` : String(reason));
+    } finally {
+      setBusy(false);
+    }
   }
   async function speak(text: string, global = false) {
     speechAbort.current?.abort();
@@ -1261,9 +1247,8 @@ export function FleetWorkspace() {
     }
   }
   async function beginTranscription() {
-    const targetMission = mission;
     await captureTranscription(async (text) => {
-      if (targetMission) await createPlans(targetMission, text);
+      if (mission) await handlePlannerMessage(text);
     });
   }
   function endTranscription() {
@@ -1359,24 +1344,80 @@ export function FleetWorkspace() {
     }
   }
 
+  function planOptionPayload() {
+    return plans.slice(0, 3).map((value, index) => ({
+      label: String.fromCharCode(65 + index),
+      plan_id: value.id,
+      name: value.name,
+      content_hash: value.content_hash,
+      policy_status: value.policy_status,
+    }));
+  }
+
+  async function askWorkspaceAssistant(text: string) {
+    return api<WorkspaceAssistantResponseV1>("/api/v3/assistant:command", {
+      method: "POST",
+      body: JSON.stringify({
+        schema_version: 1,
+        request_id: requestID("workspace-assistant"),
+        idempotency_key: requestID("workspace-assistant-key"),
+        text,
+        persona: pirate ? "pirate" : "navy",
+        selected_ids: [...selected],
+        open_windows: [...windows],
+        active_mission_id: mission?.id ?? "",
+        plan_options: planOptionPayload(),
+      }),
+    });
+  }
+
+  function chosenPlan(action: WorkspaceAssistantActionV1) {
+    if (action.kind !== "choose_plan") return null;
+    const target = action.target.trim().toLowerCase();
+    return plans.slice(0, 3).find((value, index) =>
+      target === String.fromCharCode(97 + index) ||
+      target === value.id.toLowerCase() ||
+      target === value.name.toLowerCase(),
+    ) ?? null;
+  }
+
+  async function handlePlannerMessage(text: string) {
+    const mightChoose = plans.length > 0 && /\b(option|choice|plan)\s*[abc123]\b|\b(first|second|third)\s+(option|choice|plan)\b|\bgo with\b/i.test(text);
+    if (!mightChoose) {
+      await createPlans(mission, text, "ai_assisted");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const response = await askWorkspaceAssistant(text);
+      const choice = response.actions.map(chosenPlan).find((value) => value !== null);
+      setBusy(false);
+      if (choice) {
+        await enactPlan(choice);
+        await speak(response.speech);
+        return;
+      }
+      await createPlans(mission, text, "ai_assisted");
+    } catch (reason) {
+      setBusy(false);
+      setError(reason instanceof KeelMeshError ? `${reason.code}: ${reason.message}` : String(reason));
+    }
+  }
+
   async function handleGlobalTranscript(text: string) {
     setGlobalVoicePhase("thinking");
     setGlobalVoiceProgress(0.3);
     try {
-      const response = await api<WorkspaceAssistantResponseV1>("/api/v3/assistant:command", {
-        method: "POST",
-        body: JSON.stringify({
-          schema_version: 1,
-          request_id: requestID("global-voice"),
-          idempotency_key: requestID("global-voice-key"),
-          text,
-          persona: pirate ? "pirate" : "navy",
-          selected_ids: [...selected],
-          open_windows: [...windows],
-        }),
-      });
+      const response = await askWorkspaceAssistant(text);
       setGlobalVoicePhase("received");
       setGlobalVoiceProgress(0.68);
+      const choice = response.actions.map(chosenPlan).find((value) => value !== null);
+      if (choice) {
+        await enactPlan(choice);
+        await speak(response.speech, true);
+        return;
+      }
       for (const action of response.actions) {
         if (action.kind !== "create_mission" && action.kind !== "none")
           await applyAssistantAction(action);
@@ -1384,7 +1425,11 @@ export function FleetWorkspace() {
       if (response.mode === "mission") {
         const intent = response.mission_intent.trim() || text;
         const created = await createMissionFor([], "ai", intent);
-        if (created) await createPlans(created, intent, "ai_assisted", "", "", true);
+        if (created) {
+          const compiled = await createPlans(created, intent, "ai_assisted", "", "", true);
+          await speak(compiled?.advisor?.summary || response.speech, true);
+          return;
+        }
       }
       await speak(response.speech, true);
     } catch (e) {
@@ -1518,7 +1563,6 @@ export function FleetWorkspace() {
           pirate={pirate}
           mission={mission}
           groups={fleet.groups}
-          draft={draft}
           command={command}
           setCommand={setCommand}
           plans={plans}
@@ -1526,7 +1570,6 @@ export function FleetWorkspace() {
           preview={preview}
           lease={lease}
           busy={busy}
-          speechState={speechState}
           recording={
             speechState === "requesting microphone" ||
             speechState.startsWith("listening")
@@ -1549,10 +1592,7 @@ export function FleetWorkspace() {
           onObjective={(objective) => updateMission({ objective })}
           onArea={(kind) => setTool(kind)}
           onTool={setTool}
-          onCreate={(intent) => createPlans(mission, intent, "ai_assisted")}
-          onGenerateManual={(intent, guidance, followContactID) =>
-            createPlans(mission, intent, "manual", guidance, followContactID)
-          }
+          onCreate={(intent) => void handlePlannerMessage(intent)}
           onApplyContactSeed={applyContactSeed}
           onClearContactSeed={() => setPlannerContactSeed(null)}
           onUndoGeometry={() => void undoGeometry()}
@@ -1560,10 +1600,10 @@ export function FleetWorkspace() {
           onDeleteGeometry={(focus) => void deleteGeometry(focus)}
           onFocusGeometry={setGeometryFocus}
           onReorderWaypoint={(index, direction) => void reorderWaypoint(index, direction)}
-          onPlan={setPlanID}
-          onPreview={previewPlan}
-          onAuthorize={authorize}
-          onStart={start}
+          onChoose={(id) => {
+            setPlanID(id);
+            setPendingPlanID(id);
+          }}
           onStatus={(status) => mission && setMissionStatus(mission.id, status)}
           onRename={(name) => mission && renameMission(mission.id, name)}
           onDelete={() => mission && deleteMission(mission.id)}
@@ -1910,6 +1950,33 @@ export function FleetWorkspace() {
                   : pirate
                     ? "Scuttle voyage"
                     : "Delete mission"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {pendingPlan && (
+        <div className="mission-delete-backdrop">
+          <section className="mission-delete-dialog plan-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="plan-confirm-title">
+            <header>
+              <ShieldCheck />
+              <div>
+                <small>{pirate ? "CONFIRM COURSE" : `CONFIRM OPTION ${String.fromCharCode(65 + plans.findIndex((value) => value.id === pendingPlan.id))}`}</small>
+                <h2 id="plan-confirm-title">{pendingPlan.name}</h2>
+              </div>
+            </header>
+            <p>{pendingPlan.description}</p>
+            <dl>
+              <span><small>RESERVE</small>{Math.round(pendingPlan.minimum_reserve * 100)}%</span>
+              <span><small>DURATION</small>{pendingPlan.duration_minutes.toFixed(1)} min</span>
+              <span><small>SEPARATION</small>{pendingPlan.minimum_separation_m} m</span>
+            </dl>
+            <code>SHA-256 {pendingPlan.content_hash.slice(0, 24)}…</code>
+            <p className="confirmation-note">This single confirmation previews, authorizes this exact hash, and starts the mission. Any stale or changed state fails closed.</p>
+            <div>
+              <button autoFocus onClick={() => setPendingPlanID("")}>{pirate ? "Belay that" : "Cancel"}</button>
+              <button className="confirm" disabled={busy || pendingPlan.policy_status === "prohibited"} onClick={() => void enactPlan(pendingPlan)}>
+                <Play />{busy ? "VALIDATING…" : pirate ? "Confirm and make sail" : "Confirm and execute"}
               </button>
             </div>
           </section>
@@ -3156,15 +3223,11 @@ function Planner({
   pirate,
   mission,
   groups,
-  draft,
   command,
   setCommand,
   plans,
   activePlan,
-  preview,
-  lease,
   busy,
-  speechState,
   recording,
   tool,
   contactSeed,
@@ -3178,7 +3241,6 @@ function Planner({
   onArea,
   onTool,
   onCreate,
-  onGenerateManual,
   onApplyContactSeed,
   onClearContactSeed,
   onUndoGeometry,
@@ -3186,10 +3248,7 @@ function Planner({
   onDeleteGeometry,
   onFocusGeometry,
   onReorderWaypoint,
-  onPlan,
-  onPreview,
-  onAuthorize,
-  onStart,
+  onChoose,
   onStatus,
   onRename,
   onDelete,
@@ -3197,7 +3256,6 @@ function Planner({
   pirate: boolean;
   mission: MissionWorkspaceV2 | null;
   groups: FleetSnapshotV2["groups"];
-  draft: CommandDraftV2 | null;
   command: string;
   setCommand: (v: string) => void;
   plans: FleetPlanV2[];
@@ -3205,7 +3263,6 @@ function Planner({
   preview: FleetPreviewV2 | null;
   lease: FleetLeaseV2 | null;
   busy: boolean;
-  speechState: string;
   recording: boolean;
   tool: Tool;
   contactSeed: SurfaceContactV2 | null;
@@ -3219,7 +3276,6 @@ function Planner({
   onArea: (k: "include" | "exclude") => void;
   onTool: (t: Tool) => void;
   onCreate: (intent: string) => void;
-  onGenerateManual: (intent: string, guidance: string, followContactID: string) => void;
   onApplyContactSeed: (createNew: boolean) => void;
   onClearContactSeed: () => void;
   onUndoGeometry: () => void;
@@ -3227,10 +3283,7 @@ function Planner({
   onDeleteGeometry: (focus: GeometryFocus) => void;
   onFocusGeometry: (focus: GeometryFocus) => void;
   onReorderWaypoint: (index: number, direction: -1 | 1) => void;
-  onPlan: (id: string) => void;
-  onPreview: () => void;
-  onAuthorize: () => void;
-  onStart: () => void;
+  onChoose: (id: string) => void;
   onStatus: (status: "paused" | "executing") => void;
   onRename: (name: string) => void;
   onDelete: () => void;
@@ -3262,12 +3315,7 @@ function Planner({
           : "Select assets and create a mission."}
       </div>
     );
-  const manualIntent = manualObjective.trim() || `${missionType.replaceAll("_", " ")} mission`,
-    followContactID = missionType === "follow_contact" ? contactSeed?.id ?? draft?.follow_contact_id ?? "" : "",
-    hasRouteGeometry = mission.geometry.waypoints.length > 0 || mission.geometry.included_areas.length > 0,
-    hasPointForBehavior = mission.geometry.pois.some((poi) => poi.kind === missionType),
-    manualReady = mission.target_ids.length > 0 && (missionType === "follow_contact" ? !!followContactID : missionType === "hold" || missionType === "orbit" ? hasPointForBehavior : hasRouteGeometry),
-    coveredTargets = new Set<string>(),
+  const coveredTargets = new Set<string>(),
     assignedGroups = groups.filter((group) => {
       const assigned = group.member_ids.length > 0 && group.member_ids.every((id) => mission.target_ids.includes(id));
       if (assigned) group.member_ids.forEach((id) => coveredTargets.add(id));
@@ -3363,7 +3411,6 @@ function Planner({
             <span>Validating bounded options</span>
           </div>
         )}
-        {activePlan && <PlanMiniMap plan={activePlan} compact />}
         <div ref={chatEnd} />
       </div>
       <div className="chat-composer">
@@ -3424,11 +3471,38 @@ function Planner({
           </button>
         </div>
       </div>
-      <div className="voice-status" title={pirate ? "AI replies are automatically spoken with the Captain Barbossa voice." : "AI replies are automatically spoken with the Jarvis voice."}>
-        <Volume2 />
-        <b>{pirate ? "Captain Barbossa" : "Jarvis"}</b>
-        <span>automatic voice · {speechState}</span>
-      </div>
+      {plans.length > 0 && (
+        <div className="candidate-list ai-plan-choices" aria-label="AI strategy options">
+          {plans.slice(0, 3).map((p, index) => {
+            const expanded = expandedPlans.has(p.id);
+            const label = String.fromCharCode(65 + index);
+            return (
+              <article key={p.id} className={`${activePlan?.id === p.id ? "selected" : ""} ${expanded ? "expanded" : "collapsed"} ${p.policy_status}`}>
+                <header>
+                  <button className="candidate-select" disabled={busy || p.policy_status === "prohibited"} onClick={() => onChoose(p.id)}>
+                    <span className="option-letter">{label}</span>
+                    <b>{p.name}</b>
+                  </button>
+                  {p.recommended && <em>{pirate ? "CAPTAIN'S PICK" : "RECOMMENDED"}</em>}
+                  <button className="candidate-expand" aria-label={`${expanded ? "Collapse" : "Expand"} option ${label}`} onClick={() => setExpandedPlans((current) => { const next = new Set(current); next.has(p.id) ? next.delete(p.id) : next.add(p.id); return next; })}>
+                    {expanded ? <ChevronUp /> : <ChevronDown />}
+                  </button>
+                </header>
+                <div className="candidate-quick-metrics">
+                  <span>{p.duration_minutes.toFixed(0)} min</span>
+                  <span>{Math.round(p.minimum_reserve * 100)}% reserve</span>
+                  <span>{p.minimum_separation_m} m sep</span>
+                </div>
+                <div className="candidate-detail">
+                  <p>{p.description}</p>
+                  <small>{p.maneuvers.join(" → ")}</small>
+                  <code>{p.content_hash.slice(0, 18)}…</code>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
       </section>
       <section className="planner-options-pane">
       {mission.trajectory && (
@@ -3526,172 +3600,6 @@ function Planner({
           </div>
         </div>
       </details>
-      {draft?.geometry_source && (
-        <div className="intent-resolution">
-          <b>INTENT-DERIVED GEOMETRY</b>
-          <code>{draft.geometry_source}</code>
-          {draft.resolution_notes?.map((note) => (
-            <span key={note}>{note}</span>
-          ))}
-        </div>
-      )}
-      {draft?.advisor && (
-        <div className={`mission-advisor ${draft.advisor.state}`}>
-          <header>
-            <Sparkles />
-            <b>
-              {draft.planning_mode === "manual"
-                ? "MANUAL DETERMINISTIC PLANNER"
-                : draft.advisor.provider === "openai"
-                ? "OPENAI MISSION ADVISOR"
-                : draft.advisor.provider === "openrouter"
-                  ? "OPENROUTER MISSION ADVISOR"
-                  : draft.advisor.provider === "local"
-                    ? "LOCAL MISSION ADVISOR"
-                    : "DETERMINISTIC ADVISOR FALLBACK"}
-            </b>
-            <em>{draft.advisor.model}</em>
-          </header>
-          <p>{draft.advisor.summary}</p>
-          {draft.advisor.geometry_option_id && (
-            <code className="advisor-geometry">
-              AI GEOMETRY · {draft.advisor.geometry_option_id}
-            </code>
-          )}
-          <div>
-            {draft.advisor.attempts.map((attempt, index) => (
-              <span
-                className={attempt.state}
-                key={`${attempt.provider}-${attempt.model}-${index}`}
-              >
-                {attempt.provider} · {attempt.model} · {attempt.state} ·{" "}
-                {attempt.latency_ms} ms
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-      {plans.length === 0 ? (
-        <div className="planning-actions">
-          <button className="wide amber" disabled={busy || !manualReady} onClick={() => onGenerateManual(manualIntent, missionType, followContactID)}>
-            <Route /> {pirate ? "Plot deterministic courses" : "Generate routes · no AI"}
-          </button>
-          <button className="wide" disabled={busy || !command.trim()} onClick={() => onCreate(command.trim())}>
-            <Sparkles /> {pirate ? "Ask the ship's intelligence" : "Ask AI for strategy options"}
-          </button>
-          {!manualReady && <small className="manual-readiness">Assign assets and add the map geometry required by the selected mission type.</small>}
-        </div>
-      ) : (
-        <div className="candidate-list">
-          {plans.map((p) => {
-            const expanded = expandedPlans.has(p.id);
-            return (
-            <article
-              key={p.id}
-              className={`${activePlan?.id === p.id ? "selected" : ""} ${expanded ? "expanded" : "collapsed"}`}
-            >
-              <header>
-                <button className="candidate-select" onClick={() => onPlan(p.id)}>
-                  <b>{p.name}</b>
-                </button>
-                <span>
-                  {p.advisor_source}
-                  {p.advisor_model ? ` · ${p.advisor_model}` : ""}
-                </span>
-                {p.recommended && (
-                  <em>{pirate ? "CAPTAIN'S PICK" : "RECOMMENDED"}</em>
-                )}
-                <button
-                  className="candidate-expand"
-                  aria-label={`${expanded ? "Collapse" : "Expand"} ${p.name}`}
-                  onClick={() =>
-                    setExpandedPlans((current) => {
-                      const next = new Set(current);
-                      next.has(p.id) ? next.delete(p.id) : next.add(p.id);
-                      return next;
-                    })
-                  }
-                >
-                  {expanded ? <ChevronUp /> : <ChevronDown />}
-                </button>
-              </header>
-              <div className="candidate-detail">
-                <p>{p.description}</p>
-                <small className="maneuver-sequence">
-                  {p.maneuvers.join(" → ")}
-                </small>
-                <PlanMiniMap plan={p} compact />
-              </div>
-              <dl>
-                <span>
-                  <small>COVERAGE</small>
-                  {p.coverage_percent.toFixed(0)}%
-                </span>
-                <span>
-                  <small>RESERVE</small>
-                  {Math.round(p.minimum_reserve * 100)}%
-                </span>
-                <span>
-                  <small>DURATION</small>
-                  {p.duration_minutes.toFixed(1)}m
-                </span>
-                <span>
-                  <small>SEPARATION</small>
-                  {p.minimum_separation_m}m
-                </span>
-              </dl>
-              <div className="candidate-detail"><code>{p.content_hash.slice(0, 24)}…</code></div>
-            </article>
-          )})}
-        </div>
-      )}
-      {activePlan && !preview && (
-        <button className="wide amber" onClick={onPreview}>
-          <Eye />
-          {pirate ? "Spy the exact course" : "Preview exact routes"}
-        </button>
-      )}
-      {preview && !lease && (
-        <>
-          <div className="nothing-sent">
-            <b>
-              {pirate
-                ? "No order has left the flagship."
-                : "Nothing has been sent yet."}
-            </b>
-            <span>Preview hash {preview.plan_hash.slice(7, 19)}</span>
-            {activePlan?.policy_status === "prohibited" && (
-              <span>{activePlan.reason_codes.join(" · ")}</span>
-            )}
-          </div>
-          <button
-            className="wide amber"
-            disabled={activePlan?.policy_status === "prohibited"}
-            onClick={onAuthorize}
-          >
-            <ShieldCheck />
-            {pirate ? "Authorize exact orders" : "Authorize exact plan"}
-          </button>
-        </>
-      )}
-      {lease && mission.status !== "executing" && (
-        <>
-          <div className="nothing-sent ready">
-            <b>
-              {pirate
-                ? "Signed sailing authority ready"
-                : "Movement lease ready"}
-            </b>
-            <span>
-              Expires {new Date(lease.expires_at).toLocaleTimeString()}
-            </span>
-          </div>
-          <button className="wide amber" onClick={onStart}>
-            <Ship />
-            {pirate ? "Make sail under authority" : "Start authorized mission"}
-          </button>
-        </>
-      )}
       </section>
       </div>
     </div>
@@ -3767,48 +3675,5 @@ function Constraints({
         Apply safer effective limits
       </button>
     </div>
-  );
-}
-
-function PlanMiniMap({ plan, compact = false }: { plan: FleetPlanV2; compact?: boolean }) {
-  const points = plan.assignments.flatMap((assignment) => assignment.route);
-  if (points.length < 2) return null;
-  const minX = Math.min(...points.map((point) => point[0])),
-    maxX = Math.max(...points.map((point) => point[0])),
-    minY = Math.min(...points.map((point) => point[1])),
-    maxY = Math.max(...points.map((point) => point[1])),
-    width = Math.max(maxX - minX, 0.000001),
-    height = Math.max(maxY - minY, 0.000001),
-    scale = Math.min(164 / width, 34 / height),
-    drawnWidth = width * scale,
-    drawnHeight = height * scale,
-    offsetX = 18 + (164 - drawnWidth) / 2,
-    offsetY = 7 + (34 - drawnHeight) / 2,
-    colors = ["#e6a63b", "#62c58e", "#59bdd1", "#b895d8", "#e36e62", "#ece8dc"];
-  const mapCoordinates = (point: Point): [number, number] => [
-    offsetX + (point[0] - minX) * scale,
-    offsetY + drawnHeight - (point[1] - minY) * scale,
-  ];
-  const mapPoint = (point: Point) => mapCoordinates(point).join(",");
-  return (
-    <figure className={`route-summary ${compact ? "compact" : ""}`}>
-      <header>
-        <span>ROUTE SCHEMATIC</span>
-        <b>{plan.assignments.length} tracks · {plan.duration_minutes.toFixed(1)} min</b>
-      </header>
-      <svg viewBox="0 0 200 48" role="img" aria-label={`Route schematic for ${plan.name}`} preserveAspectRatio="xMidYMid meet">
-        <rect className="route-background" x="1" y="1" width="198" height="46" rx="2" />
-        <path className="route-grid" d="M50 2v44M100 2v44M150 2v44M2 24h196" />
-        {plan.assignments.map((assignment, index) => {
-          const color = colors[index % colors.length], start = assignment.route[0], end = assignment.route.at(-1), startXY = start ? mapCoordinates(start) : null, endXY = end ? mapCoordinates(end) : null;
-          return <g key={assignment.vessel_id}>
-            <polyline points={assignment.route.map(mapPoint).join(" ")} style={{ stroke: color }} />
-            {startXY && <circle cx={startXY[0]} cy={startXY[1]} r="1.8" style={{ fill: color }} />}
-            {endXY && <rect x={endXY[0]-1.8} y={endXY[1]-1.8} width="3.6" height="3.6" style={{ fill: color }} />}
-          </g>;
-        })}
-      </svg>
-      <figcaption><i className="start-marker" /> START <i className="end-marker" /> END · colored lines are vessel tracks</figcaption>
-    </figure>
   );
 }

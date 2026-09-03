@@ -139,6 +139,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v2/missions/{id}/geometry", s.geometryV2)
 	mux.HandleFunc("POST /api/v2/missions/{id}/commands:compile", s.compileV2)
 	mux.HandleFunc("POST /api/v2/missions/{id}/plans", s.plansV2)
+	mux.HandleFunc("GET /api/v2/missions/{id}/plans", s.missionPlansV2)
 	mux.HandleFunc("POST /api/v2/missions/{id}/plans/{action}", s.planActionV2)
 	mux.HandleFunc("GET /api/v2/voices", s.voicesV2)
 	mux.HandleFunc("POST /api/v2/speech:synthesize", s.synthesizeV2)

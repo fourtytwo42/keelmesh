@@ -965,6 +965,7 @@ export type WorkspaceAssistantActionV1 = {
     | "set_simulation_rate"
     | "set_theme"
     | "create_mission"
+	| "choose_plan"
     | "none";
   target: string;
   value: number;
