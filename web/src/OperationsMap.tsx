@@ -579,7 +579,8 @@ export function OperationsMap({
       | { kind: "assembly"; group: string }
       | null
     >(null),
-    suppressClick = useRef(false);
+    suppressClick = useRef(false),
+    lastTouchAt = useRef(0);
   const [ready, setReady] = useState(false),
     [box, setBox] = useState<{
       x: number;
@@ -1536,6 +1537,10 @@ export function OperationsMap({
     };
     const context = (e: MapMouseEvent) => {
       e.preventDefault();
+      // Mobile browsers may synthesize a contextmenu event from a touch.
+      // Touch context is owned by the explicit long-press timer below so a
+      // normal tap can never turn into a delayed location card.
+      if (performance.now() - lastTouchAt.current < 1_200) return;
       openContext(e.point, e.lngLat);
     };
     const cancelLongPress = () => {
@@ -1545,6 +1550,7 @@ export function OperationsMap({
     };
     const pointerDown = (event: PointerEvent) => {
       if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+      lastTouchAt.current = performance.now();
       cancelLongPress();
       const rect = canvas.getBoundingClientRect();
       const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -1655,7 +1661,37 @@ export function OperationsMap({
         map.dragPan.enable();
         map.touchZoomRotate.enable();
         onToolDone();
+        cancelLongPress();
+        return;
       }
+      const active = longPress.current;
+      if (!active || active.pointer !== event.pointerId) return;
+      const moved = Math.hypot(event.clientX - active.x, event.clientY - active.y) > 12;
+      cancelLongPress();
+      if (moved) return;
+
+      // Handle a short touch directly. Suppress MapLibre's synthetic click so
+      // the same gesture cannot also select, recenter, or open location UI.
+      suppressClick.current = true;
+      window.setTimeout(() => { suppressClick.current = false; }, 700);
+      setContextMenu(null);
+      const hitBox: [[number, number], [number, number]] = [
+        [point.x - 20, point.y - 20],
+        [point.x + 20, point.y + 20],
+      ];
+      const vessel = map.queryRenderedFeatures(hitBox, {
+        layers: ["vessel-symbols", "group-halos"],
+      })[0];
+      if (vessel?.properties?.id) {
+        const id = String(vessel.properties.id);
+        onSelect([id], "replace");
+        onVessel(id);
+        return;
+      }
+      const contact = map.queryRenderedFeatures(hitBox, {
+        layers: ["surface-contact-symbols", "surface-contact-halos"],
+      })[0];
+      if (contact?.properties?.id) onContact(String(contact.properties.id));
     };
     canvas.addEventListener("pointerdown", pointerDown, { passive: false });
     canvas.addEventListener("pointermove", pointerMove, { passive: false });
