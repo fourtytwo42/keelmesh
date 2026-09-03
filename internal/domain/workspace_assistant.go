@@ -28,9 +28,12 @@ type WorkspacePlanOptionV1 struct {
 }
 
 type WorkspaceAssistantActionV1 struct {
-	Kind   string  `json:"kind"`
-	Target string  `json:"target"`
-	Value  float64 `json:"value"`
+	Kind            string   `json:"kind"`
+	Target          string   `json:"target"`
+	SecondaryTarget string   `json:"secondary_target"`
+	Name            string   `json:"name"`
+	TargetIDs       []string `json:"target_ids"`
+	Value           float64  `json:"value"`
 }
 
 type WorkspaceAssistantResponseV1 struct {

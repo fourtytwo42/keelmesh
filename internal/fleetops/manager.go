@@ -112,6 +112,7 @@ type CompileRequest struct {
 	GuidanceKind          string                                 `json:"guidance_kind"`
 	FollowContactID       string                                 `json:"follow_contact_id"`
 	PlanningMode          string                                 `json:"planning_mode"`
+	StrategyCount         int                                    `json:"strategy_count"`
 	Waypoints             []domain.GeoPointV2                    `json:"waypoints"`
 	Formation             string                                 `json:"formation"`
 	TargetSelection       *domain.MissionTargetSelectionV2       `json:"-"`
@@ -1068,6 +1069,7 @@ func (m *Manager) ResetOperations(req Mutation) (domain.FleetSnapshotV2, error) 
 	m.leases = map[string]domain.FleetLeaseV2{}
 	m.startedPlans = map[string]string{}
 	m.programs = map[string]domain.TrajectoryProgramV1{}
+	m.simulationRate = 20
 	for id, vessel := range m.vessels {
 		vessel.Telemetry.MissionID = ""
 		vessel.Telemetry.Route = nil
@@ -1450,6 +1452,10 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	if planningMode != "manual" && planningMode != "ai_assisted" {
 		return domain.CommandDraftV2{}, &Error{"INVALID_PLANNING_MODE", "Planning mode must be manual or ai_assisted."}
 	}
+	strategyCount := req.StrategyCount
+	if strategyCount != 1 && strategyCount != 3 {
+		strategyCount = 3
+	}
 	notes := []string{}
 	missionChanged := false
 	targets := mission.TargetIDs
@@ -1679,7 +1685,7 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	if len(wps) == 0 && len(mission.Geometry.IncludedAreas) == 0 {
 		amb = append(amb, "Choose an area or waypoint before route generation.")
 	}
-	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, FollowContactID: followContactID, ContactBehavior: contactBehavior, ContactStandoffM: contactStandoffM, PlanningMode: planningMode, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, TargetSelection: req.TargetSelection, CommandInterpretation: req.CommandInterpretation, Ambiguities: amb}
+	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, FollowContactID: followContactID, ContactBehavior: contactBehavior, ContactStandoffM: contactStandoffM, PlanningMode: planningMode, StrategyCount: strategyCount, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, TargetSelection: req.TargetSelection, CommandInterpretation: req.CommandInterpretation, Ambiguities: amb}
 	draft.ContentHash = hashWithout(draft)
 	m.drafts[draft.ID] = draft
 	messageID := "message-" + shortHash(req.IdempotencyKey)
@@ -1729,7 +1735,7 @@ func (m *Manager) PlanningContext(draftID string) (domain.MissionPlanningContext
 			break
 		}
 	}
-	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, float64(m.simTickMS/1000)), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, GeometryOptions: geometryOptions, MapBounds: [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, FormationCurrent: mission.Formation, Conversation: append([]domain.MissionChatMessageV2(nil), conversation...), SurfaceContacts: contacts, FollowContact: follow}, nil
+	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, float64(m.simTickMS/1000)), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, GeometryOptions: geometryOptions, MapBounds: [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, FormationCurrent: mission.Formation, StrategyCount: draft.StrategyCount, Conversation: append([]domain.MissionChatMessageV2(nil), conversation...), SurfaceContacts: contacts, FollowContact: follow}, nil
 }
 
 // ApplyAdvisor validates and freezes advisory strategies into the immutable
@@ -1742,11 +1748,15 @@ func (m *Manager) ApplyAdvisor(draftID string, advisor domain.MissionAdvisorV2) 
 	if !ok {
 		return domain.CommandDraftV2{}, &Error{"DRAFT_NOT_FOUND", "Command draft not found."}
 	}
-	if !validAdvisor(advisor, len(draft.TargetIDs)) {
+	if !validAdvisor(advisor, len(draft.TargetIDs), draft.StrategyCount) {
 		advisor = deterministicAdvisor(len(draft.TargetIDs), draft.GuidanceKind, "model response failed validation")
+		advisor.Strategies = advisor.Strategies[:draft.StrategyCount]
 	}
 	if len(advisor.Strategies) == 3 && !strings.Contains(strings.ToLower(advisor.Summary), "option a") {
 		advisor.Summary = strings.TrimSpace(advisor.Summary) + "\n\nConfirm **Option A**, **B**, or **C** to execute the selected exact plan."
+	}
+	if len(advisor.Strategies) == 1 && !strings.Contains(strings.ToLower(advisor.Summary), "confirm") {
+		advisor.Summary = strings.TrimSpace(advisor.Summary) + "\n\nSay **confirm** to execute this exact validated plan, or ask me for alternatives."
 	}
 	missionChanged := false
 	missionForGeometry := m.missions[draft.MissionID]
@@ -1813,16 +1823,17 @@ func (m *Manager) ApplyAdvisor(draftID string, advisor domain.MissionAdvisorV2) 
 		m.persistAsync()
 	}
 	draft.ContentHash = hashWithout(struct {
-		DraftID      string
-		MissionID    string
-		SourceText   string
-		Targets      []string
-		Geometry     int64
-		FleetVersion int64
-		Constraints  domain.ConstraintSetV2
-		Strategies   []domain.MissionStrategyV2
-		PlanningMode string
-	}{draft.ID, draft.MissionID, draft.SourceText, draft.TargetIDs, draft.GeometryRevision, draft.FleetVersion, draft.Constraints, advisor.Strategies, draft.PlanningMode})
+		DraftID       string
+		MissionID     string
+		SourceText    string
+		Targets       []string
+		Geometry      int64
+		FleetVersion  int64
+		Constraints   domain.ConstraintSetV2
+		Strategies    []domain.MissionStrategyV2
+		PlanningMode  string
+		StrategyCount int
+	}{draft.ID, draft.MissionID, draft.SourceText, draft.TargetIDs, draft.GeometryRevision, draft.FleetVersion, draft.Constraints, advisor.Strategies, draft.PlanningMode, draft.StrategyCount})
 	m.drafts[draftID] = draft
 	return draft, nil
 }
@@ -2553,13 +2564,38 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 		}
 	}
 	assignments := make([]domain.FleetAssignmentV2, 0, len(targets))
+	var followedContact domain.SurfaceContactV2
+	followedContactFound := false
+	if draft.FollowContactID != "" {
+		for _, contact := range m.surfaceContactsLocked() {
+			if contact.ID == draft.FollowContactID {
+				followedContact, followedContactFound = contact, true
+				break
+			}
+		}
+	}
+	var followedReference domain.GeoPointV2
+	if followedContactFound {
+		origins := make([]domain.GeoPointV2, 0, len(targets))
+		speeds := make([]float64, 0, len(targets))
+		for _, id := range targets {
+			vessel := m.vessels[id]
+			origins = append(origins, vessel.Telemetry.Position)
+			speeds = append(speeds, math.Min(speed, vessel.Class.MaxSpeedMPS))
+		}
+		followedReference, _ = groupContactInterceptReference(origins, speeds, followedContact, draft.ContactBehavior, draft.ContactStandoffM, len(targets), 900)
+	}
 	totalEnergyKWH := 0.
 	maxDistance := 0.
 	minReserve := 1.
 	for i, id := range targets {
 		v := m.vessels[id]
 		route := []domain.GeoPointV2{v.Telemetry.Position}
+		actualSpeed := math.Min(speed, v.Class.MaxSpeedMPS)
 		reference := draft.Waypoints
+		if followedContactFound {
+			reference = []domain.GeoPointV2{followedReference}
+		}
 		if len(reference) == 0 && len(mission.Geometry.IncludedAreas) > 0 {
 			reference = sweepLane(mission.Geometry.IncludedAreas[0], i, len(targets))
 		}
@@ -2572,7 +2608,6 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 			route = append(route, domain.GeoPointV2{p[0] + off[0], p[1] + off[1]})
 		}
 		dist := routeDistance(route)
-		actualSpeed := math.Min(speed, v.Class.MaxSpeedMPS)
 		reserve := v.Telemetry.Reserve - batteryUseFraction(v, dist, actualSpeed)
 		if reserve < minReserve {
 			minReserve = reserve
@@ -2621,13 +2656,16 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 		status = "prohibited"
 		reasons = append(reasons, "MAXIMUM_DURATION_VIOLATION")
 	}
-	p := domain.FleetPlanV2{SchemaVersion: 2, ID: fmt.Sprintf("plan-%s-%d", shortHash(draft.ContentHash), index+1), MissionID: mission.ID, DraftID: draft.ID, Name: strategy.Name, Description: strategy.Description, Formation: formation, AdvisorSource: draft.Advisor.Provider, AdvisorModel: draft.Advisor.Model, Maneuvers: cloneStrings(strategy.Maneuvers), FollowContactID: draft.FollowContactID, ContactBehavior: draft.ContactBehavior, ContactStandoffM: draft.ContactStandoffM, ContinuousTracking: draft.FollowContactID != "", ReplanIntervalS: 60, PredictionHorizonS: 180, Assignments: assignments, CoveragePercent: coverage, MinimumReserve: minReserve, DurationMinutes: duration, EnergyKWH: totalEnergyKWH, LinkExposureSeconds: duration * 60 * .08 * float64(index+1), MinimumSeparationM: minSep, PolicyStatus: status, ReasonCodes: reasons, SourceMissionVersion: mission.Version}
+	p := domain.FleetPlanV2{SchemaVersion: 2, ID: fmt.Sprintf("plan-%s-%d", shortHash(draft.ContentHash), index+1), MissionID: mission.ID, DraftID: draft.ID, Name: strategy.Name, Description: strategy.Description, Formation: formation, AdvisorSource: draft.Advisor.Provider, AdvisorModel: draft.Advisor.Model, Maneuvers: cloneStrings(strategy.Maneuvers), FollowContactID: draft.FollowContactID, ContactBehavior: draft.ContactBehavior, ContactStandoffM: draft.ContactStandoffM, ContinuousTracking: draft.FollowContactID != "", ReplanIntervalS: 60, PredictionHorizonS: 900, Assignments: assignments, CoveragePercent: coverage, MinimumReserve: minReserve, DurationMinutes: duration, EnergyKWH: totalEnergyKWH, LinkExposureSeconds: duration * 60 * .08 * float64(index+1), MinimumSeparationM: minSep, PolicyStatus: status, ReasonCodes: reasons, SourceMissionVersion: mission.Version}
 	p.ContentHash = hashWithout(p)
 	return p
 }
 
-func validAdvisor(advisor domain.MissionAdvisorV2, targetCount int) bool {
-	if len(advisor.Strategies) != 3 || advisor.Provider == "" || advisor.State == "" {
+func validAdvisor(advisor domain.MissionAdvisorV2, targetCount, expectedCount int) bool {
+	if expectedCount != 1 && expectedCount != 3 {
+		expectedCount = 3
+	}
+	if len(advisor.Strategies) != expectedCount || advisor.Provider == "" || advisor.State == "" {
 		return false
 	}
 	allowed := map[string]bool{"independent": true, "column": true, "line_abreast": true, "wedge": true, "echelon_left": true, "echelon_right": true, "parallel_columns": true, "dispersed_screen": true, "ring": true, "search_grid": true}
@@ -2883,24 +2921,44 @@ func (m *Manager) refreshContinuousFollowLocked(mission domain.MissionWorkspaceV
 	}
 	nextPlan := plan
 	nextPlan.Assignments = make([]domain.FleetAssignmentV2, 0, len(plan.Assignments))
-	for index, assignment := range plan.Assignments {
+	behavior := plan.ContactBehavior
+	if behavior == "" {
+		behavior = "follow"
+	}
+	standoffM := math.Max(80, mission.Constraints.MinimumObjectSeparationM+30)
+	if plan.ContactStandoffM > 0 {
+		standoffM = math.Max(standoffM, plan.ContactStandoffM)
+	}
+	activationDelay := float64(activationTick - currentTick)
+	contact := surfaceContactAt(spec, time.UnixMilli(m.simulationEpochMS+m.simTickMS).UTC(), activationDelay)
+	origins := make([]domain.GeoPointV2, 0, len(plan.Assignments))
+	speeds := make([]float64, 0, len(plan.Assignments))
+	for _, assignment := range plan.Assignments {
 		vessel, exists := m.vessels[assignment.VesselID]
 		if !exists || vessel.Telemetry.PNTIntegrity == "unsafe" || vessel.Telemetry.Reserve <= mission.Constraints.MinimumReserve || assignment.SpeedMPS > vessel.Class.MaxSpeedMPS || assignment.SpeedMPS > mission.Constraints.MaximumSpeedMPS {
 			return program, false
 		}
+		origins = append(origins, vessel.Telemetry.Position)
+		speeds = append(speeds, assignment.SpeedMPS)
+	}
+	center, interceptETA := groupContactInterceptReference(origins, speeds, contact, behavior, standoffM, len(plan.Assignments), float64(horizon))
+	firstFutureSecond := int(math.Ceil(interceptETA/30))*30 + 30
+	lastFutureSecond := min(horizon, firstFutureSecond+90)
+	for index, assignment := range plan.Assignments {
+		vessel := m.vessels[assignment.VesselID]
 		route := []domain.GeoPointV2{vessel.Telemetry.Position}
-		behavior := plan.ContactBehavior
-		if behavior == "" {
-			behavior = "follow"
-		}
-		standoffM := math.Max(80, mission.Constraints.MinimumObjectSeparationM+30)
-		if plan.ContactStandoffM > 0 {
-			standoffM = math.Max(standoffM, plan.ContactStandoffM)
-		}
-		for seconds := 30; seconds <= horizon; seconds += 30 {
-			predictionSeconds := float64(activationTick - currentTick + int64(seconds))
-			contact := surfaceContactAt(spec, time.UnixMilli(m.simulationEpochMS+m.simTickMS).UTC(), predictionSeconds)
-			center := contactReferencePoint(contact, behavior, standoffM, seconds, len(plan.Assignments))
+		for seconds := 0; seconds <= lastFutureSecond; seconds += 30 {
+			if seconds == 0 {
+				// The first consumed segment aims at the same blue predicted
+				// intercept displayed on the map, rather than chasing the
+				// contact's current yellow marker.
+			} else if seconds < firstFutureSecond {
+				continue
+			} else {
+				predicted := contact
+				predicted.Position = pointAtBearing(contact.Position, contact.HeadingDeg, contact.SpeedMPS*float64(seconds))
+				center = contactReferencePoint(predicted, behavior, standoffM, seconds, len(plan.Assignments))
+			}
 			spacing := mission.Constraints.FormationSpacingM
 			if behavior == "surround" {
 				spacing = standoffM
@@ -2940,6 +2998,60 @@ func pointAtBearing(start domain.GeoPointV2, bearingDeg, distanceM float64) doma
 	latDelta := math.Cos(bearing) * distanceM / 111_000
 	lonDelta := math.Sin(bearing) * distanceM / (111_000 * math.Max(.2, math.Cos(start[1]*math.Pi/180)))
 	return domain.GeoPointV2{start[0] + lonDelta, start[1] + latDelta}
+}
+
+func contactInterceptSeconds(origin, target domain.GeoPointV2, targetHeading, targetSpeed, pursuerSpeed float64) (float64, bool) {
+	latitudeScale := math.Max(.2, math.Cos(origin[1]*math.Pi/180))
+	east := (target[0] - origin[0]) * 111_000 * latitudeScale
+	north := (target[1] - origin[1]) * 111_000
+	heading := targetHeading * math.Pi / 180
+	velocityEast := math.Sin(heading) * targetSpeed
+	velocityNorth := math.Cos(heading) * targetSpeed
+	a := velocityEast*velocityEast + velocityNorth*velocityNorth - pursuerSpeed*pursuerSpeed
+	b := 2 * (east*velocityEast + north*velocityNorth)
+	c := east*east + north*north
+	candidates := []float64{}
+	if math.Abs(a) < 1e-6 {
+		if math.Abs(b) > 1e-6 {
+			candidates = append(candidates, -c/b)
+		}
+	} else if discriminant := b*b - 4*a*c; discriminant >= 0 {
+		root := math.Sqrt(discriminant)
+		candidates = append(candidates, (-b-root)/(2*a), (-b+root)/(2*a))
+	}
+	best := math.MaxFloat64
+	for _, candidate := range candidates {
+		if !math.IsNaN(candidate) && !math.IsInf(candidate, 0) && candidate >= 0 && candidate < best {
+			best = candidate
+		}
+	}
+	return best, best != math.MaxFloat64 && best <= 86_400
+}
+
+func contactInterceptReference(origin domain.GeoPointV2, contact domain.SurfaceContactV2, behavior string, standoffM float64, targetCount int, pursuerSpeed, predictionHorizon float64) (domain.GeoPointV2, float64) {
+	return groupContactInterceptReference([]domain.GeoPointV2{origin}, []float64{pursuerSpeed}, contact, behavior, standoffM, targetCount, predictionHorizon)
+}
+
+func groupContactInterceptReference(origins []domain.GeoPointV2, pursuerSpeeds []float64, contact domain.SurfaceContactV2, behavior string, standoffM float64, targetCount int, predictionHorizon float64) (domain.GeoPointV2, float64) {
+	currentReference := contactReferencePoint(contact, behavior, standoffM, 0, targetCount)
+	eta := 0.0
+	if len(origins) == 0 || len(origins) != len(pursuerSpeeds) {
+		return currentReference, eta
+	}
+	for index, origin := range origins {
+		candidate, ok := contactInterceptSeconds(origin, currentReference, contact.HeadingDeg, contact.SpeedMPS, math.Max(.1, pursuerSpeeds[index]))
+		if !ok {
+			return currentReference, 0
+		}
+		eta = math.Max(eta, candidate)
+	}
+	predictionSeconds := eta
+	if predictionHorizon > 0 {
+		predictionSeconds = math.Min(predictionSeconds, predictionHorizon)
+	}
+	predicted := contact
+	predicted.Position = pointAtBearing(contact.Position, contact.HeadingDeg, contact.SpeedMPS*predictionSeconds)
+	return contactReferencePoint(predicted, behavior, standoffM, int(math.Round(eta)), targetCount), eta
 }
 
 func contactObjectiveWaypoints(spec surfaceTrafficSpec, current domain.SurfaceContactV2, behavior string, standoffM float64, targetCount, horizonS int) []domain.GeoPointV2 {
@@ -3680,6 +3792,15 @@ func (m *Manager) persistAsync() {
 		plans = append(plans, plan)
 	}
 	go func() {
+		// Coalesce bursts of telemetry and UI mutations before contending for
+		// the single persistence writer. Without this guard, stale writers can
+		// queue behind the mutex and delay a synchronous durable delete.
+		timer := time.NewTimer(25 * time.Millisecond)
+		defer timer.Stop()
+		<-timer.C
+		if generation != m.persistenceGeneration.Load() {
+			return
+		}
 		m.persistenceMu.Lock()
 		defer m.persistenceMu.Unlock()
 		if generation != m.persistenceGeneration.Load() {

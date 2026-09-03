@@ -330,9 +330,10 @@ function contactMissionOverlayData(
       }
       eta = Math.max(eta ?? 0, vesselETA);
     }
-    const predictedContact = eta === null
+	const predictionSeconds = eta === null ? null : Math.min(eta, plan.prediction_horizon_seconds || 900);
+	const predictedContact = predictionSeconds === null
       ? contact.position
-      : projectPoint(contact.position, contact.heading_deg, contact.speed_mps * eta);
+	  : projectPoint(contact.position, contact.heading_deg, contact.speed_mps * predictionSeconds);
     const destination = projectPoint(predictedContact, contact.heading_deg + 180, standoff);
     const midpoint: Point = [(origin[0] + destination[0]) / 2, (origin[1] + destination[1]) / 2];
     const distanceNM = geoDistanceM(origin, currentRendezvous) / 1852;
