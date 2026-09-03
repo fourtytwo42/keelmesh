@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: guarded group autonomy, pirate-mode vessel art, and a typed external-agent MCP control boundary are being implemented and verified.
-- Last meaningful change: group snapshots elect the lowest reachable inference-capable vessel ID as the predictable advisory decision node; trajectory adjustments carry decision scope/node and fail closed to safe hold plus `instruction_requested` when PNT or reserve leaves the signed envelope. Three fictional transparent pirate vessel classes replace normal map/inspector assets in Pirate mode.
-- Next step: verify/deploy the current vertical slice, then extend signed group adaptation and pre-authorized signal-seek/return-home corridors without granting the model mission authority.
+- Current task: the first guarded group-autonomy and external MCP vertical slice is deployed on VM 214 and all twelve vessel nodes at commit `9b9027c`.
+- Last meaningful change: group snapshots elect the lowest reachable inference-capable vessel ID as the predictable advisory decision node; trajectory adjustments carry decision scope/node and fail closed to safe hold plus `instruction_requested` when PNT or reserve leaves the signed envelope. Three fictional transparent pirate vessel classes replace normal map/inspector assets in Pirate mode. A separately authenticated typed control MCP exposes read/draft/plan/preview/workspace capabilities without model-owned effect authority.
+- Next step: extend this foundation with signed multi-vessel adaptation proposals, all-affected arming/future activation, simulated leader loss, and pre-authorized signal-seek/return-home corridors.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
 ## Current State
