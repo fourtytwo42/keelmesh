@@ -1924,7 +1924,9 @@ export function FleetWorkspace() {
   if (windows.has("assistant-chat"))
     defs.push({
       id: "assistant-chat", kind: "context", title: pirate ? "Ship's Intelligence" : "KeelMesh Assistant", icon: <MessageCircle />,
+      toggleActivation: windowToggleActivations["assistant-chat"],
       initial: { x: Math.max(20, window.innerWidth - 470), y: Math.max(90, window.innerHeight - 620), width: 430, height: 520 }, minWidth: 310, minHeight: 260,
+      preferredDock: "right", maximizable: true, minimizable: false, toggleMode: "close",
       content: <AssistantChat turns={assistantTurns} value={assistantChatInput} busy={assistantChatBusy} pirate={pirate} onChange={setAssistantChatInput} onSend={(text) => void handleGlobalTypedMessage(text)} onOpenScene={(scene) => { setActiveSceneID(scene.id); if (scene.type === "mission_canvas") open("planner"); else open(`scene-${scene.id}`); }} scenes={commandScenes} />,
     });
   return (
@@ -2085,7 +2087,7 @@ export function FleetWorkspace() {
         sceneAnnotations={commandScenes.find((scene) => scene.id === activeSceneID && scene.state === "active")?.map_annotations ?? []}
         sceneCamera={commandScenes.find((scene) => scene.id === activeSceneID && scene.state === "active")?.map_camera}
       />
-      <button className="assistant-chat-trigger" aria-label="Open text chat with KeelMesh AI" title="Open secondary text chat" onClick={() => toggleWindow("assistant-chat")}><MessageCircle /></button>
+      <button className="assistant-chat-trigger" aria-label="Toggle text chat with KeelMesh AI" title="Open or close text chat" onClick={() => toggleWindow("assistant-chat")}><MessageCircle /></button>
       {pendingDeleteMission && (
         <div className="mission-delete-backdrop">
           <section
