@@ -28,6 +28,26 @@ func TestConversationAssemblyKeepsLatestTwelveTurns(t *testing.T) {
 	}
 }
 
+func TestConversationTurnsAreSessionScopedAndBounded(t *testing.T) {
+	m := testManager()
+	ctx := context.Background()
+	for i := 0; i < 4; i++ {
+		m.RecordExchange(ctx, fmt.Sprintf("shared-%d", i), "demo-operator", "browser-a", "", fmt.Sprintf("user %d", i), fmt.Sprintf("assistant %d", i), "mock")
+	}
+	m.RecordExchange(ctx, "other-session", "demo-operator", "browser-b", "", "private question", "private answer", "mock")
+	m.RecordExchange(ctx, "mission-turn", "demo-operator", "browser-a", "mission-1", "mission question", "mission answer", "mock")
+
+	turns := m.ConversationTurns("demo-operator", "browser-a", 4)
+	if len(turns) != 4 || turns[0].Content != "user 2" || turns[3].Content != "assistant 3" {
+		t.Fatalf("unexpected bounded transcript: %+v", turns)
+	}
+	for _, turn := range turns {
+		if turn.SessionID != "browser-a" || turn.MissionID != "" {
+			t.Fatalf("cross-scope turn leaked into global chat: %+v", turn)
+		}
+	}
+}
+
 func TestCandidateNeedsExactHashAndTombstoneCannotResurrect(t *testing.T) {
 	m := testManager()
 	ctx := context.Background()

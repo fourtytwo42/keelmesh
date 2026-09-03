@@ -86,7 +86,12 @@ func (s *Server) scenesV4(w http.ResponseWriter, r *http.Request) {
 	if s.memory != nil {
 		s.agent.RestoreScenes(s.memory.Scenes(r.URL.Query().Get("actor_identity"), r.URL.Query().Get("session_id")))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"scenes": s.agent.Scenes(r.URL.Query().Get("actor_identity"), r.URL.Query().Get("session_id"))})
+	actor, session := r.URL.Query().Get("actor_identity"), r.URL.Query().Get("session_id")
+	turns := []domain.ConversationTurnV1{}
+	if s.memory != nil {
+		turns = s.memory.ConversationTurns(actor, session, 50)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"scenes": s.agent.Scenes(actor, session), "turns": turns})
 }
 func (s *Server) assistantHistoryV4(w http.ResponseWriter, r *http.Request) { s.scenesV4(w, r) }
 func (s *Server) sceneV4(w http.ResponseWriter, r *http.Request) {
