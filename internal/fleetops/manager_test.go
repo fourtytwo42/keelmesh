@@ -1358,3 +1358,38 @@ func TestClearGroupRouteHoldsAtLowestVesselID(t *testing.T) {
 		t.Fatalf("clear did not create deterministic lowest-ID hold: %#v", updated)
 	}
 }
+
+func TestNominalRangeAndDaylightSolarRecharge(t *testing.T) {
+	m := New("", slog.Default())
+	for slot, wantRangeNM := range map[int]float64{0: 20, 3: 30, 5: 45} {
+		vessel := domain.VesselProfileV2{Class: classFor(slot), Telemetry: domain.VesselTelemetryV2{Reserve: 1}}
+		used := batteryUseFraction(vessel, wantRangeNM*1.852, nominalCruiseMPS)
+		if math.Abs(used-1) > .001 {
+			t.Fatalf("%s nominal range used %.4f battery, want 1.0", vessel.Class.Name, used)
+		}
+	}
+
+	kestrel := domain.VesselProfileV2{Class: classFor(0), Telemetry: domain.VesselTelemetryV2{Reserve: .5}}
+	noonTick := int64(4 * 60 * 60) // The demo day begins at 08:00.
+	charged := m.advanceEnergy(kestrel, 0, noonTick, 3600)
+	if charged < .70 {
+		t.Fatalf("full-sun stationary recharge too slow: %.3f", charged)
+	}
+	cruising := m.advanceEnergy(kestrel, nominalCruiseMPS, noonTick, 3600)
+	if cruising <= kestrel.Telemetry.Reserve {
+		t.Fatalf("full-sun cruise should extend range, reserve %.3f", cruising)
+	}
+
+	full := kestrel
+	full.Telemetry.Reserve = 1
+	nightTick := int64(16 * 60 * 60)
+	travelSeconds := 20 * 1852 / nominalCruiseMPS
+	remaining := m.advanceEnergy(full, nominalCruiseMPS, nightTick, travelSeconds)
+	if remaining > .001 {
+		t.Fatalf("20 nm battery-only calibration left %.4f reserve", remaining)
+	}
+	constraints := defaultConstraints()
+	if constraints.MaximumRouteDistanceKM < 45*1.852 || constraints.MaximumDurationMinutes < 20*1852/nominalCruiseMPS/60 {
+		t.Fatalf("default planning envelope does not expose configured endurance: %#v", constraints)
+	}
+}

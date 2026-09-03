@@ -567,6 +567,9 @@ export type VesselClassV2 = {
   max_speed_mps: number;
   minimum_reserve: number;
   endurance_hours: number;
+  nominal_range_nm: number;
+  battery_capacity_kwh: number;
+  solar_peak_kw: number;
   communications_role: boolean;
 };
 export type EnvironmentV2 = {

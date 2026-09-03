@@ -11,6 +11,9 @@ type VesselClassV2 struct {
 	MaxSpeedMPS        float64 `json:"max_speed_mps"`
 	MinimumReserve     float64 `json:"minimum_reserve"`
 	EnduranceHours     float64 `json:"endurance_hours"`
+	NominalRangeNM     float64 `json:"nominal_range_nm"`
+	BatteryCapacityKWH float64 `json:"battery_capacity_kwh"`
+	SolarPeakKW        float64 `json:"solar_peak_kw"`
 	CommunicationsRole bool    `json:"communications_role"`
 }
 

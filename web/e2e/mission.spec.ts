@@ -230,7 +230,11 @@ test("fleet rail, search, group, and filtered selection resolve exact targets", 
   await expect(rail.locator(".fleet-vessel-row.selected", { hasText: "Gannet" })).toBeVisible();
   await expect(rail.locator(".collection-strip")).toHaveCount(0);
   await rail.getByRole("button", { name: "View status of Gannet", exact: true }).click();
-  await expect(page.getByRole("region", { name: /Gannet \(KM-214\)/ })).toContainText("LOCAL CONDITIONS");
+  const inspector = page.getByRole("region", { name: /Gannet \(KM-214\)/ });
+  await expect(inspector).toContainText("LOCAL CONDITIONS");
+  await expect(inspector).toContainText("NOMINAL RANGE");
+  await expect(inspector).toContainText("20 nm full · battery only");
+  await expect(inspector).toContainText("4.0 kW");
 
   await rail.getByRole("button", { name: "View status of WS Watch Shoal", exact: true }).click();
   await expect(page.getByRole("region", { name: "Group · WS", exact: true })).toContainText("PRIMARY OPERATIONAL GROUP");

@@ -4,8 +4,8 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: Fleet/Groups route playback removal is implemented, verified, and deployed.
-- Last meaningful change: group-level waypoint play/loop/pause controls were removed from Fleet/Groups because route authoring and execution now belong to mission workflows. Group rows retain only selection, status inspection, and group deletion controls.
+- Current task: vessel range and daylight solar calibration is implemented, verified, and deployed.
+- Last meaningful change: fleet energy planning and runtime battery accounting now share one class-aware model. Kestrel establishes the requested 20 nm battery-only baseline at 1.8 m/s, Mariner and Atlas retain 30 nm and 45 nm class differentiation, and peak daylight solar can offset cruise draw while restoring about 21% battery per simulated hour at station keep.
 - Next step: continue M8D automatic node-agent interruption escalation or M9 signed group adaptation from this clean checkpoint.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -714,6 +714,14 @@ When sources conflict, use this order:
 - Files: `web/src/FleetWorkspace.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
 - Commands/tests: strict TypeScript; seven Vitest assertions; Vite production build; focused deployed Playwright Fleet/Groups workflow; central and twelve-node health/hash verification.
 - Result: VM 214 and all twelve vessel nodes run binary SHA-256 `7ef37d97730c84f5698995cebb56a59889ec0c2563cd39a7b3391a18e348ba7c`. No GitHub-hosted workflow or Proxmox snapshot ran.
+
+### 2026-09-03 - Nominal range and daylight solar calibration
+
+- Context: The old planner capped routes at 25 km (13.5 nm), used a separate reserve approximation, and disagreed with the runtime propulsion model; solar recharge was too weak to read clearly in the accelerated demonstration.
+- Decision: Use one class-aware cubic propulsion model for planning and execution, calibrated at 1.8 m/s to 20 nm Kestrel, 30 nm Mariner, and 45 nm Atlas battery-only nominal range. Begin the demo solar day at 08:00, use 4/9/20 kW peak arrays, and expose nominal remaining range plus peak solar output in Vessel Inspector. Increase default mission bounds to 85 km and 12 hours; battery and reserve policy still reject infeasible routes per vessel.
+- Files: `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, `web/src/types.ts`, `web/src/FleetWorkspace.tsx`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: full Go tests/vet in Go 1.27; strict TypeScript; seven Vitest assertions; Vite production build; live class-contract inspection; focused deployed Playwright vessel-inspector workflow; central and twelve-node health/hash verification.
+- Result: At full sun, a stationary Kestrel gains about 21% charge per simulated hour and normal 1.8 m/s cruise is solar-positive. VM 214 and all twelve vessel nodes run binary SHA-256 `9fa3c69fa39f4ff73241799c3c3b4c131a7f3b5bf97d2fcfad914c1bfbce984a`. No GitHub-hosted workflow or Proxmox snapshot ran.
 
 ## Open Follow-ups
 

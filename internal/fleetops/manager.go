@@ -275,11 +275,11 @@ func (m *Manager) Run(ctx context.Context) {
 func classFor(slot int) domain.VesselClassV2 {
 	switch {
 	case slot < 3:
-		return domain.VesselClassV2{ID: "kestrel", Name: "Kestrel", Role: "agile scout", MaxSpeedMPS: 3.2, MinimumReserve: .22, EnduranceHours: 8}
+		return domain.VesselClassV2{ID: "kestrel", Name: "Kestrel", Role: "agile scout", MaxSpeedMPS: 3.2, MinimumReserve: .22, EnduranceHours: 5.7, NominalRangeNM: 20, BatteryCapacityKWH: 18, SolarPeakKW: 4}
 	case slot < 5:
-		return domain.VesselClassV2{ID: "mariner", Name: "Mariner", Role: "general-purpose platform", MaxSpeedMPS: 2.5, MinimumReserve: .25, EnduranceHours: 14}
+		return domain.VesselClassV2{ID: "mariner", Name: "Mariner", Role: "general-purpose platform", MaxSpeedMPS: 2.5, MinimumReserve: .25, EnduranceHours: 8.6, NominalRangeNM: 30, BatteryCapacityKWH: 40, SolarPeakKW: 9}
 	default:
-		return domain.VesselClassV2{ID: "atlas", Name: "Atlas", Role: "endurance, support, and communications relay", MaxSpeedMPS: 1.9, MinimumReserve: .30, EnduranceHours: 30, CommunicationsRole: true}
+		return domain.VesselClassV2{ID: "atlas", Name: "Atlas", Role: "endurance, support, and communications relay", MaxSpeedMPS: 1.9, MinimumReserve: .30, EnduranceHours: 12.9, NominalRangeNM: 45, BatteryCapacityKWH: 90, SolarPeakKW: 20, CommunicationsRole: true}
 	}
 }
 
@@ -2357,7 +2357,7 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 	formation := strategy.Formation
 	speed := math.Max(.35, math.Min(draft.Constraints.MaximumSpeedMPS, draft.Constraints.MaximumSpeedMPS*strategy.SpeedFactor))
 	assignments := make([]domain.FleetAssignmentV2, 0, len(targets))
-	total := 0.
+	totalEnergyKWH := 0.
 	maxDistance := 0.
 	minReserve := 1.
 	for i, id := range targets {
@@ -2372,13 +2372,14 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 			route = append(route, domain.GeoPointV2{p[0] + off[0], p[1] + off[1]})
 		}
 		dist := routeDistance(route)
-		reserve := v.Telemetry.Reserve - dist*(.018+speed*.004)
+		actualSpeed := math.Min(speed, v.Class.MaxSpeedMPS)
+		reserve := v.Telemetry.Reserve - batteryUseFraction(v, dist, actualSpeed)
 		if reserve < minReserve {
 			minReserve = reserve
 		}
-		total += dist
 		maxDistance = math.Max(maxDistance, dist)
-		assignments = append(assignments, domain.FleetAssignmentV2{VesselID: id, Route: route, SpeedMPS: math.Min(speed, v.Class.MaxSpeedMPS), DistanceKM: dist})
+		totalEnergyKWH += batteryUseFraction(v, dist, actualSpeed) * v.Class.BatteryCapacityKWH
+		assignments = append(assignments, domain.FleetAssignmentV2{VesselID: id, Route: route, SpeedMPS: actualSpeed, DistanceKM: dist})
 	}
 	// The model chooses a planning posture, not final kinematics. For balanced
 	// or coverage-oriented strategies, deterministically raise speed only as
@@ -2389,10 +2390,13 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 		if required > speed {
 			speed = math.Min(draft.Constraints.MaximumSpeedMPS, required)
 			minReserve = 1
+			totalEnergyKWH = 0
 			for i := range assignments {
 				v := m.vessels[assignments[i].VesselID]
 				assignments[i].SpeedMPS = math.Min(speed, v.Class.MaxSpeedMPS)
-				reserve := v.Telemetry.Reserve - assignments[i].DistanceKM*(.018+assignments[i].SpeedMPS*.004)
+				used := batteryUseFraction(v, assignments[i].DistanceKM, assignments[i].SpeedMPS)
+				reserve := v.Telemetry.Reserve - used
+				totalEnergyKWH += used * v.Class.BatteryCapacityKWH
 				minReserve = math.Min(minReserve, reserve)
 			}
 		}
@@ -2417,7 +2421,7 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 		status = "prohibited"
 		reasons = append(reasons, "MAXIMUM_DURATION_VIOLATION")
 	}
-	p := domain.FleetPlanV2{SchemaVersion: 2, ID: fmt.Sprintf("plan-%s-%d", shortHash(draft.ContentHash), index+1), MissionID: mission.ID, DraftID: draft.ID, Name: strategy.Name, Description: strategy.Description, Formation: formation, AdvisorSource: draft.Advisor.Provider, AdvisorModel: draft.Advisor.Model, Maneuvers: cloneStrings(strategy.Maneuvers), Assignments: assignments, CoveragePercent: coverage, MinimumReserve: minReserve, DurationMinutes: duration, EnergyKWH: total * (1.8 + speed*.4), LinkExposureSeconds: duration * 60 * .08 * float64(index+1), MinimumSeparationM: minSep, PolicyStatus: status, ReasonCodes: reasons, SourceMissionVersion: mission.Version}
+	p := domain.FleetPlanV2{SchemaVersion: 2, ID: fmt.Sprintf("plan-%s-%d", shortHash(draft.ContentHash), index+1), MissionID: mission.ID, DraftID: draft.ID, Name: strategy.Name, Description: strategy.Description, Formation: formation, AdvisorSource: draft.Advisor.Provider, AdvisorModel: draft.Advisor.Model, Maneuvers: cloneStrings(strategy.Maneuvers), Assignments: assignments, CoveragePercent: coverage, MinimumReserve: minReserve, DurationMinutes: duration, EnergyKWH: totalEnergyKWH, LinkExposureSeconds: duration * 60 * .08 * float64(index+1), MinimumSeparationM: minSep, PolicyStatus: status, ReasonCodes: reasons, SourceMissionVersion: mission.Version}
 	p.ContentHash = hashWithout(p)
 	return p
 }
@@ -2742,18 +2746,59 @@ func geoDistanceM(a, b domain.GeoPointV2) float64 {
 	return math.Hypot((b[0]-a[0])*111_000*math.Cos(latitude), (b[1]-a[1])*111_000)
 }
 
-func (m *Manager) advanceEnergy(vessel domain.VesselProfileV2, speed float64, missionTick int64, seconds float64) float64 {
-	base, propulsion, batteryKWH, solarKW := 250., 160., 40., 2.
+const (
+	nominalCruiseMPS     = 1.8
+	demoSolarStartSecond = 8 * 60 * 60
+)
+
+type vesselEnergyProfile struct {
+	baseW, propulsionWPerMPS3, batteryKWH, solarPeakKW float64
+}
+
+func energyProfile(vessel domain.VesselProfileV2) vesselEnergyProfile {
+	baseW := 250.
 	switch vessel.Class.ID {
 	case "kestrel":
-		base, propulsion, batteryKWH, solarKW = 150, 85, 18, 1.2
+		baseW = 150
 	case "atlas":
-		base, propulsion, batteryKWH, solarKW = 450, 320, 90, 4
+		baseW = 450
 	}
-	dayPhase := 2 * math.Pi * float64(missionTick%86400) / 86400
-	solar := solarKW * 1000 * math.Max(0, math.Sin(dayPhase-math.Pi/2))
-	load := base + propulsion*math.Pow(speed, 3)
-	delta := (solar - load) * seconds / 3_600_000 / batteryKWH
+	batteryKWH := vessel.Class.BatteryCapacityKWH
+	rangeNM := vessel.Class.NominalRangeNM
+	if batteryKWH <= 0 || rangeNM <= 0 {
+		configured := classFor(map[string]int{"kestrel": 0, "mariner": 3, "atlas": 5}[vessel.Class.ID])
+		batteryKWH, rangeNM = configured.BatteryCapacityKWH, configured.NominalRangeNM
+	}
+	travelHours := rangeNM * 1852 / nominalCruiseMPS / 3600
+	targetCruiseLoadW := batteryKWH * 1000 / travelHours
+	propulsion := math.Max(0, (targetCruiseLoadW-baseW)/math.Pow(nominalCruiseMPS, 3))
+	return vesselEnergyProfile{baseW: baseW, propulsionWPerMPS3: propulsion, batteryKWH: batteryKWH, solarPeakKW: vessel.Class.SolarPeakKW}
+}
+
+func batteryUseFraction(vessel domain.VesselProfileV2, distanceKM, speedMPS float64) float64 {
+	if distanceKM <= 0 || speedMPS <= 0 {
+		return 0
+	}
+	profile := energyProfile(vessel)
+	travelHours := distanceKM * 1000 / speedMPS / 3600
+	loadKW := (profile.baseW + profile.propulsionWPerMPS3*math.Pow(speedMPS, 3)) / 1000
+	return loadKW * travelHours / profile.batteryKWH
+}
+
+func solarFactor(missionTick int64) float64 {
+	daySecond := (missionTick + demoSolarStartSecond) % 86400
+	if daySecond < 0 {
+		daySecond += 86400
+	}
+	dayPhase := 2 * math.Pi * float64(daySecond) / 86400
+	return math.Max(0, math.Sin(dayPhase-math.Pi/2))
+}
+
+func (m *Manager) advanceEnergy(vessel domain.VesselProfileV2, speed float64, missionTick int64, seconds float64) float64 {
+	profile := energyProfile(vessel)
+	solar := profile.solarPeakKW * 1000 * solarFactor(missionTick)
+	load := profile.baseW + profile.propulsionWPerMPS3*math.Pow(speed, 3)
+	delta := (solar - load) * seconds / 3_600_000 / profile.batteryKWH
 	return math.Max(0, math.Min(1, vessel.Telemetry.Reserve+delta))
 }
 
@@ -2913,7 +2958,7 @@ func (m *Manager) sign(v any) string {
 }
 
 func defaultConstraints() domain.ConstraintSetV2 {
-	return domain.ConstraintSetV2{MinimumReserve: .30, MaximumSpeedMPS: 1.8, MinimumVesselSeparationM: 35, MinimumObjectSeparationM: 50, MaximumWaveHeightM: 2.2, MaximumWindMPS: 16, MaximumPNTUncertaintyM: 25, MaximumDurationMinutes: 240, MaximumRouteDistanceKM: 25, MinimumTapeWatermarkSeconds: 20, Formation: "column", FormationSpacingM: 60, LeaderPolicy: "best_link_and_reserve", RegroupThresholdM: 120}
+	return domain.ConstraintSetV2{MinimumReserve: .30, MaximumSpeedMPS: 1.8, MinimumVesselSeparationM: 35, MinimumObjectSeparationM: 50, MaximumWaveHeightM: 2.2, MaximumWindMPS: 16, MaximumPNTUncertaintyM: 25, MaximumDurationMinutes: 720, MaximumRouteDistanceKM: 85, MinimumTapeWatermarkSeconds: 20, Formation: "column", FormationSpacingM: 60, LeaderPolicy: "best_link_and_reserve", RegroupThresholdM: 120}
 }
 func conservative(a, b domain.ConstraintSetV2) domain.ConstraintSetV2 {
 	if a.MinimumReserve < b.MinimumReserve {
@@ -3408,6 +3453,10 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 		if json.Unmarshal(b, &v) == nil && v.ID != "" {
 			if seeded, ok := m.vessels[v.ID]; ok {
 				v = migrateLegacySpawn(v, seeded)
+				// Vessel-class energy envelopes are release configuration rather
+				// than operator identity. Refresh them when older persisted profiles
+				// load so range and solar behavior cannot remain on stale constants.
+				v.Class = seeded.Class
 			}
 			// Current simulated nodes all expose an inference route. Future physical
 			// deployments may persist false for nodes without a GPU/provider.

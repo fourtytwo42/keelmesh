@@ -2670,6 +2670,16 @@ function VesselInspector({
           sub="validated work"
         />
         <Metric k="HEALTH" v={t.health} sub="all systems" />
+        <Metric
+          k="NOMINAL RANGE"
+          v={`${(t.reserve * vessel.class.nominal_range_nm).toFixed(1)} nm`}
+          sub={`${vessel.class.nominal_range_nm.toFixed(0)} nm full · battery only`}
+        />
+        <Metric
+          k="SOLAR ARRAY"
+          v={`${vessel.class.solar_peak_kw.toFixed(1)} kW`}
+          sub="peak daylight output"
+        />
       </div>
       <h3>LOCAL CONDITIONS</h3>
       <div className="condition-strip">
