@@ -292,7 +292,7 @@ services:
       minio:
         condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
-    command: ["mc alias set memory http://minio:9000 keelmesh-memory '$${KEELMESH_MINIO_PASSWORD:-keelmesh-memory-lab-only}' && mc mb --ignore-existing memory/keelmesh-memory && mc anonymous set none memory/keelmesh-memory"]
+    command: ["mc alias set memory http://minio:9000 keelmesh-memory \"$${KEELMESH_MINIO_PASSWORD}\" && mc mb --ignore-existing memory/keelmesh-memory && mc anonymous set none memory/keelmesh-memory"]
     environment:
       KEELMESH_MINIO_PASSWORD: ${KEELMESH_MINIO_PASSWORD:-keelmesh-memory-lab-only}
     restart: "no"
