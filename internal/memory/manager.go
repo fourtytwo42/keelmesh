@@ -469,6 +469,7 @@ func (m *Manager) Forget(ctx context.Context, id string, req Mutation) (domain.M
 	m.mu.Unlock()
 	m.persistJSON(ctx, "UPDATE memory_items SET tombstoned=true,updated_at=$2 WHERE id=$1", id, v.UpdatedAt)
 	m.persistJSON(ctx, "INSERT INTO memory_tombstones(item_id,actor_id,reason,created_at) VALUES($1,$2,$3,$4) ON CONFLICT(item_id) DO NOTHING", id, req.ActorID, "operator_forget", v.UpdatedAt)
+	m.publish("memory.current.v1", id, v)
 	m.publish("memory.invalidations.v1", id, map[string]any{"item_id": id, "tombstoned": true, "created_at": v.UpdatedAt})
 	m.mu.RLock()
 	local := m.local
@@ -557,8 +558,14 @@ func (m *Manager) StartReplay(ctx context.Context, req Mutation) (domain.MemoryR
 	m.mu.RUnlock()
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	live := checksum(items)
-	r := domain.MemoryReplayV1{ID: id, State: "completed", SourceEvents: int64(len(items) + turns), ProjectedItems: int64(len(items)), LiveChecksum: live, ReplayChecksum: live, Matches: true, StartedAt: started, CompletedAt: time.Now().UTC()}
-	for _, v := range items {
+	replayed, sourceEvents, kafkaReplay := m.replayKafka(ctx)
+	if !kafkaReplay {
+		replayed = items
+		sourceEvents = int64(len(items) + turns)
+	}
+	replayedChecksum := checksum(replayed)
+	r := domain.MemoryReplayV1{ID: id, State: "completed", SourceEvents: sourceEvents, ProjectedItems: int64(len(replayed)), LiveChecksum: live, ReplayChecksum: replayedChecksum, Matches: live == replayedChecksum, StartedAt: started, CompletedAt: time.Now().UTC()}
+	for _, v := range replayed {
 		r.ProjectedRevisions += int64(v.Revision)
 		if v.Tombstoned {
 			r.ProjectedTombstones++
@@ -569,6 +576,77 @@ func (m *Manager) StartReplay(ctx context.Context, req Mutation) (domain.MemoryR
 	m.mu.Unlock()
 	m.persistJSON(ctx, "INSERT INTO memory_replays(id,state,payload,live_checksum,replay_checksum,matches,started_at,completed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", id, r.State, r, r.LiveChecksum, r.ReplayChecksum, r.Matches, r.StartedAt, r.CompletedAt)
 	return r, nil
+}
+
+func (m *Manager) replayKafka(ctx context.Context) ([]domain.MemoryItemV1, int64, bool) {
+	if len(m.cfg.Brokers) == 0 {
+		return nil, 0, false
+	}
+	m.mu.RLock()
+	producer := m.producer
+	m.mu.RUnlock()
+	if producer != nil {
+		flushCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		_ = producer.Flush(flushCtx)
+		cancel()
+	}
+	client, err := kgo.NewClient(kgo.SeedBrokers(m.cfg.Brokers...), kgo.ConsumerGroup(stable("memory-replay-group", time.Now().UTC().Format(time.RFC3339Nano))), kgo.ConsumeTopics("memory.current.v1", "memory.invalidations.v1"), kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()), kgo.DisableAutoCommit())
+	if err != nil {
+		return nil, 0, false
+	}
+	defer client.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	projected := map[string]domain.MemoryItemV1{}
+	tombstones := map[string]bool{}
+	var events int64
+	seen, idle := false, 0
+	for time.Now().Before(deadline) {
+		pollCtx, cancel := context.WithTimeout(ctx, 350*time.Millisecond)
+		fetches := client.PollFetches(pollCtx)
+		cancel()
+		count := 0
+		fetches.EachRecord(func(record *kgo.Record) {
+			count++
+			events++
+			if record.Topic == "memory.current.v1" {
+				var item domain.MemoryItemV1
+				if json.Unmarshal(record.Value, &item) == nil && item.ID != "" {
+					projected[item.ID] = item
+				}
+				return
+			}
+			var invalidation struct {
+				ItemID     string `json:"item_id"`
+				Tombstoned bool   `json:"tombstoned"`
+			}
+			if json.Unmarshal(record.Value, &invalidation) == nil && invalidation.Tombstoned {
+				tombstones[invalidation.ItemID] = true
+			}
+		})
+		if count > 0 {
+			seen, idle = true, 0
+		} else if seen {
+			idle++
+			if idle >= 3 {
+				break
+			}
+		}
+	}
+	if !seen {
+		return nil, 0, false
+	}
+	for id := range tombstones {
+		if item, ok := projected[id]; ok {
+			item.Tombstoned = true
+			projected[id] = item
+		}
+	}
+	items := make([]domain.MemoryItemV1, 0, len(projected))
+	for _, item := range projected {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+	return items, events, true
 }
 
 func (m *Manager) Reset(ctx context.Context, req Mutation) (domain.MemorySnapshotV1, error) {
