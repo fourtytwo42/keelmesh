@@ -90,6 +90,13 @@ CREATE TABLE IF NOT EXISTS mission_workspaces (
   updated_at timestamptz NOT NULL
 );
 CREATE INDEX IF NOT EXISTS mission_workspaces_status_idx ON mission_workspaces(status, updated_at DESC);
+CREATE TABLE IF NOT EXISTS trajectory_programs (
+  mission_id text PRIMARY KEY REFERENCES mission_workspaces(id) ON DELETE CASCADE,
+  active_revision integer NOT NULL,
+  content_hash text NOT NULL,
+  payload jsonb NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS mission_command_drafts (
   id text PRIMARY KEY,
   mission_id text NOT NULL,

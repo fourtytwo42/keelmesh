@@ -114,6 +114,15 @@ class MissionGeometryOption(BaseModel):
     depth_validated: bool
 
 
+class MissionChatMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    role: str
+    markdown: str = Field(max_length=1600)
+    state: str
+    created_at: str
+
+
 class MissionOptionsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: int = 2
@@ -131,6 +140,7 @@ class MissionOptionsRequest(BaseModel):
     geometry_options: list[MissionGeometryOption] = Field(default_factory=list, max_length=8)
     map_bounds: list[tuple[float, float]] = Field(default_factory=list, max_length=2)
     formation_current: str
+    conversation: list[MissionChatMessage] = Field(default_factory=list, max_length=12)
 
 
 ALLOWED_FORMATIONS = {
@@ -232,6 +242,19 @@ def parse_geometry_option_id(text: str, allowed: list[str]) -> str:
     if not allowed and selected:
         raise ValueError("provider attempted to replace operator geometry")
     return selected
+
+
+def parse_assistant_markdown(text: str) -> str:
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE)
+    if not cleaned.startswith("{"):
+        start, end = cleaned.find("{"), cleaned.rfind("}")
+        if start >= 0 and end > start:
+            cleaned = cleaned[start : end + 1]
+    value = json.loads(cleaned)
+    message = str(value.get("assistant_markdown", "")).strip() if isinstance(value, dict) else ""
+    if not message:
+        raise ValueError("provider returned no conversational mission reply")
+    return message[:1200]
 
 
 def parse_eval_json(text: str, expected: list[str]) -> tuple[list[str], list[str]]:
@@ -406,7 +429,8 @@ def mission_system_prompt(target_count: int, waypoint_count: int, geometry_ids: 
         else "Return geometry_option_id as an empty string because operator geometry is already fixed."
     )
     return (
-        "You are a maritime simulation mission-strategy and geometry-selection advisor. Return only JSON with geometry_option_id and a strategies array of two to four genuinely distinct options. "
+        "You are a conversational maritime simulation mission advisor. Return only JSON with assistant_markdown, geometry_option_id, and a strategies array of two to four genuinely distinct options. "
+        "assistant_markdown must directly answer the latest operator message, briefly explain the important tradeoffs, and use compact Markdown when useful; never return a generic strategy-count status line. "
         "Each option requires id, name, description, formation, speed_factor (0.25..1), reserve_bias (0..1), and maneuvers (2..6 short steps). "
         f"{formation_rule} {geometry_rule} Supported formations: {sorted(ALLOWED_FORMATIONS)}. "
         "Use vessel count, class, reserve, environment, constraints, map geometry, and the operator's exact intent. "
@@ -425,8 +449,13 @@ def mission_response_format(target_count: int, geometry_ids: list[str]) -> dict[
             "schema": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["geometry_option_id", "strategies"],
+                "required": ["assistant_markdown", "geometry_option_id", "strategies"],
                 "properties": {
+                    "assistant_markdown": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1200,
+                    },
                     "geometry_option_id": {
                         "type": "string",
                         "enum": geometry_ids if geometry_ids else [""],
@@ -486,7 +515,7 @@ def provider_message_text(data: dict[str, Any]) -> str:
 
 async def openrouter_mission_attempt(
     model: str, request: MissionOptionsRequest
-) -> tuple[list[dict[str, Any]], str, int]:
+) -> tuple[list[dict[str, Any]], str, str, int]:
     geometry_ids = [option.id for option in request.geometry_options]
     headers = {
         "Authorization": f"Bearer {STATE.cloud_key}",
@@ -525,6 +554,7 @@ async def openrouter_mission_attempt(
     return (
         parse_mission_json(content, request.target_count, request.guidance_kind, effective_waypoints),
         parse_geometry_option_id(content, geometry_ids),
+        parse_assistant_markdown(content),
         response.status_code,
     )
 
@@ -543,7 +573,7 @@ def openai_response_text(data: dict[str, Any]) -> str:
 
 async def openai_mission_attempt(
     request: MissionOptionsRequest,
-) -> tuple[list[dict[str, Any]], str, int]:
+) -> tuple[list[dict[str, Any]], str, str, int]:
     geometry_ids = [option.id for option in request.geometry_options]
     chat_format = mission_response_format(request.target_count, geometry_ids)["json_schema"]
     payload = {
@@ -573,13 +603,14 @@ async def openai_mission_attempt(
     return (
         parse_mission_json(content, request.target_count, request.guidance_kind, effective_waypoints),
         parse_geometry_option_id(content, geometry_ids),
+        parse_assistant_markdown(content),
         response.status_code,
     )
 
 
 async def local_mission_attempt(
     request: MissionOptionsRequest,
-) -> tuple[list[dict[str, Any]], str, int]:
+) -> tuple[list[dict[str, Any]], str, str, int]:
     geometry_ids = [option.id for option in request.geometry_options]
     payload = {
         "model": STATE.local_model,
@@ -607,6 +638,7 @@ async def local_mission_attempt(
     return (
         parse_mission_json(content, request.target_count, request.guidance_kind, effective_waypoints),
         parse_geometry_option_id(content, geometry_ids),
+        parse_assistant_markdown(content),
         response.status_code,
     )
 
@@ -708,7 +740,7 @@ def deterministic_mission_options(request: MissionOptionsRequest) -> list[dict[s
 
 async def route_mission_provider(
     request: MissionOptionsRequest,
-) -> tuple[list[dict[str, Any]], str, list[dict[str, Any]], str, str]:
+) -> tuple[list[dict[str, Any]], str, str, list[dict[str, Any]], str, str]:
     attempts: list[dict[str, Any]] = []
     deadline = time.monotonic() + 20.0
     if STATE.provider_mode == "connected" and STATE.openai_key and not STATE.fail_cloud_next:
@@ -716,7 +748,7 @@ async def route_mission_provider(
         if circuit.ready():
             started_iso, started = now(), time.monotonic()
             try:
-                strategies, geometry_option_id, status = await openai_mission_attempt(request)
+                strategies, geometry_option_id, assistant_markdown, status = await openai_mission_attempt(request)
                 circuit.success()
                 attempts.append(
                     {
@@ -728,7 +760,7 @@ async def route_mission_provider(
                         "status_code": status,
                     }
                 )
-                return strategies, geometry_option_id, attempts, "openai", STATE.openai_model
+                return strategies, geometry_option_id, assistant_markdown, attempts, "openai", STATE.openai_model
             except Exception as exc:
                 circuit.failure()
                 attempts.append(
@@ -760,7 +792,7 @@ async def route_mission_provider(
                 continue
             started_iso, started = now(), time.monotonic()
             try:
-                strategies, geometry_option_id, status = await openrouter_mission_attempt(model, request)
+                strategies, geometry_option_id, assistant_markdown, status = await openrouter_mission_attempt(model, request)
                 circuit.success()
                 attempts.append(
                     {
@@ -773,7 +805,7 @@ async def route_mission_provider(
                     }
                 )
                 STATE.rotation = (OPENROUTER_MODELS.index(model) + 1) % len(OPENROUTER_MODELS)
-                return strategies, geometry_option_id, attempts, "openrouter", model
+                return strategies, geometry_option_id, assistant_markdown, attempts, "openrouter", model
             except Exception as exc:
                 circuit.failure()
                 attempts.append(
@@ -802,7 +834,7 @@ async def route_mission_provider(
     if STATE.local_url and STATE.local_model and not STATE.fail_local_next:
         started_iso, started = now(), time.monotonic()
         try:
-            strategies, geometry_option_id, status = await local_mission_attempt(request)
+            strategies, geometry_option_id, assistant_markdown, status = await local_mission_attempt(request)
             attempts.append(
                 {
                     "provider": "local",
@@ -813,7 +845,7 @@ async def route_mission_provider(
                     "status_code": status,
                 }
             )
-            return strategies, geometry_option_id, attempts, "local", STATE.local_model
+            return strategies, geometry_option_id, assistant_markdown, attempts, "local", STATE.local_model
         except Exception as exc:
             attempts.append(
                 {
@@ -842,6 +874,7 @@ async def route_mission_provider(
     return (
         deterministic_mission_options(request),
         geometry_option_id,
+        "I prepared three bounded routes from the selected assets and current mission context. Compare the faster option with the reserve-first alternative; every route still goes through deterministic depth, separation, energy, and authority checks before anything moves.",
         attempts,
         "mock",
         "keelmesh-target-aware-v2",
@@ -1093,7 +1126,7 @@ async def fault(command: FaultRequest) -> dict[str, str]:
 @app.post("/v1/mission-options", dependencies=[Depends(require_core)])
 async def mission_options(request: MissionOptionsRequest) -> dict[str, Any]:
     with TRACER.start_as_current_span("mission.options") as span:
-        strategies, geometry_option_id, attempts, provider, model = await route_mission_provider(request)
+        strategies, geometry_option_id, assistant_markdown, attempts, provider, model = await route_mission_provider(request)
         span.set_attribute("mission.target_count", request.target_count)
         span.set_attribute("provider.selected", provider)
         span.set_attribute("model.selected", model)
@@ -1105,7 +1138,7 @@ async def mission_options(request: MissionOptionsRequest) -> dict[str, Any]:
             "state": "accepted" if provider in {"openai", "openrouter", "local"} else "fallback",
             "provider": provider,
             "model": model,
-            "summary": f"{len(strategies)} bounded strategies proposed for {request.target_count} selected vessel(s); deterministic route and policy validation still required.",
+            "summary": assistant_markdown,
             "mission_name": mission_name[:64],
             "geometry_option_id": geometry_option_id,
             "strategies": strategies,

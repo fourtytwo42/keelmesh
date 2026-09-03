@@ -58,14 +58,19 @@ type VesselProfileV2 struct {
 }
 
 type OperationalGroupV2 struct {
-	SchemaVersion int      `json:"schema_version"`
-	ID            string   `json:"id"`
-	Code          string   `json:"code"`
-	Name          string   `json:"name"`
-	Color         string   `json:"color"`
-	Pattern       string   `json:"pattern"`
-	MemberIDs     []string `json:"member_ids"`
-	Revision      int64    `json:"revision"`
+	SchemaVersion      int         `json:"schema_version"`
+	ID                 string      `json:"id"`
+	Code               string      `json:"code"`
+	Name               string      `json:"name"`
+	Color              string      `json:"color"`
+	Pattern            string      `json:"pattern"`
+	MemberIDs          []string    `json:"member_ids"`
+	Formation          string      `json:"formation"`
+	FormationSpacingM  float64     `json:"formation_spacing_m"`
+	AssemblyPoint      *GeoPointV2 `json:"assembly_point,omitempty"`
+	AssemblySource     string      `json:"assembly_source,omitempty"`
+	AssemblyWaypointID string      `json:"assembly_waypoint_id,omitempty"`
+	Revision           int64       `json:"revision"`
 }
 
 type SavedCollectionV2 struct {
@@ -137,23 +142,33 @@ type MissionPOIV2 struct {
 }
 
 type MissionWorkspaceV2 struct {
-	SchemaVersion      int               `json:"schema_version"`
-	ID                 string            `json:"id"`
-	Name               string            `json:"name"`
-	NameSource         string            `json:"name_source,omitempty"`
-	Objective          string            `json:"objective"`
-	Status             string            `json:"status"`
-	TargetIDs          []string          `json:"target_ids"`
-	TargetSnapshotHash string            `json:"target_snapshot_hash"`
-	FleetVersion       int64             `json:"fleet_version"`
-	Version            int64             `json:"version"`
-	Geometry           MissionGeometryV2 `json:"geometry"`
-	Constraints        ConstraintSetV2   `json:"constraints"`
-	Formation          string            `json:"formation"`
-	PlanIDs            []string          `json:"plan_ids"`
-	AuthorizedPlanID   string            `json:"authorized_plan_id,omitempty"`
-	CreatedAt          time.Time         `json:"created_at"`
-	UpdatedAt          time.Time         `json:"updated_at"`
+	SchemaVersion      int                         `json:"schema_version"`
+	ID                 string                      `json:"id"`
+	Name               string                      `json:"name"`
+	NameSource         string                      `json:"name_source,omitempty"`
+	Objective          string                      `json:"objective"`
+	Status             string                      `json:"status"`
+	TargetIDs          []string                    `json:"target_ids"`
+	TargetSnapshotHash string                      `json:"target_snapshot_hash"`
+	FleetVersion       int64                       `json:"fleet_version"`
+	Version            int64                       `json:"version"`
+	Geometry           MissionGeometryV2           `json:"geometry"`
+	Constraints        ConstraintSetV2             `json:"constraints"`
+	Formation          string                      `json:"formation"`
+	PlanIDs            []string                    `json:"plan_ids"`
+	AuthorizedPlanID   string                      `json:"authorized_plan_id,omitempty"`
+	Conversation       []MissionChatMessageV2      `json:"conversation"`
+	Trajectory         *TrajectoryProgramSummaryV1 `json:"trajectory,omitempty"`
+	CreatedAt          time.Time                   `json:"created_at"`
+	UpdatedAt          time.Time                   `json:"updated_at"`
+}
+
+type MissionChatMessageV2 struct {
+	ID        string    `json:"id"`
+	Role      string    `json:"role"`
+	Markdown  string    `json:"markdown"`
+	State     string    `json:"state"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type CommandDraftV2 struct {
@@ -241,6 +256,7 @@ type MissionPlanningContextV2 struct {
 	GeometryOptions  []MissionGeometryOptionV2 `json:"geometry_options,omitempty"`
 	MapBounds        [][]float64               `json:"map_bounds"`
 	FormationCurrent string                    `json:"formation_current"`
+	Conversation     []MissionChatMessageV2    `json:"conversation,omitempty"`
 }
 
 type FleetAssignmentV2 struct {

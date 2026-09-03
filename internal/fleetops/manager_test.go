@@ -767,17 +767,63 @@ func TestGroupMembershipChangeFailsClosedDuringActiveMission(t *testing.T) {
 	}
 }
 
-func TestPatchGroupCannotOrphanPrimaryMembers(t *testing.T) {
+func TestPatchGroupCanLeaveMembersExplicitlyUnassigned(t *testing.T) {
 	m := New("", slog.Default())
 	snapshot := m.Snapshot()
 	group := snapshot.Groups[0]
 	remaining := cloneStrings(group.MemberIDs[1:])
-	_, err := m.PatchGroup(group.ID, PatchGroupRequest{
+	updated, err := m.PatchGroup(group.ID, PatchGroupRequest{
 		Mutation:  Mutation{RequestID: "group-patch", IdempotencyKey: "group-patch", ExpectedVersion: group.Revision},
 		MemberIDs: &remaining,
 	})
-	if typed, ok := err.(*Error); !ok || typed.Code != "PRIMARY_GROUP_REQUIRED" {
-		t.Fatalf("expected primary-group rejection, got %v", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed := group.MemberIDs[0]
+	if contains(updated.MemberIDs, removed) || m.vessels[removed].GroupID != "" || m.vessels[removed].GroupCode != "" {
+		t.Fatalf("removed member was not left explicitly unassigned: group=%v vessel=%#v", updated.MemberIDs, m.vessels[removed])
+	}
+	reassigned := append(cloneStrings(updated.MemberIDs), removed)
+	if _, err := m.PatchGroup(group.ID, PatchGroupRequest{
+		Mutation:  Mutation{RequestID: "group-readd", IdempotencyKey: "group-readd", ExpectedVersion: updated.Revision},
+		MemberIDs: &reassigned,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := m.groups[""]; exists {
+		t.Fatal("reassigning an unassigned vessel created a phantom empty-ID group")
+	}
+}
+
+func TestDeleteGroupUnassignsMembersAndKeepsVessels(t *testing.T) {
+	m := New("", slog.Default())
+	group := m.groups["group-01"]
+	members := cloneStrings(group.MemberIDs)
+	if err := m.DeleteGroup(group.ID, Mutation{RequestID: "delete-group", IdempotencyKey: "delete-group", ExpectedVersion: group.Revision}); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := m.groups[group.ID]; exists {
+		t.Fatal("deleted group remained present")
+	}
+	for _, id := range members {
+		vessel, exists := m.vessels[id]
+		if !exists || vessel.GroupID != "" || vessel.GroupCode != "" {
+			t.Fatalf("vessel %s was deleted or remained assigned: %#v", id, vessel)
+		}
+	}
+}
+
+func TestGroupStationPolicyAndAssemblyPointAreVersioned(t *testing.T) {
+	m := New("", slog.Default())
+	group := m.groups["group-02"]
+	formation, spacing := "ring", 85.0
+	point := domain.GeoPointV2{-71.31, 41.42}
+	updated, err := m.PatchGroup(group.ID, PatchGroupRequest{Mutation: Mutation{RequestID: "station-policy", IdempotencyKey: "station-policy", ExpectedVersion: group.Revision}, Formation: &formation, FormationSpacingM: &spacing, AssemblyPoint: &point})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Formation != formation || updated.FormationSpacingM != spacing || updated.AssemblyPoint == nil || *updated.AssemblyPoint != point || updated.AssemblySource != "operator" {
+		t.Fatalf("station policy not retained: %#v", updated)
 	}
 }
 

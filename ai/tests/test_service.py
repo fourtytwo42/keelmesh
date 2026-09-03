@@ -6,6 +6,7 @@ from keelmesh_ai.service import (
     deterministic_mission_options,
     digest,
     openai_response_text,
+    parse_assistant_markdown,
     parse_eval_json,
     parse_geometry_option_id,
     parse_mission_json,
@@ -161,3 +162,14 @@ def test_geometry_selection_is_limited_to_supplied_options() -> None:
         pass
     else:
         raise AssertionError("provider geometry must be selected from the supplied allow-list")
+
+
+def test_conversational_mission_reply_is_bounded_and_required() -> None:
+    payload = '{"assistant_markdown":"I mapped **three** depth-safe options.","geometry_option_id":"","strategies":[]}'
+    assert parse_assistant_markdown(payload) == "I mapped **three** depth-safe options."
+    try:
+        parse_assistant_markdown('{"geometry_option_id":"","strategies":[]}')
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("mission provider reply must contain conversational Markdown")

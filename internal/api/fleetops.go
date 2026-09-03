@@ -52,6 +52,11 @@ func (s *Server) missionV2(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNotFound, domain.APIError{Code: "MISSION_NOT_FOUND", Message: "Mission not found."})
 }
 
+func (s *Server) trajectoryV2(w http.ResponseWriter, r *http.Request) {
+	value, err := s.fleetops.TrajectoryProgram(r.PathValue("id"))
+	respondV2(w, value, err, http.StatusOK)
+}
+
 func (s *Server) createGroupV2(w http.ResponseWriter, r *http.Request) {
 	var req fleetops.CreateGroupRequest
 	if !decode(w, r, &req) {

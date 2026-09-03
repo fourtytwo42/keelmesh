@@ -30,7 +30,7 @@ func TestMissionOptionsFallsBackToDirectOpenAIWithSingleVesselSchema(t *testing.
 			t.Fatalf("unexpected Responses request: %#v", request)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"strategies\":[{\"id\":\"balanced\",\"name\":\"Balanced patrol\",\"description\":\"Depth-safe shoreline coverage\",\"formation\":\"independent\",\"speed_factor\":0.8,\"reserve_bias\":0.5,\"maneuvers\":[\"enter corridor\",\"patrol shoreline\"]},{\"id\":\"reserve\",\"name\":\"Reserve patrol\",\"description\":\"Conservative independent coverage\",\"formation\":\"independent\",\"speed_factor\":0.5,\"reserve_bias\":0.9,\"maneuvers\":[\"enter slowly\",\"safe hold\"]}]}"}]}]}`))
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"assistant_markdown\":\"I mapped two shoreline patrol approaches for Gannet. **Balanced patrol** finishes sooner; **Reserve patrol** keeps a larger battery margin.\",\"geometry_option_id\":\"\",\"strategies\":[{\"id\":\"balanced\",\"name\":\"Balanced patrol\",\"description\":\"Depth-safe shoreline coverage\",\"formation\":\"independent\",\"speed_factor\":0.8,\"reserve_bias\":0.5,\"maneuvers\":[\"enter corridor\",\"patrol shoreline\"]},{\"id\":\"reserve\",\"name\":\"Reserve patrol\",\"description\":\"Conservative independent coverage\",\"formation\":\"independent\",\"speed_factor\":0.5,\"reserve_bias\":0.9,\"maneuvers\":[\"enter slowly\",\"safe hold\"]}]}"}]}]}`))
 	}))
 	defer provider.Close()
 
@@ -60,6 +60,9 @@ func TestMissionOptionsFallsBackToDirectOpenAIWithSingleVesselSchema(t *testing.
 	}
 	if result.MissionName != "Operation Balanced patrol" {
 		t.Fatalf("mission name was not derived from the accepted model strategy: %q", result.MissionName)
+	}
+	if result.Summary == "" || result.Summary[:8] != "I mapped" {
+		t.Fatalf("model-written conversational reply was not retained: %q", result.Summary)
 	}
 	for _, strategy := range result.Strategies {
 		if strategy.Formation != "independent" || strategy.GuidanceKind != "patrol" {

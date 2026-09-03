@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { api, KeelMeshError, requestID } from "./api";
 import type {
   AgentSnapshot,
@@ -31,6 +33,8 @@ import {
   Bot,
   BoxSelect,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Eye,
   GripVertical,
   ListFilter,
@@ -46,6 +50,7 @@ import {
   Route,
   Save,
   Search,
+  Send,
   ShieldCheck,
   Ship,
   Skull,
@@ -258,6 +263,15 @@ export function FleetWorkspace() {
         for (const id of ids) next.has(id) ? next.delete(id) : next.add(id);
         return next;
       });
+      if (ids.length === 1) {
+        window.requestAnimationFrame(() =>
+          window.requestAnimationFrame(() =>
+            document
+              .querySelector(`[data-fleet-vessel="${CSS.escape(ids[0])}"]`)
+              ?.scrollIntoView({ block: "nearest", behavior: "smooth" }),
+          ),
+        );
+      }
     },
     [revealFleet],
   );
@@ -289,15 +303,6 @@ export function FleetWorkspace() {
       ) ?? []
     );
   }, [fleet, search]);
-  const selectedGroup = useMemo(
-    () =>
-      fleet?.groups.find(
-        (g) =>
-          g.member_ids.length === selected.size &&
-          g.member_ids.every((id) => selected.has(id)),
-      ) ?? null,
-    [fleet, selected],
-  );
   const selectionMatchesMission =
     !!mission &&
     selected.size === mission.target_ids.length &&
@@ -429,7 +434,16 @@ export function FleetWorkspace() {
   }
   async function patchGroup(
     id: string,
-    values: { name: string; color: string; pattern: string },
+    values: {
+      name?: string;
+      color?: string;
+      pattern?: string;
+      formation?: string;
+      formation_spacing_m?: number;
+      assembly_point?: Point;
+      clear_assembly_point?: boolean;
+      use_first_member_assembly?: boolean;
+    },
   ) {
     const group = (await api<FleetSnapshotV2>("/api/v2/fleet")).groups.find(
       (g) => g.id === id,
@@ -446,6 +460,36 @@ export function FleetWorkspace() {
         }),
       }),
     );
+    await refresh();
+  }
+  async function deleteGroup(id: string) {
+    const current = await api<FleetSnapshotV2>("/api/v2/fleet"),
+      group = current.groups.find((item) => item.id === id);
+    if (!group) return;
+    if (
+      !window.confirm(
+        `Delete ${group.code} ${group.name}? Its ${group.member_ids.length} vessels will remain available under Unassigned.`,
+      )
+    )
+      return;
+    await mutate(() =>
+      api(`/api/v2/groups/${id}`, {
+        method: "DELETE",
+        body: JSON.stringify({
+          request_id: requestID("group-delete"),
+          idempotency_key: requestID("group-delete-key"),
+          expected_version: group.revision,
+        }),
+      }),
+    );
+    if (activeGroupID === id) {
+      setActiveGroupID("");
+      setWindows((value) => {
+        const next = new Set(value);
+        next.delete("group-manager");
+        return next;
+      });
+    }
     await refresh();
   }
   async function renameVessel(id: string, callsign: string) {
@@ -469,14 +513,15 @@ export function FleetWorkspace() {
     const current = await api<FleetSnapshotV2>("/api/v2/fleet");
     const group = current.groups.find((g) => g.id === groupID),
       vessel = current.vessels.find((v) => v.id === vesselID);
-    if (!group || !vessel || vessel.group_id === groupID) return;
+    if ((!group && groupID !== "unassigned") || !vessel || vessel.group_id === groupID) return;
     await mutate(() =>
       api(`/api/v2/groups/${groupID}/members:move`, {
         method: "POST",
         body: JSON.stringify({
           request_id: requestID("group-move"),
           idempotency_key: requestID("group-move-key"),
-          expected_version: group.revision,
+          expected_version:
+            groupID === "unassigned" ? current.fleet_version : group!.revision,
           vessel_id: vesselID,
         }),
       }),
@@ -772,31 +817,6 @@ export function FleetWorkspace() {
       await refresh();
     }
   }
-  async function generateOptions() {
-    let target: MissionWorkspaceV2 | null = selectionMatchesMission
-      ? mission
-      : null;
-    if (!target && selected.size > 0) {
-      const targetIDs = [...selected];
-      target =
-        fleet?.missions.find(
-          (m) =>
-            m.status !== "completed" &&
-            m.target_ids.length === targetIDs.length &&
-            m.target_ids.every((id) => selected.has(id)),
-        ) ?? (await createMissionFor(targetIDs, "ai"));
-      if (target) setActiveMissionID(target.id);
-    }
-    if (!target) {
-      setError(
-        pirate
-          ? "Muster ships or select a voyage first."
-          : "Select vessels or an existing mission first.",
-      );
-      return;
-    }
-    await createPlans(target);
-  }
   async function previewPlan() {
     if (!mission || !activePlan) return;
     const current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find(
@@ -1013,6 +1033,7 @@ export function FleetWorkspace() {
           onMove={moveVessel}
           onCreateGroup={createGroup}
           onCreateGroupFromVessel={createGroupFromVessel}
+          onDeleteGroup={deleteGroup}
           onCreateMission={createMission}
         />
       ),
@@ -1032,6 +1053,7 @@ export function FleetWorkspace() {
           group={activeGroup}
           vessels={vesselsByID}
           onSave={(v) => patchGroup(activeGroup.id, v)}
+          onDelete={() => deleteGroup(activeGroup.id)}
         />
       ),
     });
@@ -1056,6 +1078,7 @@ export function FleetWorkspace() {
     defs.push({
       id: "planner",
       kind: "primary",
+      maximizable: true,
       activation: windowActivations.planner,
       title: pirate ? "Voyage Plotter" : "Mission Planner",
       icon: <Route />,
@@ -1086,7 +1109,7 @@ export function FleetWorkspace() {
           onFormation={(f) => updateMission({ formation: f })}
           onArea={(kind) => setTool(kind)}
           onTool={setTool}
-          onCreate={() => createPlans(mission)}
+          onCreate={(intent) => createPlans(mission, intent)}
           onPlan={setPlanID}
           onPreview={previewPlan}
           onAuthorize={authorize}
@@ -1361,15 +1384,14 @@ export function FleetWorkspace() {
         tool={tool}
         onSelect={(ids, mode) => {
           select(ids, mode);
-          if (ids.length === 1) {
-            setInspectVesselID(ids[0]);
-            open("inspector");
-          }
         }}
         onGroup={selectGroup}
         onWaypoint={addWaypoint}
         onDeleteWaypoint={deleteWaypoint}
         onClearWaypoints={clearWaypoints}
+        onClearGroupAssembly={(groupID) =>
+          void patchGroup(groupID, { clear_assembly_point: true })
+        }
         onGoTo={goToLocation}
         onUseWaypointColor={useWaypointColor}
         onArea={addPolygon}
@@ -1413,54 +1435,6 @@ export function FleetWorkspace() {
           <Ban />
         </button>
       </div>
-      <section
-        className={`intent-dock ${selectedGroup && !selectionMatchesMission ? "target-pending" : ""}`}
-      >
-        <div>
-          <small>
-            {selectedGroup
-              ? `${selectedGroup.code} ${selectedGroup.name.toUpperCase()} · ${selectedGroup.member_ids.length} ${pirate ? "CREW" : "GROUP ASSETS"}`
-              : selected.size > 0
-                ? `${selected.size} ${pirate ? "MUSTERED" : "SELECTED"} · ${pirate ? "COURSE TARGET" : "PLAN TARGET"}`
-                : mission
-                  ? `${mission.name.toUpperCase()} · ${mission.target_ids.length} ${pirate ? "HANDS" : "ASSETS"}`
-                  : words.noMission}
-          </small>
-          <strong>
-            {selectedGroup && !selectionMatchesMission
-              ? pirate
-                ? "Ready to plot courses for this crew"
-                : "Ready to generate options for this operational group"
-              : (mission?.objective ?? words.selectAssets)}
-          </strong>
-        </div>
-        <Route />
-        <input
-          value={command}
-          onChange={(e) => setCommand(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void generateOptions();
-          }}
-        />
-        <button
-          className={`mic ${speechState.startsWith("listening") ? "recording" : ""}`}
-          title="Hold to talk · routed to node-local STT"
-          aria-label="Hold to talk"
-          onPointerDown={() => void beginTranscription()}
-          onPointerUp={endTranscription}
-          onPointerCancel={endTranscription}
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          <Mic />
-        </button>
-        <button
-          onClick={() => void generateOptions()}
-          disabled={(!mission && selected.size === 0) || busy}
-        >
-          <Sparkles />
-          {busy ? (pirate ? "PLOTTING…" : "WORKING…") : words.generate}
-        </button>
-      </section>
       {pendingDeleteMission && (
         <div className="mission-delete-backdrop">
           <section
@@ -1594,6 +1568,21 @@ function VesselGroupContextMenu({
           </span>
         </header>
         <div className="group-menu-list">
+          <button
+            role="menuitem"
+            disabled={!state.vessel.group_id}
+            onClick={() => {
+              onMove(state.vessel.id, "unassigned");
+              onClose();
+            }}
+          >
+            <i style={{ background: "#737973" }} />
+            <span>
+              <b>—</b>
+              {pirate ? "Without crew" : "Unassigned"}
+            </span>
+            <small>{!state.vessel.group_id ? "current" : ""}</small>
+          </button>
           {groups.map((group) => (
             <button
               role="menuitem"
@@ -1670,6 +1659,7 @@ function FleetRail({
   onMove,
   onCreateGroup,
   onCreateGroupFromVessel,
+  onDeleteGroup,
   onCreateMission,
 }: {
   pirate: boolean;
@@ -1685,6 +1675,7 @@ function FleetRail({
   onMove: (vesselID: string, groupID: string) => void;
   onCreateGroup: () => void;
   onCreateGroupFromVessel: (vesselID: string, name: string) => void;
+  onDeleteGroup: (groupID: string) => void;
   onCreateMission: () => void;
 }) {
   const [dropGroup, setDropGroup] = useState(""),
@@ -1775,6 +1766,14 @@ function FleetRail({
               >
                 <Eye />
               </button>
+              <button
+                className="group-delete"
+                aria-label={`Delete ${g.code} ${g.name}`}
+                title={`Delete group and leave its vessels unassigned`}
+                onClick={() => onDeleteGroup(g.id)}
+              >
+                <Trash2 />
+              </button>
             </div>
             {filtered
               .filter((v) => v.group_id === g.id)
@@ -1794,6 +1793,7 @@ function FleetRail({
                     setMenu({ vessel: v, x: e.clientX, y: e.clientY });
                   }}
                   className={`fleet-vessel-row ${selected.has(v.id) ? "selected" : ""}`}
+                  data-fleet-vessel={v.id}
                   key={v.id}
                 >
                   <input
@@ -1827,6 +1827,74 @@ function FleetRail({
               ))}
           </section>
         ))}
+        {filtered.some((v) => !v.group_id) && (
+          <section
+            className={`unassigned-group ${dropGroup === "unassigned" ? "drop-active" : ""}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              setDropGroup("unassigned");
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node))
+                setDropGroup("");
+            }}
+            onDrop={(e) => drop(e, "unassigned")}
+          >
+            <div className="group-row-wrap unassigned">
+              <div className="group-row">
+                <i />
+                <b>—</b>
+                <span>{pirate ? "Without crew" : "Unassigned"}</span>
+                <small>
+                  {filtered.filter((v) => !v.group_id && selected.has(v.id)).length}/
+                  {fleet.vessels.filter((v) => !v.group_id).length}
+                </small>
+              </div>
+            </div>
+            {filtered
+              .filter((v) => !v.group_id)
+              .map((v) => (
+                <div
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("application/x-keelmesh-vessel", v.id);
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setMenu({ vessel: v, x: e.clientX, y: e.clientY });
+                  }}
+                  className={`fleet-vessel-row ${selected.has(v.id) ? "selected" : ""}`}
+                  data-fleet-vessel={v.id}
+                  key={v.id}
+                >
+                  <input
+                    aria-label={`Select ${v.callsign}`}
+                    type="checkbox"
+                    checked={selected.has(v.id)}
+                    onChange={() => onSelect([v.id], "toggle")}
+                  />
+                  <i style={{ borderColor: "#737973" }}>
+                    <img src={`/assets/vessels/${v.class.id}.png`} />
+                  </i>
+                  <span>
+                    <b>{v.callsign}</b>
+                    <small>{v.designation} · {v.class.name}</small>
+                  </span>
+                  <em>{Math.round(v.telemetry.reserve * 100)}%</em>
+                  <button
+                    className="vessel-view"
+                    aria-label={`View status of ${v.callsign}`}
+                    onClick={() => onInspect(v.id)}
+                  >
+                    <Eye />
+                  </button>
+                </div>
+              ))}
+          </section>
+        )}
       </div>
       <button
         className="wide amber"
@@ -2067,14 +2135,26 @@ function GroupManager({
   group,
   vessels,
   onSave,
+  onDelete,
 }: {
   group: FleetSnapshotV2["groups"][number];
   vessels: Map<string, VesselProfileV2>;
-  onSave: (v: { name: string; color: string; pattern: string }) => void;
+  onSave: (v: {
+    name?: string;
+    color?: string;
+    pattern?: string;
+    formation?: string;
+    formation_spacing_m?: number;
+    clear_assembly_point?: boolean;
+    use_first_member_assembly?: boolean;
+  }) => void;
+  onDelete: () => void;
 }) {
   const [name, setName] = useState(group.name),
     [color, setColor] = useState(group.color),
     [pattern, setPattern] = useState(group.pattern),
+    [formation, setFormation] = useState(group.formation || "column"),
+    [spacing, setSpacing] = useState(group.formation_spacing_m || 60),
     members = group.member_ids
       .map((id) => vessels.get(id))
       .filter((v): v is VesselProfileV2 => !!v),
@@ -2145,6 +2225,62 @@ function GroupManager({
           <option>chevron</option>
         </select>
       </label>
+      <label>
+        IDLE FORMATION
+        <select value={formation} onChange={(e) => setFormation(e.target.value)}>
+          {formations.map((value) => (
+            <option key={value} value={value}>
+              {value.replaceAll("_", " ")}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        FORMATION SPACING
+        <span className="number-field">
+          <input
+            type="number"
+            min={15}
+            max={1000}
+            step={5}
+            value={spacing}
+            onChange={(e) => setSpacing(Number(e.target.value))}
+          />
+          <small>metres</small>
+        </span>
+      </label>
+      <div className="assembly-control">
+        <header>
+          <MapPinned />
+          <span>
+            <b>ASSEMBLY POINT</b>
+            <small>
+              {group.assembly_point
+                ? `${group.assembly_point[1].toFixed(4)}°N · ${Math.abs(group.assembly_point[0]).toFixed(4)}°W`
+                : "Not assigned"}
+            </small>
+          </span>
+        </header>
+        <p>
+          The group station-keeps around this point using the selected formation
+          and spacing when it has no active movement mission.
+        </p>
+        <div>
+          <button
+            onClick={() => onSave({ use_first_member_assembly: true })}
+            disabled={members.length === 0}
+          >
+            Use first member
+          </button>
+          <button
+            className="delete"
+            onClick={() => onSave({ clear_assembly_point: true })}
+            disabled={!group.assembly_point}
+          >
+            <Trash2 /> Clear point
+          </button>
+        </div>
+      </div>
       <div className="group-members">
         {members.map((v) => (
           <span key={v.id}>{v.display_name}</span>
@@ -2156,10 +2292,21 @@ function GroupManager({
       </p>
       <button
         className="wide amber"
-        onClick={() => onSave({ name: name.trim(), color, pattern })}
-        disabled={!name.trim()}
+        onClick={() =>
+          onSave({
+            name: name.trim(),
+            color,
+            pattern,
+            formation,
+            formation_spacing_m: spacing,
+          })
+        }
+        disabled={!name.trim() || spacing < 15 || spacing > 1000}
       >
-        Save group identity
+        Save group station policy
+      </button>
+      <button className="wide danger group-delete-wide" onClick={onDelete}>
+        <Trash2 /> Delete group · keep vessels unassigned
       </button>
     </div>
   );
@@ -2414,7 +2561,7 @@ function Planner({
   onFormation: (v: string) => void;
   onArea: (k: "include" | "exclude") => void;
   onTool: (t: Tool) => void;
-  onCreate: () => void;
+  onCreate: (intent: string) => void;
   onPlan: (id: string) => void;
   onPreview: () => void;
   onAuthorize: () => void;
@@ -2423,6 +2570,11 @@ function Planner({
   onRename: (name: string) => void;
   onDelete: () => void;
 }) {
+  const chatEnd = useRef<HTMLDivElement | null>(null);
+  const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    chatEnd.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [mission?.conversation?.length, busy]);
   if (!mission)
     return (
       <div className="window-empty">
@@ -2433,6 +2585,8 @@ function Planner({
     );
   return (
     <div className="planner">
+      <div className="planner-layout">
+      <section className="planner-chat-pane">
       <div className="mission-summary">
         <div className="mission-summary-actions">
           <span>{mission.status}</span>
@@ -2466,13 +2620,59 @@ function Planner({
           {pirate ? "voyage" : "mission"} v{mission.version}
         </p>
       </div>
-      <label>
-        {pirate ? "CAPTAIN'S ORDERS" : "PLAIN-ENGLISH INTENT"}
+      <div className="mission-chat" aria-live="polite">
+        {(mission.conversation ?? []).length === 0 && (
+          <div className="chat-empty">
+            <Bot />
+            <b>{pirate ? "Ask the ship's intelligence" : "Plan with KeelMesh AI"}</b>
+            <span>
+              Describe the outcome, ask about constraints, or request alternatives.
+              The agent may annotate the map and propose plans, but exact authority
+              remains yours.
+            </span>
+          </div>
+        )}
+        {(mission.conversation ?? []).map((message) => (
+          <article className={`chat-message ${message.role}`} key={message.id}>
+            <header>
+              {message.role === "operator" ? <strong>YOU</strong> : <><Sparkles /><strong>KEELMESH AI</strong></>}
+              <time>{new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+            </header>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.markdown}</ReactMarkdown>
+          </article>
+        ))}
+        {busy && (
+          <div className="agent-work-chips">
+            <span><Sparkles /> Interpreting intent</span>
+            <span>Inspecting map context</span>
+            <span>Validating bounded options</span>
+          </div>
+        )}
+        {activePlan && <PlanMiniMap plan={activePlan} />}
+        <div ref={chatEnd} />
+      </div>
+      <div className="chat-composer">
         <textarea
+          aria-label={pirate ? "Captain's orders" : "Message mission AI"}
+          placeholder={pirate ? "Ask about this voyage…" : "Ask about this mission or describe what should happen…"}
           value={command}
           onChange={(e) => setCommand(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              if (command.trim() && !busy) onCreate(command.trim());
+            }
+          }}
         />
-      </label>
+        <button
+          className="chat-send"
+          aria-label="Send to mission AI"
+          disabled={!command.trim() || busy}
+          onClick={() => onCreate(command.trim())}
+        >
+          <Send />
+        </button>
+      </div>
       <div className="voice-row">
         <select value={voice} onChange={(e) => onVoice(e.target.value)}>
           {voices.map((v) => (
@@ -2488,6 +2688,29 @@ function Planner({
         </button>
         <small>{speechState}</small>
       </div>
+      </section>
+      <section className="planner-options-pane">
+      {mission.trajectory && (
+        <div className="trajectory-program-summary">
+          <header>
+            <Route />
+            <b>TRAJECTORY PROGRAM · REVISION {mission.trajectory.active_revision}</b>
+            {mission.trajectory.pending_revision && (
+              <em>R{mission.trajectory.pending_revision} ARMED · T+{mission.trajectory.activation_tick}</em>
+            )}
+          </header>
+          <dl>
+            <span><small>FULL PROGRAM</small>{Math.ceil(mission.trajectory.duration_seconds / 60)} min</span>
+            <span><small>SEGMENTS</small>{mission.trajectory.total_segments}</span>
+            <span><small>HOT TAPE</small>{mission.trajectory.hot_tape_horizon_seconds}s rolling</span>
+            <span><small>CURSOR</small>T+{mission.trajectory.mission_tick}s</span>
+          </dl>
+          <p>
+            The complete signed mission is retained; each node materializes the
+            next bounded execution window and may adjust only inside its active envelope.
+          </p>
+        </div>
+      )}
       {mission.target_ids.length > 1 ? (
         <label>
           {pirate ? "SAILING FORMATION" : "FORMATION PREFERENCE"}
@@ -2576,7 +2799,7 @@ function Planner({
         </div>
       )}
       {plans.length === 0 ? (
-        <button className="wide amber" disabled={busy} onClick={onCreate}>
+        <button className="wide amber" disabled={busy || !command.trim()} onClick={() => onCreate(command.trim())}>
           <Sparkles />
           {pirate
             ? "Ask the ship's AI for courses"
@@ -2584,14 +2807,17 @@ function Planner({
         </button>
       ) : (
         <div className="candidate-list">
-          {plans.map((p) => (
-            <button
+          {plans.map((p) => {
+            const expanded = expandedPlans.has(p.id);
+            return (
+            <article
               key={p.id}
-              className={activePlan?.id === p.id ? "selected" : ""}
-              onClick={() => onPlan(p.id)}
+              className={`${activePlan?.id === p.id ? "selected" : ""} ${expanded ? "expanded" : "collapsed"}`}
             >
               <header>
-                <b>{p.name}</b>
+                <button className="candidate-select" onClick={() => onPlan(p.id)}>
+                  <b>{p.name}</b>
+                </button>
                 <span>
                   {p.advisor_source}
                   {p.advisor_model ? ` · ${p.advisor_model}` : ""}
@@ -2599,11 +2825,27 @@ function Planner({
                 {p.recommended && (
                   <em>{pirate ? "CAPTAIN'S PICK" : "RECOMMENDED"}</em>
                 )}
+                <button
+                  className="candidate-expand"
+                  aria-label={`${expanded ? "Collapse" : "Expand"} ${p.name}`}
+                  onClick={() =>
+                    setExpandedPlans((current) => {
+                      const next = new Set(current);
+                      next.has(p.id) ? next.delete(p.id) : next.add(p.id);
+                      return next;
+                    })
+                  }
+                >
+                  {expanded ? <ChevronUp /> : <ChevronDown />}
+                </button>
               </header>
-              <p>{p.description}</p>
-              <small className="maneuver-sequence">
-                {p.maneuvers.join(" → ")}
-              </small>
+              <div className="candidate-detail">
+                <p>{p.description}</p>
+                <small className="maneuver-sequence">
+                  {p.maneuvers.join(" → ")}
+                </small>
+                <PlanMiniMap plan={p} compact />
+              </div>
               <dl>
                 <span>
                   <small>COVERAGE</small>
@@ -2622,9 +2864,9 @@ function Planner({
                   {p.minimum_separation_m}m
                 </span>
               </dl>
-              <code>{p.content_hash.slice(0, 24)}…</code>
-            </button>
-          ))}
+              <div className="candidate-detail"><code>{p.content_hash.slice(0, 24)}…</code></div>
+            </article>
+          )})}
         </div>
       )}
       {activePlan && !preview && (
@@ -2674,6 +2916,8 @@ function Planner({
           </button>
         </>
       )}
+      </section>
+      </div>
     </div>
   );
 }
@@ -2747,5 +2991,37 @@ function Constraints({
         Apply safer effective limits
       </button>
     </div>
+  );
+}
+
+function PlanMiniMap({ plan, compact = false }: { plan: FleetPlanV2; compact?: boolean }) {
+  const points = plan.assignments.flatMap((assignment) => assignment.route);
+  if (points.length < 2) return null;
+  const minX = Math.min(...points.map((point) => point[0])),
+    maxX = Math.max(...points.map((point) => point[0])),
+    minY = Math.min(...points.map((point) => point[1])),
+    maxY = Math.max(...points.map((point) => point[1])),
+    width = Math.max(maxX - minX, 0.0001),
+    height = Math.max(maxY - minY, 0.0001),
+    colors = ["#e6a63b", "#62c58e", "#59bdd1", "#b895d8", "#e36e62", "#ece8dc"];
+  const mapPoint = (point: Point) =>
+    `${8 + ((point[0] - minX) / width) * 184},${72 - ((point[1] - minY) / height) * 64}`;
+  return (
+    <figure className={`chat-map-card ${compact ? "compact" : ""}`}>
+      <header>
+        <span>STATE-BACKED ROUTE PREVIEW</span>
+        <b>{plan.assignments.length} assets · {plan.duration_minutes.toFixed(1)} min</b>
+      </header>
+      <svg viewBox="0 0 200 80" role="img" aria-label={`Route preview for ${plan.name}`}>
+        <rect x="1" y="1" width="198" height="78" rx="2" />
+        {plan.assignments.map((assignment, index) => (
+          <polyline
+            key={assignment.vessel_id}
+            points={assignment.route.map(mapPoint).join(" ")}
+            style={{ stroke: colors[index % colors.length] }}
+          />
+        ))}
+      </svg>
+    </figure>
   );
 }

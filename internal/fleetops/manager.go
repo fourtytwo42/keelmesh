@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/trajectory"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -40,10 +41,15 @@ type CreateGroupRequest struct {
 }
 type PatchGroupRequest struct {
 	Mutation
-	Name      *string   `json:"name"`
-	Color     *string   `json:"color"`
-	Pattern   *string   `json:"pattern"`
-	MemberIDs *[]string `json:"member_ids"`
+	Name                   *string            `json:"name"`
+	Color                  *string            `json:"color"`
+	Pattern                *string            `json:"pattern"`
+	MemberIDs              *[]string          `json:"member_ids"`
+	Formation              *string            `json:"formation"`
+	FormationSpacingM      *float64           `json:"formation_spacing_m"`
+	AssemblyPoint          *domain.GeoPointV2 `json:"assembly_point"`
+	ClearAssemblyPoint     bool               `json:"clear_assembly_point"`
+	UseFirstMemberAssembly bool               `json:"use_first_member_assembly"`
 }
 type MoveGroupMemberRequest struct {
 	Mutation
@@ -123,6 +129,8 @@ type Manager struct {
 	leases                map[string]domain.FleetLeaseV2
 	idempotency           map[string]string
 	startedPlans          map[string]string
+	programs              map[string]domain.TrajectoryProgramV1
+	simTickMS             int64
 }
 
 var callsigns = []string{"Gannet", "Osprey", "Tern", "Petrel", "Shearwater", "Cormorant", "Harrier", "Kite", "Merlin", "Plover", "Skua", "Fulmar", "Albatross", "Razorbill", "Puffin", "Heron", "Kittiwake", "Curlew", "Jaeger", "Avocet", "Sanderling", "Grebe", "Dunlin", "Egret", "Bittern", "Sandpiper", "Stormbird", "Kingfisher", "Loon", "Murre", "Nighthawk", "Pelican", "Rail", "Sparrowhawk", "Turnstone", "Whimbrel", "Auk", "Bunting", "Caspian", "Diver", "Eider", "Frigate", "Godwit", "Hobby", "Ibis", "Junco", "Lapwing", "Merganser"}
@@ -166,7 +174,7 @@ var coastalRouteNames = []string{
 }
 
 func New(databaseURL string, logger *slog.Logger) *Manager {
-	m := &Manager{logger: logger, databaseURL: databaseURL, secret: []byte("keelmesh-m6-runtime-authority"), fleetVersion: 1, vessels: map[string]domain.VesselProfileV2{}, groups: map[string]domain.OperationalGroupV2{}, collections: map[string]domain.SavedCollectionV2{}, missions: map[string]domain.MissionWorkspaceV2{}, drafts: map[string]domain.CommandDraftV2{}, plans: map[string]domain.FleetPlanV2{}, leases: map[string]domain.FleetLeaseV2{}, idempotency: map[string]string{}, startedPlans: map[string]string{}}
+	m := &Manager{logger: logger, databaseURL: databaseURL, secret: []byte("keelmesh-m6-runtime-authority"), fleetVersion: 1, vessels: map[string]domain.VesselProfileV2{}, groups: map[string]domain.OperationalGroupV2{}, collections: map[string]domain.SavedCollectionV2{}, missions: map[string]domain.MissionWorkspaceV2{}, drafts: map[string]domain.CommandDraftV2{}, plans: map[string]domain.FleetPlanV2{}, leases: map[string]domain.FleetLeaseV2{}, idempotency: map[string]string{}, startedPlans: map[string]string{}, programs: map[string]domain.TrajectoryProgramV1{}}
 	m.seed()
 	return m
 }
@@ -215,7 +223,8 @@ func (m *Manager) seed() {
 			env := environmentAt(p, float64(idx))
 			m.vessels[id] = domain.VesselProfileV2{SchemaVersion: 2, ID: id, Designation: fmt.Sprintf("KM-%03d", 214+idx), Callsign: callsigns[idx], DisplayName: fmt.Sprintf("%s (KM-%03d)", callsigns[idx], 214+idx), Class: class, GroupID: gid, GroupCode: groupCodes[g], GroupColor: groupColors[g], GroupPattern: patterns[g], Available: true, Telemetry: domain.VesselTelemetryV2{Position: p, HeadingDeg: float64((idx * 37) % 360), SpeedMPS: .4 + float64(idx%5)*.11, Reserve: .96 - float64(idx%9)*.025, ProjectedReserve: .89 - float64(idx%9)*.025, Mode: "patrol", Health: "nominal", PNTIntegrity: "trusted", UncertaintyM: 4 + float64(idx%5), TapeDepthSeconds: 60, Environment: env}}
 		}
-		m.groups[gid] = domain.OperationalGroupV2{SchemaVersion: 2, ID: gid, Code: groupCodes[g], Name: groupNames[g], Color: groupColors[g], Pattern: patterns[g], MemberIDs: members, Revision: 1}
+		assembly := m.vessels[members[0]].Telemetry.Position
+		m.groups[gid] = domain.OperationalGroupV2{SchemaVersion: 2, ID: gid, Code: groupCodes[g], Name: groupNames[g], Color: groupColors[g], Pattern: patterns[g], MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: &assembly, AssemblySource: "first-member", Revision: 1}
 	}
 	all := make([]string, 0, 48)
 	for id := range m.vessels {
@@ -255,6 +264,85 @@ func samePoint(a, b domain.GeoPointV2) bool {
 	return math.Abs(a[0]-b[0]) < .003 && math.Abs(a[1]-b[1]) < .003
 }
 
+func clearVesselGroup(vessel *domain.VesselProfileV2) {
+	vessel.GroupID = ""
+	vessel.GroupCode = ""
+	vessel.GroupColor = "#737973"
+	vessel.GroupPattern = "unassigned"
+}
+
+func withinMapBounds(point domain.GeoPointV2) bool {
+	return point[0] >= -71.62 && point[0] <= -71.08 && point[1] >= 41.08 && point[1] <= 41.62
+}
+
+func validFormation(value string) bool {
+	switch value {
+	case "column", "line_abreast", "wedge", "echelon_left", "echelon_right", "parallel_columns", "dispersed_screen", "ring", "search_grid":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *Manager) nextGroupCodeLocked() string {
+	for ordinal := 1; ; ordinal++ {
+		candidate := fmt.Sprintf("C%02d", ordinal)
+		used := false
+		for _, group := range m.groups {
+			if group.Code == candidate {
+				used = true
+				break
+			}
+		}
+		if !used {
+			return candidate
+		}
+	}
+}
+
+func (m *Manager) defaultAssemblyPointLocked(color string, members []string) (*domain.GeoPointV2, string, string) {
+	wanted := nearestWaypointColor(color)
+	missions := make([]domain.MissionWorkspaceV2, 0, len(m.missions))
+	for _, mission := range m.missions {
+		missions = append(missions, mission)
+	}
+	sort.Slice(missions, func(i, j int) bool { return missions[i].UpdatedAt.After(missions[j].UpdatedAt) })
+	for _, mission := range missions {
+		for _, waypoint := range mission.Geometry.WaypointDetails {
+			if normalizeWaypointColor(waypoint.Color) == wanted {
+				point := waypoint.Position
+				return &point, "mission:" + mission.ID, waypoint.ID
+			}
+		}
+	}
+	if len(members) > 0 {
+		if vessel, ok := m.vessels[members[0]]; ok {
+			point := vessel.Telemetry.Position
+			return &point, "first-member", ""
+		}
+	}
+	return nil, "", ""
+}
+
+func nearestWaypointColor(value string) string {
+	palette := map[string][3]int{
+		"amber": {230, 166, 59}, "red": {227, 110, 98}, "green": {98, 197, 142},
+		"cyan": {89, 189, 209}, "violet": {184, 149, 216}, "white": {236, 232, 220},
+	}
+	var r, g, b int
+	if _, err := fmt.Sscanf(strings.TrimSpace(value), "#%02x%02x%02x", &r, &g, &b); err != nil {
+		return "amber"
+	}
+	best, score := "amber", math.MaxFloat64
+	for name, rgb := range palette {
+		distance := math.Pow(float64(r-rgb[0]), 2) + math.Pow(float64(g-rgb[1]), 2) + math.Pow(float64(b-rgb[2]), 2)
+		if distance < score {
+			best, score = name, distance
+		}
+	}
+	return best
+}
+
 func filterIDs(ids []string, pred func(domain.VesselProfileV2) bool, vs map[string]domain.VesselProfileV2) []string {
 	out := []string{}
 	for _, id := range ids {
@@ -291,6 +379,10 @@ func (m *Manager) snapshotLocked() domain.FleetSnapshotV2 {
 	sort.Slice(cs, func(i, j int) bool { return cs[i].Name < cs[j].Name })
 	ms := make([]domain.MissionWorkspaceV2, 0, len(m.missions))
 	for _, v := range m.missions {
+		if program, ok := m.programs[v.ID]; ok {
+			summary := trajectory.Summary(program)
+			v.Trajectory = &summary
+		}
 		ms = append(ms, v)
 	}
 	sort.Slice(ms, func(i, j int) bool { return ms[i].UpdatedAt.After(ms[j].UpdatedAt) })
@@ -305,6 +397,16 @@ func (m *Manager) Vessel(id string) (domain.VesselProfileV2, error) {
 		return v, &Error{"VESSEL_NOT_FOUND", "Vessel not found."}
 	}
 	return v, nil
+}
+
+func (m *Manager) TrajectoryProgram(id string) (domain.TrajectoryProgramViewV1, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	program, ok := m.programs[id]
+	if !ok {
+		return domain.TrajectoryProgramViewV1{}, &Error{"TRAJECTORY_NOT_FOUND", "Mission does not have an active trajectory program."}
+	}
+	return trajectory.View(program), nil
 }
 func (m *Manager) PatchVessel(id string, req PatchVesselRequest) (domain.VesselProfileV2, error) {
 	m.mu.Lock()
@@ -340,7 +442,11 @@ func (m *Manager) Reachability(id string) (domain.ReachabilityV2, error) {
 		return domain.ReachabilityV2{}, &Error{"VESSEL_NOT_FOUND", "Vessel not found."}
 	}
 	r := domain.ReachabilityV2{SchemaVersion: 2, VesselID: id, Authority: "mission-scoped authority"}
-	g := m.groups[v.GroupID]
+	g, grouped := m.groups[v.GroupID]
+	if !grouped {
+		r.Authority = "unassigned · no group movement authority"
+		return r, nil
+	}
 	for i, peer := range g.MemberIDs {
 		if peer == id {
 			continue
@@ -395,7 +501,9 @@ func (m *Manager) CreateGroup(req CreateGroupRequest) (domain.OperationalGroupV2
 		}
 	}
 	id := "group-custom-" + shortHash(req.IdempotencyKey)
-	g := domain.OperationalGroupV2{SchemaVersion: 2, ID: id, Code: fmt.Sprintf("C%02d", len(m.groups)-7), Name: name, Color: req.Color, Pattern: req.Pattern, MemberIDs: unique(req.MemberIDs), Revision: 1}
+	members := unique(req.MemberIDs)
+	assembly, source, waypointID := m.defaultAssemblyPointLocked(req.Color, members)
+	g := domain.OperationalGroupV2{SchemaVersion: 2, ID: id, Code: m.nextGroupCodeLocked(), Name: name, Color: req.Color, Pattern: req.Pattern, MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: assembly, AssemblySource: source, AssemblyWaypointID: waypointID, Revision: 1}
 	for _, vid := range g.MemberIDs {
 		v := m.vessels[vid]
 		if old, ok := m.groups[v.GroupID]; ok {
@@ -453,20 +561,58 @@ func (m *Manager) PatchGroup(id string, req PatchGroupRequest) (domain.Operation
 			}
 			for _, prior := range g.MemberIDs {
 				if !contains(nextMembers, prior) {
-					return g, &Error{"PRIMARY_GROUP_REQUIRED", "Move vessels by creating or selecting their destination group; a vessel cannot be left without a primary group."}
+					vessel := m.vessels[prior]
+					clearVesselGroup(&vessel)
+					m.vessels[prior] = vessel
 				}
 			}
 			for _, vid := range nextMembers {
 				vessel := m.vessels[vid]
 				if vessel.GroupID != id {
-					old := m.groups[vessel.GroupID]
-					old.MemberIDs = remove(old.MemberIDs, vid)
-					old.Revision++
-					m.groups[old.ID] = old
+					if old, exists := m.groups[vessel.GroupID]; exists {
+						old.MemberIDs = remove(old.MemberIDs, vid)
+						old.Revision++
+						m.groups[old.ID] = old
+					}
 				}
 			}
 			g.MemberIDs = nextMembers
 		}
+	}
+	if req.Formation != nil {
+		if !validFormation(*req.Formation) {
+			return g, &Error{"INVALID_FORMATION", "Unsupported station-keeping formation."}
+		}
+		g.Formation = *req.Formation
+	}
+	if req.FormationSpacingM != nil {
+		if *req.FormationSpacingM < 15 || *req.FormationSpacingM > 1000 {
+			return g, &Error{"INVALID_FORMATION_SPACING", "Formation spacing must be between 15 and 1,000 metres."}
+		}
+		g.FormationSpacingM = *req.FormationSpacingM
+	}
+	if req.ClearAssemblyPoint {
+		g.AssemblyPoint = nil
+		g.AssemblySource = ""
+		g.AssemblyWaypointID = ""
+	}
+	if req.AssemblyPoint != nil {
+		point := *req.AssemblyPoint
+		if !withinMapBounds(point) {
+			return g, &Error{"INVALID_ASSEMBLY_POINT", "Assembly point must be inside the local water-simulation bounds."}
+		}
+		g.AssemblyPoint = &point
+		g.AssemblySource = "operator"
+		g.AssemblyWaypointID = ""
+	}
+	if req.UseFirstMemberAssembly {
+		if len(g.MemberIDs) == 0 {
+			return g, &Error{"GROUP_EMPTY", "Add a vessel before using its position as the assembly point."}
+		}
+		point := m.vessels[g.MemberIDs[0]].Telemetry.Position
+		g.AssemblyPoint = &point
+		g.AssemblySource = "first-member"
+		g.AssemblyWaypointID = ""
 	}
 	g.Revision++
 	m.groups[id] = g
@@ -485,6 +631,28 @@ func (m *Manager) PatchGroup(id string, req PatchGroupRequest) (domain.Operation
 func (m *Manager) MoveGroupMember(id string, req MoveGroupMemberRequest) (domain.OperationalGroupV2, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if id == "unassigned" {
+		vessel, ok := m.vessels[req.VesselID]
+		if !ok {
+			return domain.OperationalGroupV2{}, &Error{"VESSEL_NOT_FOUND", "Vessel not found: " + req.VesselID}
+		}
+		if err := m.check(req.Mutation, m.fleetVersion); err != nil {
+			return domain.OperationalGroupV2{}, err
+		}
+		if conflicts := m.conflicts([]string{req.VesselID}, ""); len(conflicts) > 0 {
+			return domain.OperationalGroupV2{}, &Error{"ACTIVE_MISSION_REPLAN_REQUIRED", "End or re-plan active movement authority before unassigning this vessel."}
+		}
+		if source, exists := m.groups[vessel.GroupID]; exists {
+			source.MemberIDs = remove(source.MemberIDs, vessel.ID)
+			source.Revision++
+			m.groups[source.ID] = source
+		}
+		clearVesselGroup(&vessel)
+		m.vessels[vessel.ID] = vessel
+		m.fleetVersion++
+		m.persistAsync()
+		return domain.OperationalGroupV2{SchemaVersion: 2, ID: "unassigned", Name: "Unassigned", MemberIDs: []string{vessel.ID}, Revision: m.fleetVersion}, nil
+	}
 	destination, ok := m.groups[id]
 	if !ok {
 		return destination, &Error{"GROUP_NOT_FOUND", "Destination group not found."}
@@ -502,19 +670,18 @@ func (m *Manager) MoveGroupMember(id string, req MoveGroupMemberRequest) (domain
 	if conflicts := m.conflicts([]string{req.VesselID}, ""); len(conflicts) > 0 {
 		return destination, &Error{"ACTIVE_MISSION_REPLAN_REQUIRED", "End or re-plan active movement authority before changing this vessel's operational group."}
 	}
-	source, ok := m.groups[vessel.GroupID]
-	if !ok {
-		return destination, &Error{"PRIMARY_GROUP_REQUIRED", "Vessel source group is unavailable."}
+	source, sourceExists := m.groups[vessel.GroupID]
+	if sourceExists {
+		source.MemberIDs = remove(source.MemberIDs, req.VesselID)
+		source.Revision++
+		m.groups[source.ID] = source
 	}
-	source.MemberIDs = remove(source.MemberIDs, req.VesselID)
-	source.Revision++
 	destination.MemberIDs = unique(append(destination.MemberIDs, req.VesselID))
 	destination.Revision++
 	vessel.GroupID = destination.ID
 	vessel.GroupCode = destination.Code
 	vessel.GroupColor = destination.Color
 	vessel.GroupPattern = destination.Pattern
-	m.groups[source.ID] = source
 	m.groups[destination.ID] = destination
 	m.vessels[vessel.ID] = vessel
 	m.fleetVersion++
@@ -528,14 +695,20 @@ func (m *Manager) DeleteGroup(id string, req Mutation) error {
 	if !ok {
 		return &Error{"GROUP_NOT_FOUND", "Group not found."}
 	}
-	if strings.HasPrefix(id, "group-0") {
-		return &Error{"HARDWARE_POLICY", "Seed groups cannot be dissolved; move members instead."}
-	}
 	if err := m.check(req, g.Revision); err != nil {
 		return err
 	}
-	if len(g.MemberIDs) > 0 {
-		return &Error{"GROUP_NOT_EMPTY", "Move members before dissolving the group."}
+	if conflicts := m.conflicts(g.MemberIDs, ""); len(conflicts) > 0 {
+		return &Error{"ACTIVE_MISSION_REPLAN_REQUIRED", "End or re-plan active movement authority before dissolving this group."}
+	}
+	m.persistenceGeneration.Add(1)
+	if err := m.deleteGroupPersistence(id); err != nil {
+		return &Error{"GROUP_PERSISTENCE_FAILED", "Group deletion could not be committed. Nothing was deleted."}
+	}
+	for _, vesselID := range g.MemberIDs {
+		vessel := m.vessels[vesselID]
+		clearVesselGroup(&vessel)
+		m.vessels[vesselID] = vessel
 	}
 	delete(m.groups, id)
 	m.fleetVersion++
@@ -613,7 +786,7 @@ func (m *Manager) CreateMission(req CreateMissionRequest) (domain.MissionWorkspa
 		nameSource = "generated"
 		name = m.nextMissionNameLocked()
 	}
-	mission := domain.MissionWorkspaceV2{SchemaVersion: 2, ID: "mission-" + shortHash(req.IdempotencyKey), Name: m.uniqueMissionNameLocked(name), NameSource: nameSource, Objective: req.Objective, Status: "draft", TargetIDs: targets, TargetSnapshotHash: hashAny(targets), FleetVersion: m.fleetVersion, Version: 1, Geometry: domain.MissionGeometryV2{Revision: 1, IncludedAreas: [][][]float64{}, ExclusionAreas: [][][]float64{}, Waypoints: []domain.GeoPointV2{}, POIs: []domain.MissionPOIV2{}}, Constraints: defaultConstraints(), Formation: "column", CreatedAt: now, UpdatedAt: now}
+	mission := domain.MissionWorkspaceV2{SchemaVersion: 2, ID: "mission-" + shortHash(req.IdempotencyKey), Name: m.uniqueMissionNameLocked(name), NameSource: nameSource, Objective: req.Objective, Status: "draft", TargetIDs: targets, TargetSnapshotHash: hashAny(targets), FleetVersion: m.fleetVersion, Version: 1, Geometry: domain.MissionGeometryV2{Revision: 1, IncludedAreas: [][][]float64{}, ExclusionAreas: [][][]float64{}, Waypoints: []domain.GeoPointV2{}, POIs: []domain.MissionPOIV2{}}, Constraints: defaultConstraints(), Formation: "column", Conversation: []domain.MissionChatMessageV2{}, CreatedAt: now, UpdatedAt: now}
 	m.missions[mission.ID] = mission
 	m.persistAsync()
 	return mission, nil
@@ -632,6 +805,7 @@ func (m *Manager) ResetOperations(req Mutation) (domain.FleetSnapshotV2, error) 
 	m.plans = map[string]domain.FleetPlanV2{}
 	m.leases = map[string]domain.FleetLeaseV2{}
 	m.startedPlans = map[string]string{}
+	m.programs = map[string]domain.TrajectoryProgramV1{}
 	for id, vessel := range m.vessels {
 		vessel.Telemetry.MissionID = ""
 		vessel.Telemetry.Route = nil
@@ -753,6 +927,7 @@ func (m *Manager) DeleteMission(id string, req Mutation) error {
 		}
 	}
 	delete(m.missions, id)
+	delete(m.programs, id)
 	m.fleetVersion++
 	m.persistAsync()
 	return nil
@@ -775,12 +950,52 @@ func (m *Manager) SetGeometry(id string, req GeometryRequest) (domain.MissionWor
 		return v, err
 	}
 	v.Geometry = domain.MissionGeometryV2{Revision: v.Geometry.Revision + 1, IncludedAreas: req.IncludedAreas, ExclusionAreas: req.ExclusionAreas, Waypoints: req.Waypoints, WaypointDetails: details, POIs: req.POIs}
+	m.reconcileGroupAssemblyWaypointsLocked(id, details)
 	v.Version++
 	v.UpdatedAt = time.Now().UTC()
 	v.AuthorizedPlanID = ""
 	m.missions[id] = v
 	m.persistAsync()
 	return v, nil
+}
+
+func (m *Manager) reconcileGroupAssemblyWaypointsLocked(missionID string, waypoints []domain.MissionWaypointV2) {
+	byID := make(map[string]domain.MissionWaypointV2, len(waypoints))
+	for _, waypoint := range waypoints {
+		byID[waypoint.ID] = waypoint
+	}
+	for id, group := range m.groups {
+		changed := false
+		if group.AssemblySource == "mission:"+missionID && group.AssemblyWaypointID != "" {
+			if waypoint, ok := byID[group.AssemblyWaypointID]; ok {
+				point := waypoint.Position
+				group.AssemblyPoint = &point
+			} else {
+				group.AssemblyPoint = nil
+				group.AssemblySource = ""
+				group.AssemblyWaypointID = ""
+			}
+			changed = true
+		}
+		if group.AssemblyPoint == nil {
+			wanted := nearestWaypointColor(group.Color)
+			for _, waypoint := range waypoints {
+				if normalizeWaypointColor(waypoint.Color) != wanted {
+					continue
+				}
+				point := waypoint.Position
+				group.AssemblyPoint = &point
+				group.AssemblySource = "mission:" + missionID
+				group.AssemblyWaypointID = waypoint.ID
+				changed = true
+				break
+			}
+		}
+		if changed {
+			group.Revision++
+			m.groups[id] = group
+		}
+	}
 }
 
 func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2, error) {
@@ -888,6 +1103,13 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, Ambiguities: amb}
 	draft.ContentHash = hashWithout(draft)
 	m.drafts[draft.ID] = draft
+	messageID := "message-" + shortHash(req.IdempotencyKey)
+	if !hasChatMessage(mission.Conversation, messageID) {
+		mission.Conversation = append(mission.Conversation, domain.MissionChatMessageV2{ID: messageID, Role: "operator", Markdown: req.Text, State: "complete", CreatedAt: time.Now().UTC()})
+	}
+	mission.UpdatedAt = time.Now().UTC()
+	m.missions[id] = mission
+	m.persistAsync()
 	return draft, nil
 }
 
@@ -911,7 +1133,11 @@ func (m *Manager) PlanningContext(draftID string) (domain.MissionPlanningContext
 	if advisorGeometryEligible(draft, mission) {
 		geometryOptions = m.geometryOptionsLocked(draft.TargetIDs, draft.SourceText)
 	}
-	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, 0), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, GeometryOptions: geometryOptions, MapBounds: [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, FormationCurrent: mission.Formation}, nil
+	conversation := mission.Conversation
+	if len(conversation) > 12 {
+		conversation = conversation[len(conversation)-12:]
+	}
+	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, 0), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, GeometryOptions: geometryOptions, MapBounds: [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, FormationCurrent: mission.Formation, Conversation: append([]domain.MissionChatMessageV2(nil), conversation...)}, nil
 }
 
 // ApplyAdvisor validates and freezes advisory strategies into the immutable
@@ -961,6 +1187,23 @@ func (m *Manager) ApplyAdvisor(draftID string, advisor domain.MissionAdvisorV2) 
 		}
 	}
 	draft.Advisor = advisor
+	if mission, exists := m.missions[draft.MissionID]; exists {
+		markdown := strings.TrimSpace(advisor.Summary)
+		if markdown == "" {
+			lines := []string{fmt.Sprintf("I prepared %d bounded options for deterministic validation.", len(advisor.Strategies))}
+			for _, strategy := range advisor.Strategies {
+				lines = append(lines, fmt.Sprintf("- **%s** — %s", strategy.Name, strategy.Description))
+			}
+			markdown = strings.Join(lines, "\n")
+		}
+		messageID := "message-advisor-" + shortHash(draft.ID+advisor.Model)
+		if !hasChatMessage(mission.Conversation, messageID) {
+			mission.Conversation = append(mission.Conversation, domain.MissionChatMessageV2{ID: messageID, Role: "assistant", Markdown: markdown, State: advisor.State, CreatedAt: time.Now().UTC()})
+		}
+		mission.UpdatedAt = time.Now().UTC()
+		m.missions[mission.ID] = mission
+		missionChanged = true
+	}
 	if mission, exists := m.missions[draft.MissionID]; exists && mission.NameSource == "ai" && strings.TrimSpace(advisor.MissionName) != "" {
 		mission.Name = m.uniqueMissionNameExceptLocked(strings.TrimSpace(advisor.MissionName), mission.ID)
 		mission.NameSource = advisor.Provider
@@ -1365,7 +1608,9 @@ func (m *Manager) GeneratePlans(id string, req PlansRequest) ([]domain.FleetPlan
 	for _, p := range out {
 		mission.PlanIDs = append(mission.PlanIDs, p.ID)
 	}
-	mission.Status = "planned"
+	if _, executing := m.programs[id]; !executing {
+		mission.Status = "planned"
+	}
 	mission.Version++
 	mission.UpdatedAt = time.Now().UTC()
 	m.missions[id] = mission
@@ -1431,7 +1676,9 @@ func (m *Manager) Authorize(mid, pid string, req PlanActionRequest) (domain.Flee
 	lease.Signature = m.sign(lease)
 	m.leases[lease.ID] = lease
 	mission.AuthorizedPlanID = pid
-	mission.Status = "authorized"
+	if _, executing := m.programs[mid]; !executing {
+		mission.Status = "authorized"
+	}
 	mission.Version++
 	mission.UpdatedAt = now
 	m.missions[mid] = mission
@@ -1465,13 +1712,36 @@ func (m *Manager) Start(mid, pid string, req PlanActionRequest) (domain.MissionW
 		return mission, &Error{"PLAN_HASH_MISMATCH", "Plan changed after approval."}
 	}
 	m.startedPlans[req.IdempotencyKey] = pid
+	program, revising := m.programs[mid]
+	revisionNumber, createdTick, activationTick := 1, int64(0), int64(0)
+	if revising {
+		revisionNumber = program.ActiveRevision + 1
+		if program.PendingRevision >= revisionNumber {
+			revisionNumber = program.PendingRevision + 1
+		}
+		currentTick := program.MissionTickMS / 1000
+		createdTick = currentTick
+		activationTick = ((currentTick + 29) / 10) * 10
+	}
+	revision := trajectory.BuildRevision(mission, p, lease, revisionNumber, createdTick, activationTick, m.secret)
+	if !trajectory.ValidateRevision(revision, m.secret) {
+		return mission, &Error{"TRAJECTORY_SIGNATURE_INVALID", "Generated trajectory revision failed signature validation."}
+	}
+	if revising {
+		trajectory.AddPending(&program, revision)
+	} else {
+		program = trajectory.NewProgram(mid, revision, 60)
+	}
+	m.programs[mid] = program
 	mission.Status = "executing"
 	mission.Version++
 	mission.UpdatedAt = time.Now().UTC()
 	m.missions[mid] = mission
 	for _, a := range p.Assignments {
 		v := m.vessels[a.VesselID]
-		v.Telemetry.Route = clonePoints(a.Route)
+		if !revising {
+			v.Telemetry.Route = clonePoints(a.Route)
+		}
 		v.Telemetry.MissionID = mid
 		v.Telemetry.Mode = "mission"
 		v.Telemetry.SpeedMPS = a.SpeedMPS
@@ -1479,6 +1749,8 @@ func (m *Manager) Start(mid, pid string, req PlanActionRequest) (domain.MissionW
 		m.vessels[v.ID] = v
 	}
 	m.fleetVersion++
+	m.persistAsync()
+	m.persistProgramAsync(mid, program)
 	return mission, nil
 }
 
@@ -1499,7 +1771,7 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 			reference = sweepLane(mission.Geometry.IncludedAreas[0], i, len(targets))
 		}
 		for _, p := range reference {
-			off := formationOffset(formation, i, len(targets), draft.Constraints.FormationSpacingM)
+			off := formationOffset(formation, i, len(targets), draft.Constraints.FormationSpacingM, p[1])
 			route = append(route, domain.GeoPointV2{p[0] + off[0], p[1] + off[1]})
 		}
 		dist := routeDistance(route)
@@ -1627,44 +1899,176 @@ func sweepLane(area [][]float64, index, count int) []domain.GeoPointV2 {
 func (m *Manager) tick() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	changed := false
-	for mid, mission := range m.missions {
-		if mission.Status != "executing" {
+	m.simTickMS += 200
+	for mid, program := range m.programs {
+		mission, exists := m.missions[mid]
+		if !exists || mission.Status == "paused" || mission.Status == "ended" || mission.Status == "completed" {
 			continue
 		}
+		activated := trajectory.Advance(&program, 200)
+		m.programs[mid] = program
 		active := false
-		for id, v := range m.vessels {
-			if v.Telemetry.MissionID != mid || len(v.Telemetry.Route) < 2 {
+		for vesselID, cursor := range program.Cursors {
+			v, vesselExists := m.vessels[vesselID]
+			if !vesselExists {
+				continue
+			}
+			segment, segmentActive := trajectory.CurrentSegment(program, vesselID)
+			if !segmentActive {
+				if cursor.Lifecycle == "completed" {
+					v.Telemetry.Route = nil
+					v.Telemetry.MissionID = ""
+					v.Telemetry.Mode = "station_keep"
+					v.Telemetry.SpeedMPS = 0
+					v.Telemetry.TapeDepthSeconds = 0
+					m.vessels[vesselID] = v
+				}
 				continue
 			}
 			active = true
-			target := v.Telemetry.Route[1]
-			step := v.Telemetry.SpeedMPS * .2 / 111_000
+			target := segment.End
+			adjustment := m.localAdjustmentLocked(v, segment)
+			if adjustment.InsideEnvelope && adjustment.LateralOffsetM != 0 {
+				target = lateralPoint(segment.Start, segment.End, adjustment.LateralOffsetM)
+			}
+			speed := math.Min(segment.MaximumSpeedMPS, segment.TargetSpeedMPS*adjustment.SpeedFactor)
+			step := speed * .2 / 111_000
 			dx, dy := target[0]-v.Telemetry.Position[0], target[1]-v.Telemetry.Position[1]
 			d := math.Hypot(dx, dy)
 			if d <= step {
 				v.Telemetry.Position = target
-				v.Telemetry.Route = v.Telemetry.Route[1:]
 			} else {
 				v.Telemetry.Position[0] += dx / d * step
 				v.Telemetry.Position[1] += dy / d * step
 			}
-			v.Telemetry.HeadingDeg = math.Mod(math.Atan2(dx, dy)*180/math.Pi+360, 360)
-			v.Telemetry.Reserve = math.Max(0, v.Telemetry.Reserve-.000006)
-			v.Telemetry.Environment = environmentAt(v.Telemetry.Position, float64(time.Now().Unix()%100))
-			m.vessels[id] = v
-			changed = true
+			v.Telemetry.HeadingDeg = math.Mod(math.Atan2(dx, dy)*180/math.Pi+360+adjustment.HeadingDelta, 360)
+			v.Telemetry.SpeedMPS = speed
+			v.Telemetry.TapeDepthSeconds = cursor.HotTapeDepthS
+			v.Telemetry.Mode = "mission"
+			if adjustment.Kind != "nominal" {
+				v.Telemetry.Mode = "mission · adaptive"
+				program.LastAdjustments[vesselID] = adjustment
+			}
+			v.Telemetry.Reserve = m.advanceEnergy(v, speed, program.MissionTickMS/1000, .2)
+			v.Telemetry.ProjectedReserve = math.Max(segment.MinimumReserve, v.Telemetry.Reserve-float64(cursor.ProgramRemainingS)*.000006)
+			v.Telemetry.Environment = environmentAt(v.Telemetry.Position, float64(program.MissionTickMS/1000))
+			v.Telemetry.Route = []domain.GeoPointV2{v.Telemetry.Position, segment.End}
+			m.vessels[vesselID] = v
+		}
+		m.programs[mid] = program
+		if program.MissionTickMS%10_000 == 0 {
+			m.persistProgramAsync(mid, program)
 		}
 		if !active {
 			mission.Status = "completed"
 			mission.Version++
 			mission.UpdatedAt = time.Now().UTC()
 			m.missions[mid] = mission
+			m.persistProgramAsync(mid, program)
+		} else if activated {
+			mission.UpdatedAt = time.Now().UTC()
+			m.missions[mid] = mission
+			m.persistProgramAsync(mid, program)
 		}
 	}
-	if changed {
-		m.fleetVersion++
+	// Telemetry, battery, and simulation-clock motion do not mutate fleet
+	// configuration. Keeping their 5 Hz cadence out of fleetVersion prevents
+	// ordinary group/mission writes from racing continuous station keeping.
+	m.tickIdleGroupsLocked()
+}
+
+func (m *Manager) localAdjustmentLocked(vessel domain.VesselProfileV2, segment domain.TrajectorySegmentV2) domain.LocalAdjustmentV1 {
+	adjustment := domain.LocalAdjustmentV1{VesselID: vessel.ID, Tick: segment.ActivationTick, Kind: "nominal", Reason: "inside signed trajectory envelope", SpeedFactor: 1, InsideEnvelope: true}
+	if vessel.Telemetry.Reserve-segment.MinimumReserve < .08 {
+		adjustment.Kind = "energy_compensation"
+		adjustment.Reason = "projected reserve is near the signed floor"
+		adjustment.SpeedFactor = .72
 	}
+	closestID, closestM := "", math.MaxFloat64
+	for otherID, other := range m.vessels {
+		if otherID == vessel.ID {
+			continue
+		}
+		distance := geoDistanceM(vessel.Telemetry.Position, other.Telemetry.Position)
+		if distance < closestM {
+			closestID, closestM = otherID, distance
+		}
+	}
+	if closestM < segment.MinimumSeparationM*1.5 {
+		adjustment.Kind = "collision_avoidance"
+		adjustment.Reason = "bounded closest-approach correction around " + m.vessels[closestID].Callsign
+		adjustment.LateralOffsetM = math.Min(segment.MaxLateralAdjustM, segment.MinimumSeparationM)
+		adjustment.SpeedFactor = math.Min(adjustment.SpeedFactor, .65)
+		adjustment.HeadingDelta = 8
+	}
+	return adjustment
+}
+
+func lateralPoint(start, end domain.GeoPointV2, offsetM float64) domain.GeoPointV2 {
+	dx, dy := end[0]-start[0], end[1]-start[1]
+	length := math.Hypot(dx, dy)
+	if length == 0 {
+		return end
+	}
+	offset := offsetM / 111_000
+	return domain.GeoPointV2{end[0] - dy/length*offset, end[1] + dx/length*offset}
+}
+
+func geoDistanceM(a, b domain.GeoPointV2) float64 {
+	latitude := (a[1] + b[1]) * math.Pi / 360
+	return math.Hypot((b[0]-a[0])*111_000*math.Cos(latitude), (b[1]-a[1])*111_000)
+}
+
+func (m *Manager) advanceEnergy(vessel domain.VesselProfileV2, speed float64, missionTick int64, seconds float64) float64 {
+	base, propulsion, batteryKWH, solarKW := 250., 160., 40., 2.
+	switch vessel.Class.ID {
+	case "kestrel":
+		base, propulsion, batteryKWH, solarKW = 150, 85, 18, 1.2
+	case "atlas":
+		base, propulsion, batteryKWH, solarKW = 450, 320, 90, 4
+	}
+	dayPhase := 2 * math.Pi * float64(missionTick%86400) / 86400
+	solar := solarKW * 1000 * math.Max(0, math.Sin(dayPhase-math.Pi/2))
+	load := base + propulsion*math.Pow(speed, 3)
+	delta := (solar - load) * seconds / 3_600_000 / batteryKWH
+	return math.Max(0, math.Min(1, vessel.Telemetry.Reserve+delta))
+}
+
+func (m *Manager) tickIdleGroupsLocked() bool {
+	changed := false
+	for _, group := range m.groups {
+		if group.AssemblyPoint == nil || len(group.MemberIDs) == 0 {
+			continue
+		}
+		for index, vesselID := range group.MemberIDs {
+			vessel := m.vessels[vesselID]
+			if vessel.Telemetry.MissionID != "" {
+				continue
+			}
+			offset := formationOffset(group.Formation, index, len(group.MemberIDs), group.FormationSpacingM, (*group.AssemblyPoint)[1])
+			target := domain.GeoPointV2{(*group.AssemblyPoint)[0] + offset[0], (*group.AssemblyPoint)[1] + offset[1]}
+			distance := geoDistanceM(vessel.Telemetry.Position, target)
+			if distance > 2 {
+				dx, dy := target[0]-vessel.Telemetry.Position[0], target[1]-vessel.Telemetry.Position[1]
+				length := math.Hypot(dx, dy)
+				speed := math.Min(.8, distance/20)
+				step := speed * .2 / 111_000
+				vessel.Telemetry.Position[0] += dx / length * math.Min(step, length)
+				vessel.Telemetry.Position[1] += dy / length * math.Min(step, length)
+				vessel.Telemetry.HeadingDeg = math.Mod(math.Atan2(dx, dy)*180/math.Pi+360, 360)
+				vessel.Telemetry.SpeedMPS = speed
+				vessel.Telemetry.Mode = "forming · " + strings.ReplaceAll(group.Formation, "_", " ")
+			} else {
+				vessel.Telemetry.SpeedMPS = 0
+				vessel.Telemetry.Mode = "station_keep · " + strings.ReplaceAll(group.Formation, "_", " ")
+			}
+			vessel.Telemetry.Reserve = m.advanceEnergy(vessel, vessel.Telemetry.SpeedMPS, m.simTickMS/1000, .2)
+			vessel.Telemetry.Environment = environmentAt(vessel.Telemetry.Position, float64(m.simTickMS/1000))
+			m.vessels[vesselID] = vessel
+			changed = true
+		}
+	}
+	return changed
 }
 
 func (m *Manager) check(req Mutation, current int64) error {
@@ -1765,32 +2169,33 @@ func conservative(a, b domain.ConstraintSetV2) domain.ConstraintSetV2 {
 	}
 	return a
 }
-func formationOffset(f string, i, n int, spacing float64) domain.GeoPointV2 {
-	d := spacing / 111_000
+func formationOffset(f string, i, n int, spacing, latitude float64) domain.GeoPointV2 {
+	latD := spacing / 111_000
+	lonD := latD / math.Max(.2, math.Cos(latitude*math.Pi/180))
 	center := float64(n-1) / 2
 	switch f {
 	case "line_abreast":
-		return domain.GeoPointV2{(float64(i) - center) * d, 0}
+		return domain.GeoPointV2{(float64(i) - center) * lonD, 0}
 	case "wedge":
 		side := 1.
 		if i%2 == 0 {
 			side = -1
 		}
 		rank := float64((i + 1) / 2)
-		return domain.GeoPointV2{side * rank * d, -rank * d * .7}
+		return domain.GeoPointV2{side * rank * lonD, -rank * latD * .7}
 	case "echelon_left":
-		return domain.GeoPointV2{-float64(i) * d, -float64(i) * d * .7}
+		return domain.GeoPointV2{-float64(i) * lonD, -float64(i) * latD * .7}
 	case "echelon_right":
-		return domain.GeoPointV2{float64(i) * d, -float64(i) * d * .7}
+		return domain.GeoPointV2{float64(i) * lonD, -float64(i) * latD * .7}
 	case "parallel_columns":
-		return domain.GeoPointV2{float64(i%2)*d - float64(1)*d/2, -float64(i/2) * d}
+		return domain.GeoPointV2{float64(i%2)*lonD - lonD/2, -float64(i/2) * latD}
 	case "dispersed_screen":
-		return domain.GeoPointV2{(float64(i%3) - 1) * d * 1.7, -float64(i/3) * d * 1.7}
+		return domain.GeoPointV2{(float64(i%3) - 1) * lonD * 1.7, -float64(i/3) * latD * 1.7}
 	case "ring", "orbit":
 		a := 2 * math.Pi * float64(i) / float64(n)
-		return domain.GeoPointV2{math.Cos(a) * d, math.Sin(a) * d}
+		return domain.GeoPointV2{math.Cos(a) * lonD, math.Sin(a) * latD}
 	default:
-		return domain.GeoPointV2{0, -float64(i) * d}
+		return domain.GeoPointV2{0, -float64(i) * latD}
 	}
 }
 func inferFormation(s, def string) string {
@@ -1887,6 +2292,15 @@ func remove(v []string, x string) []string {
 func cloneStrings(v []string) []string { return append([]string(nil), v...) }
 func clonePoints(v []domain.GeoPointV2) []domain.GeoPointV2 {
 	return append([]domain.GeoPointV2(nil), v...)
+}
+
+func hasChatMessage(messages []domain.MissionChatMessageV2, id string) bool {
+	for _, message := range messages {
+		if message.ID == id {
+			return true
+		}
+	}
+	return false
 }
 func nonempty(a, b string) string {
 	if strings.TrimSpace(a) != "" {
@@ -2064,6 +2478,25 @@ func (m *Manager) persistAsync() {
 		}
 	}()
 }
+
+func (m *Manager) persistProgramAsync(missionID string, program domain.TrajectoryProgramV1) {
+	if m.databaseURL == "" {
+		return
+	}
+	go func() {
+		m.persistenceMu.Lock()
+		defer m.persistenceMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		pool, err := pgxpool.New(ctx, m.databaseURL)
+		if err != nil {
+			return
+		}
+		defer pool.Close()
+		payload, _ := json.Marshal(program)
+		_, _ = pool.Exec(ctx, `INSERT INTO trajectory_programs(mission_id,active_revision,content_hash,payload,updated_at) VALUES($1,$2,$3,$4,now()) ON CONFLICT(mission_id) DO UPDATE SET active_revision=EXCLUDED.active_revision,content_hash=EXCLUDED.content_hash,payload=EXCLUDED.payload,updated_at=now()`, missionID, program.ActiveRevision, program.ContentHash, payload)
+	}()
+}
 func (m *Manager) clearMissionPersistenceAsync() {
 	if m.databaseURL == "" {
 		return
@@ -2082,7 +2515,7 @@ func (m *Manager) clearMissionPersistenceAsync() {
 			return
 		}
 		defer pool.Close()
-		_, _ = pool.Exec(ctx, `TRUNCATE mission_command_drafts, fleet_plans, mission_workspaces`)
+		_, _ = pool.Exec(ctx, `TRUNCATE trajectory_programs, mission_command_drafts, fleet_plans, mission_workspaces`)
 	}()
 }
 
@@ -2120,6 +2553,26 @@ func (m *Manager) deleteMissionPersistence(id string) error {
 	}
 	if err != nil {
 		m.logger.Warn("mission persistence deletion failed", "mission_id", id, "error", err)
+	}
+	return err
+}
+
+func (m *Manager) deleteGroupPersistence(id string) error {
+	if m.databaseURL == "" {
+		return nil
+	}
+	m.persistenceMu.Lock()
+	defer m.persistenceMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, m.databaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	_, err = pool.Exec(ctx, `DELETE FROM operational_groups WHERE id=$1`, id)
+	if err != nil {
+		m.logger.Warn("group persistence deletion failed", "group_id", id, "error", err)
 	}
 	return err
 }
@@ -2175,6 +2628,36 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 			m.missions[v.ID] = v
 		}
 	})
+	load(`SELECT payload FROM trajectory_programs ORDER BY mission_id`, func(b []byte) {
+		var program domain.TrajectoryProgramV1
+		if json.Unmarshal(b, &program) == nil && program.MissionID != "" && trajectory.ValidateRevision(program.Revisions[program.ActiveRevision], m.secret) {
+			m.programs[program.MissionID] = program
+		}
+	})
+	for id, group := range m.groups {
+		if !validFormation(group.Formation) {
+			group.Formation = "column"
+		}
+		if group.FormationSpacingM < 15 {
+			group.FormationSpacingM = 60
+		}
+		if group.AssemblyPoint == nil && len(group.MemberIDs) > 0 {
+			if vessel, ok := m.vessels[group.MemberIDs[0]]; ok {
+				point := vessel.Telemetry.Position
+				group.AssemblyPoint = &point
+				group.AssemblySource = "first-member"
+			}
+		}
+		m.groups[id] = group
+	}
+	for id, vessel := range m.vessels {
+		if vessel.GroupID != "" {
+			if _, ok := m.groups[vessel.GroupID]; !ok {
+				clearVesselGroup(&vessel)
+				m.vessels[id] = vessel
+			}
+		}
+	}
 	m.deduplicateMissionNamesLocked()
 	m.persistAsync()
 }

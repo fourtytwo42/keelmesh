@@ -615,6 +615,11 @@ export type OperationalGroupV2 = {
   color: string;
   pattern: string;
   member_ids: string[];
+  formation: string;
+  formation_spacing_m: number;
+  assembly_point?: Point;
+  assembly_source?: string;
+  assembly_waypoint_id?: string;
   revision: number;
 };
 export type SavedCollectionV2 = {
@@ -694,8 +699,53 @@ export type MissionWorkspaceV2 = {
   formation: string;
   plan_ids: string[];
   authorized_plan_id?: string;
+  conversation: MissionChatMessageV2[];
+  trajectory?: TrajectoryProgramSummaryV1;
   created_at: string;
   updated_at: string;
+};
+
+export type ExecutionCursorV1 = {
+  vessel_id: string;
+  revision: number;
+  sequence: number;
+  mission_tick: number;
+  hot_tape_depth_seconds: number;
+  program_remaining_seconds: number;
+  lifecycle: string;
+};
+
+export type LocalAdjustmentV1 = {
+  vessel_id: string;
+  tick: number;
+  kind: string;
+  reason: string;
+  heading_delta_deg: number;
+  speed_factor: number;
+  lateral_offset_m: number;
+  inside_envelope: boolean;
+};
+
+export type TrajectoryProgramSummaryV1 = {
+  mission_id: string;
+  active_revision: number;
+  pending_revision?: number;
+  activation_tick?: number;
+  mission_tick: number;
+  duration_seconds: number;
+  total_segments: number;
+  hot_tape_horizon_seconds: number;
+  execution: Record<string, ExecutionCursorV1>;
+  last_adjustments?: Record<string, LocalAdjustmentV1>;
+  content_hash: string;
+};
+
+export type MissionChatMessageV2 = {
+  id: string;
+  role: "operator" | "assistant" | "system" | "tool";
+  markdown: string;
+  state: string;
+  created_at: string;
 };
 export type MissionStrategyV2 = {
   id: string;
