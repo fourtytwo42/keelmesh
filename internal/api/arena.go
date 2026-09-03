@@ -180,6 +180,7 @@ func (s *Server) workspaceAssistantV3(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.memory != nil {
+		s.memory.SyncFleet(r.Context(), s.fleetops.Snapshot())
 		req.MemoryContext = ptrContext(s.memory.Assemble(r.Context(), req.RequestID, "demo-operator", "global-voice", req.ActiveMissionID, req.Text))
 	}
 	value, err := s.agent.WorkspaceCommand(r.Context(), req, s.fleetops.Snapshot())

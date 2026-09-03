@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -15,6 +16,9 @@ func (s *Server) memorySnapshotV5(w http.ResponseWriter, _ *http.Request) {
 	if s.memory == nil {
 		memoryUnavailable(w)
 		return
+	}
+	if s.fleetops != nil {
+		s.memory.SyncFleet(context.Background(), s.fleetops.Snapshot())
 	}
 	writeJSON(w, http.StatusOK, s.memory.Snapshot())
 }

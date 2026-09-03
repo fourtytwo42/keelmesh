@@ -35,11 +35,11 @@ func TestCandidateNeedsExactHashAndTombstoneCannotResurrect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = m.DecideCandidate(ctx, candidate.ID, "approve", CandidateMutation{Mutation: Mutation{ActorID: "demo-operator", ExpectedVersion: m.Snapshot().StateVersion}, CandidateHash: "tampered"})
+	_, err = m.DecideCandidate(ctx, candidate.ID, "approve", CandidateMutation{Mutation: Mutation{RequestID: "bad-hash", IdempotencyKey: "bad-hash", ActorID: "demo-operator", ExpectedVersion: m.Snapshot().StateVersion}, CandidateHash: "tampered"})
 	if err == nil {
 		t.Fatal("tampered hash accepted")
 	}
-	_, err = m.DecideCandidate(ctx, candidate.ID, "approve", CandidateMutation{Mutation: Mutation{ActorID: "demo-operator", ExpectedVersion: m.Snapshot().StateVersion}, CandidateHash: candidate.CandidateHash})
+	_, err = m.DecideCandidate(ctx, candidate.ID, "approve", CandidateMutation{Mutation: Mutation{RequestID: "approve", IdempotencyKey: "approve", ActorID: "demo-operator", ExpectedVersion: m.Snapshot().StateVersion}, CandidateHash: candidate.CandidateHash})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestCandidateNeedsExactHashAndTombstoneCannotResurrect(t *testing.T) {
 		t.Fatalf("committed memory not retrievable: %v", err)
 	}
 	itemID := items[0].ItemID
-	_, err = m.Forget(ctx, itemID, Mutation{ActorID: "demo-operator", ExpectedVersion: m.Snapshot().StateVersion})
+	_, err = m.Forget(ctx, itemID, Mutation{RequestID: "forget", IdempotencyKey: "forget", ActorID: "demo-operator", ExpectedVersion: m.Snapshot().StateVersion})
 	if err != nil {
 		t.Fatal(err)
 	}

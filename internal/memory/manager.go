@@ -87,6 +87,7 @@ type Manager struct {
 	replays     map[string]domain.MemoryReplayV1
 	idempotency map[string]string
 	local       *localStore
+	entityFleetVersion int64
 }
 
 func New(cfg Config, logger *slog.Logger) *Manager {
@@ -193,6 +194,51 @@ func (m *Manager) Entities(actor string) []domain.MemoryEntityV1 {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+// SyncFleet projects stable, actor-visible entities and relationships into the
+// memory graph. Live telemetry remains in the operational snapshot.
+func (m *Manager) SyncFleet(ctx context.Context, fleet domain.FleetSnapshotV2) {
+	m.mu.RLock()
+	if m.entityFleetVersion == fleet.FleetVersion {
+		m.mu.RUnlock()
+		return
+	}
+	m.mu.RUnlock()
+	now := time.Now().UTC()
+	entities := make([]domain.MemoryEntityV1, 0, len(fleet.Vessels)+len(fleet.Groups)+len(fleet.Missions)+len(fleet.SurfaceContacts))
+	edges := []domain.MemoryEdgeV1{}
+	for _, vessel := range fleet.Vessels {
+		entities = append(entities, domain.MemoryEntityV1{ID: vessel.ID, Type: "vessel", Name: vessel.DisplayName, Scope: domain.MemoryScopeV1{Kind: "vessel", ID: vessel.ID}, Version: fleet.FleetVersion, Metadata: map[string]any{"designation": vessel.Designation, "callsign": vessel.Callsign, "class": vessel.Class.Name, "group_id": vessel.GroupID}, UpdatedAt: now})
+		if vessel.GroupID != "" {
+			edges = append(edges, domain.MemoryEdgeV1{ID: stable("edge", vessel.ID, vessel.GroupID, "member_of"), FromID: vessel.ID, ToID: vessel.GroupID, Kind: "member_of", SourceID: fmt.Sprintf("fleet-v%d", fleet.FleetVersion), CreatedAt: now})
+		}
+	}
+	for _, group := range fleet.Groups {
+		entities = append(entities, domain.MemoryEntityV1{ID: group.ID, Type: "group", Name: group.Name, Scope: domain.MemoryScopeV1{Kind: "group", ID: group.ID}, Version: group.Revision, Metadata: map[string]any{"code": group.Code, "color": group.ColorName, "formation": group.Formation, "member_ids": group.MemberIDs}, UpdatedAt: now})
+	}
+	for _, mission := range fleet.Missions {
+		entities = append(entities, domain.MemoryEntityV1{ID: mission.ID, Type: "mission", Name: mission.Name, Scope: domain.MemoryScopeV1{Kind: "mission", ID: mission.ID}, Version: mission.Version, Metadata: map[string]any{"status": mission.Status, "objective": mission.Objective, "target_ids": mission.TargetIDs}, UpdatedAt: now})
+		for _, target := range mission.TargetIDs {
+			edges = append(edges, domain.MemoryEdgeV1{ID: stable("edge", mission.ID, target, "targets"), FromID: mission.ID, ToID: target, Kind: "targets", SourceID: fmt.Sprintf("mission-v%d", mission.Version), CreatedAt: now})
+		}
+	}
+	for _, contact := range fleet.SurfaceContacts {
+		entities = append(entities, domain.MemoryEntityV1{ID: contact.ID, Type: "contact", Name: contact.Name, Scope: domain.MemoryScopeV1{Kind: "approved_global", ID: "global"}, Version: fleet.FleetVersion, Metadata: map[string]any{"boat_id": contact.BoatID, "callsign": contact.Callsign, "class": contact.Class, "activity": contact.Activity}, UpdatedAt: now})
+	}
+	m.mu.Lock()
+	for _, entity := range entities {
+		m.entities[entity.ID] = entity
+	}
+	m.entityFleetVersion = fleet.FleetVersion
+	m.mu.Unlock()
+	for _, entity := range entities {
+		metadata, _ := json.Marshal(entity.Metadata)
+		m.persistJSON(ctx, "INSERT INTO memory_entities(id,entity_type,name,scope_kind,scope_id,version,metadata,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET name=excluded.name,scope_kind=excluded.scope_kind,scope_id=excluded.scope_id,version=excluded.version,metadata=excluded.metadata,updated_at=excluded.updated_at", entity.ID, entity.Type, entity.Name, entity.Scope.Kind, entity.Scope.ID, entity.Version, metadata, entity.UpdatedAt)
+	}
+	for _, edge := range edges {
+		m.persistJSON(ctx, "INSERT INTO memory_edges(id,from_id,to_id,kind,source_id,created_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO NOTHING", edge.ID, edge.FromID, edge.ToID, edge.Kind, edge.SourceID, edge.CreatedAt)
+	}
 }
 func (m *Manager) DraftCandidate(scope domain.MemoryScopeV1, kind, content, actor, sourceID string, confidence float64) (domain.MemoryCandidateV1, error) {
 	if !authorized(actor, scope) {
@@ -395,7 +441,17 @@ func (m *Manager) Forget(ctx context.Context, id string, req Mutation) (domain.M
 		m.mu.Unlock()
 		return v, problem("MEMORY_SCOPE_DENIED", "Memory item is unavailable in this actor scope.")
 	}
-	if req.ExpectedVersion != 0 && req.ExpectedVersion != m.snapshot.StateVersion {
+	repeated, err := m.checkMutationLocked(req, "forget:"+id)
+	if err != nil {
+		m.mu.Unlock()
+		return v, err
+	}
+	if repeated {
+		m.mu.Unlock()
+		return v, nil
+	}
+	if req.ExpectedVersion != m.snapshot.StateVersion {
+		delete(m.idempotency, req.IdempotencyKey)
 		m.mu.Unlock()
 		return v, problem("MEMORY_STALE_STATE", "Memory changed; refresh before forgetting.")
 	}
@@ -424,14 +480,28 @@ func (m *Manager) Forget(ctx context.Context, id string, req Mutation) (domain.M
 }
 
 func (m *Manager) DecideCandidate(ctx context.Context, id, decision string, req CandidateMutation) (domain.MemoryCandidateV1, error) {
-	m.mu.RLock()
+	m.mu.Lock()
 	c, ok := m.candidates[id]
 	version := m.snapshot.StateVersion
-	m.mu.RUnlock()
 	if !ok || !authorized(req.ActorID, c.Scope) {
+		m.mu.Unlock()
 		return c, problem("MEMORY_SCOPE_DENIED", "Candidate is unavailable in this actor scope.")
 	}
+	repeated, err := m.checkMutationLocked(req.Mutation, decision+":"+id+":"+req.CandidateHash)
+	m.mu.Unlock()
+	if err != nil {
+		return c, err
+	}
+	if repeated {
+		m.mu.RLock()
+		out := m.candidates[id]
+		m.mu.RUnlock()
+		return out, nil
+	}
 	if req.ExpectedVersion != 0 && req.ExpectedVersion != version {
+		m.mu.Lock()
+		delete(m.idempotency, req.IdempotencyKey)
+		m.mu.Unlock()
 		return c, problem("MEMORY_STALE_STATE", "Memory changed; refresh before deciding.")
 	}
 	if req.CandidateHash != c.CandidateHash {
@@ -458,10 +528,22 @@ func (m *Manager) DecideCandidate(ctx context.Context, id, decision string, req 
 }
 
 func (m *Manager) StartReplay(ctx context.Context, req Mutation) (domain.MemoryReplayV1, error) {
-	m.mu.RLock()
+	m.mu.Lock()
 	version := m.snapshot.StateVersion
-	m.mu.RUnlock()
-	if req.ExpectedVersion != 0 && req.ExpectedVersion != version {
+	repeated, err := m.checkMutationLocked(req, "replay")
+	if repeated {
+		value := m.replays[stable("memory-replay", req.RequestID, req.IdempotencyKey)]
+		m.mu.Unlock()
+		return value, nil
+	}
+	m.mu.Unlock()
+	if err != nil {
+		return domain.MemoryReplayV1{}, err
+	}
+	if req.ExpectedVersion != version {
+		m.mu.Lock()
+		delete(m.idempotency, req.IdempotencyKey)
+		m.mu.Unlock()
 		return domain.MemoryReplayV1{}, problem("MEMORY_STALE_STATE", "Memory changed; refresh before replay.")
 	}
 	started := time.Now().UTC()
@@ -491,7 +573,18 @@ func (m *Manager) StartReplay(ctx context.Context, req Mutation) (domain.MemoryR
 
 func (m *Manager) Reset(ctx context.Context, req Mutation) (domain.MemorySnapshotV1, error) {
 	m.mu.Lock()
-	if req.ExpectedVersion != 0 && req.ExpectedVersion != m.snapshot.StateVersion {
+	repeated, err := m.checkMutationLocked(req, "reset")
+	if err != nil {
+		m.mu.Unlock()
+		return domain.MemorySnapshotV1{}, err
+	}
+	if repeated {
+		out := clone(m.snapshot)
+		m.mu.Unlock()
+		return out, nil
+	}
+	if req.ExpectedVersion != m.snapshot.StateVersion {
+		delete(m.idempotency, req.IdempotencyKey)
 		m.mu.Unlock()
 		return domain.MemorySnapshotV1{}, problem("MEMORY_STALE_STATE", "Memory changed; refresh before reset.")
 	}
@@ -515,6 +608,21 @@ func (m *Manager) Reset(ctx context.Context, req Mutation) (domain.MemorySnapsho
 		_, _ = m.pool.Exec(ctx, "TRUNCATE memory_context_assemblies,memory_retrieval_receipts,memory_conversation_turns,memory_tombstones,memory_revisions,memory_candidates,memory_items,memory_replays")
 	}
 	return out, nil
+}
+
+func (m *Manager) checkMutationLocked(req Mutation, action string) (bool, error) {
+	if strings.TrimSpace(req.RequestID) == "" || strings.TrimSpace(req.IdempotencyKey) == "" || strings.TrimSpace(req.ActorID) == "" || req.ExpectedVersion <= 0 {
+		return false, problem("MEMORY_SOURCE_INVALID", "request_id, idempotency_key, actor_identity, and expected_memory_state_version are required.")
+	}
+	fingerprint := checksum(map[string]any{"request_id": req.RequestID, "actor_identity": req.ActorID, "expected_version": req.ExpectedVersion, "action": action})
+	if prior, ok := m.idempotency[req.IdempotencyKey]; ok {
+		if prior != fingerprint {
+			return false, problem("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different memory mutation.")
+		}
+		return true, nil
+	}
+	m.idempotency[req.IdempotencyKey] = fingerprint
+	return false, nil
 }
 
 func (m *Manager) newCandidate(scope domain.MemoryScopeV1, kind, content, trust string, confidence float64, requiresHuman bool, sourceID string) domain.MemoryCandidateV1 {
@@ -631,6 +739,20 @@ func (m *Manager) load(ctx context.Context) {
 		m.mu.Lock()
 		m.turns = loaded
 		m.snapshot.ConversationTurns = int64(len(loaded))
+		m.mu.Unlock()
+	}
+	entityRows, err := pool.Query(ctx, "SELECT id,entity_type,name,scope_kind,scope_id,version,metadata,updated_at FROM memory_entities ORDER BY name")
+	if err == nil {
+		defer entityRows.Close()
+		m.mu.Lock()
+		for entityRows.Next() {
+			var entity domain.MemoryEntityV1
+			var metadata []byte
+			if entityRows.Scan(&entity.ID, &entity.Type, &entity.Name, &entity.Scope.Kind, &entity.Scope.ID, &entity.Version, &metadata, &entity.UpdatedAt) == nil {
+				_ = json.Unmarshal(metadata, &entity.Metadata)
+				m.entities[entity.ID] = entity
+			}
+		}
 		m.mu.Unlock()
 	}
 }
