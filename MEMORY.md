@@ -4,8 +4,8 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: Captain Barbossa is implemented as the Pirate-mode AI voice, verified, deployed, and pushed in commit `52266eb`.
-- Last meaningful change: Pocket TTS now exposes fourteen voices; Navy mode selects Jarvis and Pirate mode selects the VM-local Captain Barbossa clone while retaining exact mission/agent authority boundaries.
+- Current task: compact mission route schematics and explicit left/right window docking are implemented, verified, deployed, and pushed in commit `bd3c5c4`.
+- Last meaningful change: oversized blue route boxes were replaced by compact graphite schematics with truthful track/start/end encoding; maximized candidate cards remain collapsed until expanded, and Mission Planner now uses an arrowed Snap-right/Return-to-floating control.
 - Next step: continue M8D automatic node-agent interruption escalation or M9 signed group adaptation from this clean checkpoint.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -144,6 +144,14 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+### 2026-09-02 - Compact route schematics and explicit docking icons
+
+- Context: Straight multi-vessel routes rendered as oversized blue/green boxes with an unexplained white line, strategy details consumed too much expanded-planner space, and the plain panel docking glyph did not clearly communicate Mission Planner's right-side destination.
+- Decision: Render compact aspect-preserving graphite route schematics with colored vessel tracks plus start/end markers; keep candidate details collapsed until explicitly expanded in every window mode; fit three summary cards across wide planners; and use directional panel-arrow icons for Snap left/right and Return to floating.
+- Files: `web/src/FleetWorkspace.tsx`, `web/src/WindowManager.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: strict TypeScript, seven Vitest assertions, and production Vite/Docker builds passed; focused Mission Planner/manual and AI planner Playwright workflows passed; deployed browser inspection measured one visible 462×73 route summary, zero visible collapsed details, and no browser warnings/errors.
+- Result: Implementation commit `bd3c5c4` is pushed to `main`. VM 214 and all twelve vessel nodes are healthy on core binary SHA-256 `b996432edfb084c6fe0afee9408ec4626c0427c8901ce0ffe98be51df21ec929`. No GitHub-hosted workflow or Proxmox snapshot ran.
 
 ### 2026-09-02 - Captain Barbossa Pirate voice
 
