@@ -114,8 +114,11 @@ test("map-first workspace exposes the persistent operating picture without heade
   await expect(overlays.getByRole("button", { name: /CURRENT/ })).toHaveClass(/on/);
   await expect(overlays.getByRole("button", { name: /WIND/ })).toHaveClass(/on/);
   await expect(overlays.getByRole("button", { name: /DEPTH/ })).toHaveClass(/on/);
-  await page.getByRole("button", { name: "Fleet", exact: true }).hover();
+  const fleetButton = page.getByRole("button", { name: "Fleet", exact: true });
+  await fleetButton.hover();
   await expect(page.getByRole("tooltip")).toContainText("Show or hide fleet");
+  await expect(fleetButton).not.toHaveAttribute("title");
+  await expect(fleetButton).toHaveAttribute("data-help", "Show or hide fleet and operational groups");
   await overlays.getByRole("button", { name: /WIND/ }).click();
   await expect(overlays.getByRole("button", { name: /WIND/ })).not.toHaveClass(/on/);
   expect(rasterRequests).toEqual([]);

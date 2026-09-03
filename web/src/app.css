@@ -288,7 +288,7 @@ code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
   .window-planner .voice-row{flex:0 0 auto}
 }
 
-.hover-help{position:fixed;z-index:10000;max-width:270px;pointer-events:none;transform:translate(10px,12px);padding:6px 8px;border:1px solid #786038;background:#111716f7;color:#e9e4d8;box-shadow:0 8px 24px #000b;font:7px/1.4 Inter,"Segoe UI",sans-serif;letter-spacing:.02em}
+.hover-help{position:fixed;z-index:10000;max-width:270px;pointer-events:none;transform:translate(10px,12px);padding:6px 8px;border:1px solid #dba13f;background:#111716f7;color:#e9e4d8;box-shadow:0 8px 24px #000b;font:7px/1.4 Inter,"Segoe UI",sans-serif;letter-spacing:.02em}
 .map-hover-help{position:absolute;z-index:60;width:224px;display:grid;gap:3px;pointer-events:none;padding:7px 8px;border:1px solid #dba13f;background:#111716f2;box-shadow:0 10px 28px #000b;color:#dedbd1}
 .map-hover-help strong{font-size:8px;color:#f0ebdf}
 .map-hover-help span{font-size:7px;line-height:1.4;color:#9da199}

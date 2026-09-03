@@ -4,8 +4,8 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: AI-assisted target selection for empty mission drafts is implemented, verified, and deployed.
-- Last meaningful change: an empty AI-assisted mission now sends a bounded availability-aware fleet/group projection to the Python AI service before compilation. GPT-5.6 Luna selects exact vessel IDs and explains its choice; core then validates availability/conflicts, persists the roster, derives geometry, and runs the existing deterministic planning/policy/approval path. Manual planning still requires explicit targets, and provider loss uses a clearly labeled deterministic resolver.
+- Current task: duplicate native/custom hover help is fixed, verified, and deployed.
+- Last meaningful change: HTML `title` attributes are normalized into the shared gold-border `HoverHelp` system when the workspace mounts or dynamic controls appear. Native browser titles are removed before hover, leaving one consistent tooltip while preserving button and map hover coverage.
 - Next step: continue M8D automatic node-agent interruption escalation or M9 signed group adaptation from this clean checkpoint.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -698,6 +698,14 @@ When sources conflict, use this order:
 - Commands/tests: twelve Python tests plus Ruff/mypy; full Go tests/vet in Go 1.27; strict TypeScript, seven Vitest assertions, Vite production build; all seventeen Playwright workflows; live empty-roster API proof using the exact eastbound hold request.
 - Result: Live GPT-5.6 Luna selected all six members of `WS · Watch Shoal`, returned an accepted provider receipt, and the system persisted the roster, generated one exact 1 nm east hold point, reported zero ambiguities, and produced three OpenAI strategies. VM 220 independently passed the same empty-roster workflow through its direct node OpenAI route. The temporary verification missions were cleared. Implementation commit `0b347d1` is pushed; VM 214 and all twelve vessel nodes are healthy on binary SHA-256 `a9328c7d6d1ecdd3179cb99b410fc3dc782fe2b1bf070d28210a59bb62640322`. VM 214 Docker build cache reached 100% filesystem use during repeated builds; only regenerable builder cache was pruned, reclaiming 9.929 GiB. No volumes, evidence, application data, snapshots, or GitHub-hosted workflows were touched.
 - Follow-up: Keep VM 214 build-cache growth monitored; prune only regenerable cache when needed and preserve the snapshot/storage safety rules.
+
+### 2026-09-03 - Unified hover help
+
+- Context: Controls with HTML `title` attributes displayed both the browser-native tooltip and KeelMesh's styled hover card.
+- Decision: Normalize static, dynamically mounted, and late-updated titles into `data-help`, remove the native title trigger, and keep the shared amber-border tooltip as the sole hover-help presentation.
+- Files: `web/src/HoverHelp.tsx`, `web/src/app.css`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: strict TypeScript; seven Vitest assertions; Vite production build; deployed focused Playwright hover regression; central and twelve-node health/hash verification.
+- Result: VM 214 and all twelve vessel nodes run the single-tooltip build with binary SHA-256 `b6d4146cbbc7a8a86dd10e4a566b9560d82a3dd2c828865a12e717666ca840e4`. No GitHub-hosted workflow or Proxmox snapshot ran.
 
 ## Open Follow-ups
 

@@ -3,12 +3,24 @@ import { createPortal } from "react-dom";
 
 type Help = { text: string; x: number; y: number } | null;
 
+function normalizeTitle(element: HTMLElement) {
+  const title = element.getAttribute("title");
+  if (!title) return;
+  if (!element.dataset.help) element.dataset.help = title;
+  element.removeAttribute("title");
+}
+
+function normalizeTitles(root: ParentNode) {
+  if (root instanceof HTMLElement && root.hasAttribute("title")) normalizeTitle(root);
+  root.querySelectorAll<HTMLElement>("[title]").forEach(normalizeTitle);
+}
+
 function helpText(target: Element | null) {
   const element = target?.closest<HTMLElement>("[data-help],[title],button,[aria-label],input,select,textarea");
   if (!element || element.closest(".hover-help")) return "";
+  normalizeTitle(element);
   return (
     element.dataset.help ||
-    element.getAttribute("title") ||
     element.getAttribute("aria-label") ||
     (element instanceof HTMLButtonElement ? element.innerText.trim() : "")
   );
@@ -18,6 +30,13 @@ export function HoverHelp() {
   const [help, setHelp] = useState<Help>(null);
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => {
+    normalizeTitles(document);
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => mutation.addedNodes.forEach((node) => {
+        if (node instanceof HTMLElement) normalizeTitles(node);
+      }));
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
     const show = (event: Event) => {
       window.clearTimeout(timer.current);
       const text = helpText(event.target as Element);
@@ -36,6 +55,7 @@ export function HoverHelp() {
     document.addEventListener("focusout", hide, true);
     document.addEventListener("pointerdown", hide, true);
     return () => {
+      observer.disconnect();
       window.clearTimeout(timer.current);
       document.removeEventListener("pointerover", show, true);
       document.removeEventListener("pointerout", hide, true);
