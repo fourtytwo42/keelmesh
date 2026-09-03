@@ -358,6 +358,77 @@ test("mission planner owns map authoring and presents three conversational choic
   await expect(page.locator(".mission-tabs .mission-tab.active")).toContainText("executing", { timeout: 15_000 });
 });
 
+test("executing routes and waypoints are consumed instead of leaving trails", async ({ page }) => {
+  test.setTimeout(45_000);
+  const mutation = (name: string, version: number) => {
+    const key = `e2e-consume-${name}-${Date.now()}-${Math.random()}`;
+    return { request_id: key, idempotency_key: key, expected_version: version };
+  };
+  let fleet = await (await page.request.get("/api/v2/fleet")).json();
+  const group = fleet.groups[0];
+  const groupVessels = fleet.vessels.filter((vessel: { id: string }) => group.member_ids.includes(vessel.id));
+  const origin = [
+    groupVessels.reduce((sum: number, vessel: { telemetry: { position: number[] } }) => sum + vessel.telemetry.position[0], 0) / groupVessels.length,
+    groupVessels.reduce((sum: number, vessel: { telemetry: { position: number[] } }) => sum + vessel.telemetry.position[1], 0) / groupVessels.length,
+  ];
+  const missionResponse = await page.request.post("/api/v2/missions", { data: {
+    ...mutation("mission", fleet.fleet_version),
+    name: "Consumable Route Test",
+    objective: "Proceed through the waypoints and hold",
+    target_ids: group.member_ids,
+  }});
+  expect(missionResponse.ok()).toBeTruthy();
+  let mission = await missionResponse.json();
+  const geometryResponse = await page.request.post(`/api/v2/missions/${mission.id}/geometry`, { data: {
+    ...mutation("geometry", mission.version),
+    included_areas: [],
+    exclusion_areas: [],
+    waypoints: [[origin[0] + 0.0015, origin[1] - 0.001], [origin[0] + 0.003, origin[1] - 0.002]],
+    pois: [],
+  }});
+  expect(geometryResponse.ok()).toBeTruthy();
+  mission = await geometryResponse.json();
+  const compileResponse = await page.request.post(`/api/v2/missions/${mission.id}/commands:compile`, { data: {
+    ...mutation("compile", mission.version),
+    text: "Proceed through the waypoints in a column, then hold",
+    target_ids: mission.target_ids,
+    formation: "column",
+    planning_mode: "manual",
+  }});
+  expect(compileResponse.ok()).toBeTruthy();
+  const draft = await compileResponse.json();
+  mission = await (await page.request.get(`/api/v2/missions/${mission.id}`)).json();
+  const plansResponse = await page.request.post(`/api/v2/missions/${mission.id}/plans`, { data: {
+    ...mutation("plans", mission.version), draft_id: draft.id,
+  }});
+  expect(plansResponse.ok()).toBeTruthy();
+  const plans = (await plansResponse.json()).plans;
+  const plan = plans.find((candidate: { recommended: boolean; policy_status: string }) => candidate.recommended && candidate.policy_status !== "prohibited")
+    ?? plans.find((candidate: { policy_status: string }) => candidate.policy_status !== "prohibited");
+  expect(plan).toBeTruthy();
+  mission = await (await page.request.get(`/api/v2/missions/${mission.id}`)).json();
+  const leaseResponse = await page.request.post(`/api/v2/missions/${mission.id}/plans/${plan.id}:authorize`, { data: {
+    ...mutation("authorize", mission.version), plan_hash: plan.content_hash, operator_id: "demo-operator",
+  }});
+  expect(leaseResponse.ok()).toBeTruthy();
+  const lease = await leaseResponse.json();
+  mission = await (await page.request.get(`/api/v2/missions/${mission.id}`)).json();
+  const startResponse = await page.request.post(`/api/v2/missions/${mission.id}/plans/${plan.id}:start`, { data: {
+    ...mutation("start", mission.version), plan_hash: plan.content_hash, lease_id: lease.id,
+  }});
+  expect(startResponse.ok()).toBeTruthy();
+
+  await page.goto("/");
+  const map = page.locator(".operations-map");
+  await expect.poll(async () => Number(await map.getAttribute("data-remaining-route-metres"))).toBeGreaterThan(0);
+  const initialRemainingMetres = Number(await map.getAttribute("data-remaining-route-metres"));
+  await page.getByRole("button", { name: "Run simulation at 500 times speed" }).click();
+  await expect.poll(async () => Number(await map.getAttribute("data-remaining-route-metres")), { timeout: 15_000 })
+    .toBeLessThan(initialRemainingMetres);
+  await expect.poll(async () => Number(await map.getAttribute("data-visible-mission-waypoints")), { timeout: 20_000 })
+    .toBe(0);
+});
+
 test("fleet rail is the single selection and group-reassignment surface", async ({ page }) => {
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet / Groups" });

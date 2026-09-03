@@ -17,6 +17,7 @@ import type {
   SurfaceContactV2,
   SceneMapAnnotationV1,
 } from "./types";
+import { projectOntoRoute, remainingRoute, routeLengthM } from "./routeProgress";
 
 maplibregl.setWorkerUrl(maplibreWorkerURL);
 type Tool = "select" | "box" | "waypoint" | "include" | "exclude" | "hold" | "orbit";
@@ -205,11 +206,33 @@ function routeData(
   }
   return {
     type: "FeatureCollection",
-    features: plan.assignments.map((a) => ({
-        type: "Feature",
-        properties: { vessel: a.vessel_id },
-        geometry: { type: "LineString", coordinates: a.route },
-      })),
+    features: plan.assignments.flatMap((assignment) => {
+      const vessel = fleet.vessels.find((item) => item.id === assignment.vessel_id);
+      if (!vessel || !["executing", "paused"].includes(mission.status)) {
+        return assignment.route.length > 1 ? [{
+          type: "Feature" as const,
+          properties: { vessel: assignment.vessel_id },
+          geometry: { type: "LineString" as const, coordinates: assignment.route },
+        }] : [];
+      }
+      const cursor = mission.trajectory?.execution[assignment.vessel_id];
+      const totalM = routeLengthM(assignment.route);
+      const durationSeconds = Math.max(10, Math.ceil(totalM / Math.max(0.1, assignment.speed_mps)));
+      const segmentCount = Math.max(1, Math.ceil(durationSeconds / 10));
+      const minimumProgressM = cursor
+        ? totalM * Math.min(1, cursor.sequence / segmentCount)
+        : 0;
+      const remaining = remainingRoute(
+        assignment.route,
+        vessel.telemetry.position,
+        minimumProgressM,
+      ).coordinates;
+      return remaining.length > 1 ? [{
+        type: "Feature" as const,
+        properties: { vessel: assignment.vessel_id, consumed: true },
+        geometry: { type: "LineString" as const, coordinates: remaining },
+      }] : [];
+    }),
   };
 }
 
@@ -335,14 +358,43 @@ function contactMissionOverlayData(
 }
 function geometryData(
   mission: MissionWorkspaceV2 | null,
+  plan: FleetPlanV2 | null,
+  fleet: FleetSnapshotV2,
 ): GeoJSON.FeatureCollection {
   if (!mission || ["completed", "ended"].includes(mission.status)) {
     return { type: "FeatureCollection", features: [] };
   }
   const waypoints = mission?.geometry.waypoints ?? [],
     details = mission?.geometry.waypoint_details ?? [];
+  const consumedWaypointIndexes = new Set<number>();
+  if (plan && ["executing", "paused"].includes(mission.status)) {
+    waypoints.forEach((waypoint, waypointIndex) => {
+      const ownerGroupID = details[waypointIndex]?.owner_group_id;
+      const relevantAssignments = plan.assignments.filter((assignment) => {
+        if (!ownerGroupID) return mission.target_ids.includes(assignment.vessel_id);
+        return fleet.groups.find((group) => group.id === ownerGroupID)?.member_ids.includes(assignment.vessel_id);
+      });
+      if (relevantAssignments.length === 0) return;
+      const passedByAll = relevantAssignments.every((assignment) => {
+        const vessel = fleet.vessels.find((item) => item.id === assignment.vessel_id);
+        if (!vessel || assignment.route.length < 2) return false;
+        const totalM = routeLengthM(assignment.route);
+        const durationSeconds = Math.max(10, Math.ceil(totalM / Math.max(0.1, assignment.speed_mps)));
+        const segmentCount = Math.max(1, Math.ceil(durationSeconds / 10));
+        const cursor = mission.trajectory?.execution[assignment.vessel_id];
+        const floor = cursor ? totalM * Math.min(1, cursor.sequence / segmentCount) : 0;
+        const vesselProgress = projectOntoRoute(assignment.route, vessel.telemetry.position, floor);
+        const waypointProgress = projectOntoRoute(assignment.route, waypoint);
+        return !!vesselProgress && !!waypointProgress &&
+          waypointProgress.distanceM <= Math.max(250, mission.constraints.formation_spacing_m * 3) &&
+          vesselProgress.progressM >= waypointProgress.progressM - 3;
+      });
+      if (passedByAll) consumedWaypointIndexes.add(waypointIndex);
+    });
+  }
   const routes = new Map<string, MissionWaypointV2[]>();
   details.forEach((waypoint, index) => {
+    if (consumedWaypointIndexes.has(index)) return;
     const key = waypoint.owner_group_id || `color:${waypoint.color}`;
     const existing = routes.get(key) ?? [];
     existing.push({ ...waypoint, position: waypoints[index] ?? waypoint.position });
@@ -378,7 +430,7 @@ function geometryData(
               },
             }],
       ),
-      ...waypoints.map((coordinates, index) => ({
+      ...waypoints.flatMap((coordinates, index) => consumedWaypointIndexes.has(index) ? [] : [{
         type: "Feature" as const,
         id: details[index]?.id ?? `legacy-waypoint-${index + 1}`,
         properties: {
@@ -389,7 +441,7 @@ function geometryData(
           ownerGroup: details[index]?.owner_group_id ?? "",
         },
         geometry: { type: "Point" as const, coordinates },
-      })),
+      }]),
       ...(mission?.geometry.pois ?? []).map((poi, index) => ({
         type: "Feature" as const,
         id: poi.id,
@@ -566,6 +618,14 @@ export function OperationsMap({
   const contactMissionOverlay = useMemo(
     () => contactMissionOverlayData(activeMissionPlans, fleet),
     [activeMissionPlans, fleet],
+  );
+  const remainingMissionRoutes = useMemo(
+    () => routeData(activePlan, mission, fleet),
+    [activePlan, mission, fleet],
+  );
+  const visibleMissionGeometry = useMemo(
+    () => geometryData(mission, activePlan, fleet),
+    [mission, activePlan, fleet],
   );
   const rendezvousStatus = String(
     contactMissionOverlay.features.find((feature) => feature.properties?.kind === "rendezvous-eta")?.properties?.label ?? "",
@@ -1168,7 +1228,7 @@ export function OperationsMap({
       vesselData(fleet),
     );
     (mapRef.current.getSource("routes") as GeoJSONSource)?.setData(
-      routeData(activePlan, mission, fleet),
+      remainingMissionRoutes,
     );
     (mapRef.current.getSource("contact-mission-overlay") as GeoJSONSource)?.setData(
       contactMissionOverlay,
@@ -1180,13 +1240,13 @@ export function OperationsMap({
       mapRef.current.getSource("surface-contact-routes") as GeoJSONSource
     )?.setData(surfaceRouteData(fleet.surface_contacts));
     (mapRef.current.getSource("mission-geometry") as GeoJSONSource)?.setData(
-      geometryData(mission),
+      visibleMissionGeometry,
     );
     (mapRef.current.getSource("group-assembly") as GeoJSONSource)?.setData(
       visibleHoldGroups,
     );
     (mapRef.current.getSource("command-scene") as GeoJSONSource)?.setData(sceneAnnotationData(sceneAnnotations));
-  }, [ready, fleet, activePlan, mission, contactMissionOverlay, visibleHoldGroups, sceneAnnotations]);
+  }, [ready, fleet, contactMissionOverlay, remainingMissionRoutes, visibleMissionGeometry, visibleHoldGroups, sceneAnnotations]);
   useEffect(() => {
     if (!ready || !mapRef.current || !sceneCamera) return;
     mapRef.current.easeTo({ center: sceneCamera.center, zoom: sceneCamera.zoom, bearing: sceneCamera.bearing, pitch: sceneCamera.pitch, duration: 550 });
@@ -1850,6 +1910,17 @@ export function OperationsMap({
       aria-label="Fleet operating map. Tap to select. Long press for contextual actions."
       data-rendezvous-status={rendezvousStatus || undefined}
       data-visible-hold-groups={visibleHoldGroups.features.length}
+      data-remaining-route-points={remainingMissionRoutes.features.reduce(
+        (count, feature) => count + (feature.geometry.type === "LineString" ? feature.geometry.coordinates.length : 0),
+        0,
+      )}
+      data-remaining-route-metres={Math.round(remainingMissionRoutes.features.reduce(
+        (total, feature) => total + (feature.geometry.type === "LineString" ? routeLengthM(feature.geometry.coordinates as Point[]) : 0),
+        0,
+      ))}
+      data-visible-mission-waypoints={visibleMissionGeometry.features.filter(
+        (feature) => feature.properties?.kind === "waypoint",
+      ).length}
       onClickCapture={handleMultiClickCapture}
       onPointerLeave={() => setMapHover(null)}
     >
