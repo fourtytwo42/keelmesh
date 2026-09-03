@@ -1351,11 +1351,6 @@ export function FleetWorkspace() {
       }
     }
   }
-  async function beginTranscription() {
-    await captureTranscription(async (text) => {
-      if (mission) await handlePlannerMessage(text);
-    });
-  }
   function endTranscription() {
     stopRequested.current = true;
     if (recorder.current?.state === "recording") recorder.current.stop();
@@ -1571,28 +1566,45 @@ export function FleetWorkspace() {
     ) ?? null;
   }
 
-  async function handlePlannerMessage(text: string) {
-	const mightChoose = plans.length > 0 && (/\b(option|choice|plan)\s*[abc123]\b|\b(first|second|third)\s+(option|choice|plan)\b|\bgo with\b/i.test(text) || (plans.length === 1 && /\b(confirm|execute it|start it|do it|go ahead|proceed|yes)\b/i.test(text)));
-    if (!mightChoose) {
-	  await createPlans(mission, text, "ai_assisted", "", "", false, requestsMissionOptions(text) ? 3 : 1);
-      return;
+  async function missionWithObjective(target: MissionWorkspaceV2, objective: string) {
+    const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
+    let current = snapshot.missions.find((value) => value.id === target.id);
+    if (!current) return null;
+    const nextObjective = objective.trim();
+    if (nextObjective && nextObjective !== current.objective) {
+      const updated = await mutate(() =>
+        api<MissionWorkspaceV2>(`/api/v2/missions/${current!.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            request_id: requestID("mission-objective"),
+            idempotency_key: requestID("mission-objective-key"),
+            expected_version: current!.version,
+            objective: nextObjective,
+          }),
+        }),
+      ).catch(() => null);
+      if (!updated) return null;
+      current = updated;
+      await refresh();
     }
-    setBusy(true);
-    setError("");
-    try {
-	  const response = await askWorkspaceAssistant(text, false);
-      const choice = response.actions.map(chosenPlan).find((value) => value !== null);
-      setBusy(false);
-      if (choice) {
-        await enactPlan(choice);
-        await speak(response.speech);
-        return;
-      }
-	  await createPlans(mission, text, "ai_assisted", "", "", false, requestsMissionOptions(text) ? 3 : 1);
-    } catch (reason) {
-      setBusy(false);
-      setError(reason instanceof KeelMeshError ? `${reason.code}: ${reason.message}` : String(reason));
-    }
+    return current;
+  }
+
+  async function generateManualMission(missionType: string, objective: string) {
+    if (!mission) return;
+    const current = await missionWithObjective(mission, objective);
+    if (!current) return;
+    const intent = objective.trim() || current.objective.trim() || `${missionType.replaceAll("_", " ")} mission`;
+    await createPlans(current, intent, "manual", missionType, "", true, 1, true);
+  }
+
+  async function refineMissionWithAI(missionType: string, objective: string, instruction: string, alternatives: boolean) {
+    if (!mission) return;
+    const current = await missionWithObjective(mission, objective);
+    if (!current) return;
+    const base = objective.trim() || current.objective.trim() || `${missionType.replaceAll("_", " ")} mission`;
+    const intent = instruction.trim() ? `${base}\n\nRefinement instruction: ${instruction.trim()}` : `Review and refine this ${base}.`;
+    await createPlans(current, intent, "ai_assisted", missionType, "", false, alternatives ? 3 : 1, true);
   }
 
   async function handleGlobalTranscript(text: string) {
@@ -1779,23 +1791,14 @@ export function FleetWorkspace() {
           pirate={pirate}
           mission={mission}
           groups={fleet.groups}
-          command={command}
-          setCommand={setCommand}
           plans={plans}
           activePlan={activePlan}
           preview={preview}
           lease={lease}
           busy={busy}
-          recording={
-            speechState === "requesting microphone" ||
-            speechState.startsWith("listening")
-          }
           tool={tool}
           contactSeed={plannerContactSeed}
           geometryFocus={geometryFocus}
-          onSpeak={(text) => void speak(text)}
-          onTranscriptionStart={() => void beginTranscription()}
-          onTranscriptionStop={endTranscription}
           onFormation={(f) => updateMission({ formation: f })}
           onLoop={(loop) => {
             setDraft(null);
@@ -1808,7 +1811,9 @@ export function FleetWorkspace() {
           onObjective={(objective) => updateMission({ objective })}
           onArea={(kind) => setTool(kind)}
           onTool={setTool}
-          onCreate={(intent) => void handlePlannerMessage(intent)}
+          onGenerateManual={(missionType, objective) => void generateManualMission(missionType, objective)}
+          onRefineAI={(missionType, objective, instruction, alternatives) => void refineMissionWithAI(missionType, objective, instruction, alternatives)}
+          onOpenConstraints={() => open("constraints")}
           onApplyContactSeed={applyContactSeed}
           onClearContactSeed={() => setPlannerContactSeed(null)}
           onUndoGeometry={() => void undoGeometry()}
@@ -1818,12 +1823,11 @@ export function FleetWorkspace() {
           onReorderWaypoint={(index, direction) => void reorderWaypoint(index, direction)}
           onChoose={(id) => {
             setPlanID(id);
-            setPendingPlanID(id);
           }}
+          onConfirmPlan={(id) => setPendingPlanID(id)}
           onStatus={(status) => mission && setMissionStatus(mission.id, status)}
           onRename={(name) => mission && renameMission(mission.id, name)}
           onDelete={() => mission && deleteMission(mission.id)}
-          scene={commandScenes.find((value) => value.type === "mission_canvas" && value.state === "active") ?? null}
         />
       ),
     });
@@ -3446,7 +3450,135 @@ function EditableTitle({
     </form>
   );
 }
-function MissionCanvas({
+function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool, contactSeed, geometryFocus, onFormation, onLoop, onObjective, onArea, onTool, onGenerateManual, onRefineAI, onOpenConstraints, onApplyContactSeed, onClearContactSeed, onUndoGeometry, onClearGeometry, onDeleteGeometry, onFocusGeometry, onReorderWaypoint, onChoose, onConfirmPlan, onStatus, onRename, onDelete }: {
+  pirate: boolean;
+  mission: MissionWorkspaceV2 | null;
+  groups: FleetSnapshotV2["groups"];
+  plans: FleetPlanV2[];
+  activePlan: FleetPlanV2 | null;
+  preview: FleetPreviewV2 | null;
+  lease: FleetLeaseV2 | null;
+  busy: boolean;
+  tool: Tool;
+  contactSeed: SurfaceContactV2 | null;
+  geometryFocus: GeometryFocus | null;
+  onFormation: (value: string) => void;
+  onLoop: (loop: boolean) => void;
+  onObjective: (value: string) => void;
+  onArea: (kind: "include" | "exclude") => void;
+  onTool: (tool: Tool) => void;
+  onGenerateManual: (missionType: string, objective: string) => void;
+  onRefineAI: (missionType: string, objective: string, instruction: string, alternatives: boolean) => void;
+  onOpenConstraints: () => void;
+  onApplyContactSeed: (createNew: boolean) => void;
+  onClearContactSeed: () => void;
+  onUndoGeometry: () => void;
+  onClearGeometry: (kind: "include" | "exclude" | "waypoint" | "poi") => void;
+  onDeleteGeometry: (focus: GeometryFocus) => void;
+  onFocusGeometry: (focus: GeometryFocus) => void;
+  onReorderWaypoint: (index: number, direction: -1 | 1) => void;
+  onChoose: (id: string) => void;
+  onConfirmPlan: (id: string) => void;
+  onStatus: (status: "paused" | "executing") => void;
+  onRename: (name: string) => void;
+  onDelete: () => void;
+}) {
+  const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set());
+  const [missionType, setMissionType] = useState("patrol");
+  const [manualObjective, setManualObjective] = useState(mission?.objective ?? "");
+  const [aiRefineOpen, setAIRefineOpen] = useState(false);
+  const [aiInstruction, setAIInstruction] = useState("");
+  const [aiAlternatives, setAIAlternatives] = useState(false);
+  useEffect(() => { if (contactSeed) setMissionType("follow_contact"); }, [contactSeed]);
+  useEffect(() => setManualObjective(mission?.objective ?? ""), [mission?.id, mission?.objective]);
+  useEffect(() => {
+    setExpandedPlans(new Set());
+    setAIRefineOpen(false);
+    setAIInstruction("");
+    setAIAlternatives(false);
+  }, [mission?.id]);
+  if (!mission) return <div className="window-empty planner-seed-empty">{contactSeed ? <><Ship /><b>{contactSeed.name}</b><span>{contactSeed.boat_id} · {contactSeed.class} · uncommitted planning context</span><button className="wide amber" onClick={() => onApplyContactSeed(true)} disabled={busy}><Plus /> {pirate ? "Create shadowing voyage" : "Create follow mission"}</button><button className="wide" onClick={onClearContactSeed}>Cancel</button></> : pirate ? "Chart a new voyage from the + tab." : "Create a mission from the + tab."}</div>;
+
+  const coveredTargets = new Set<string>();
+  const assignedGroups = groups.filter((group) => {
+    const assigned = group.member_ids.length > 0 && group.member_ids.every((id) => mission.target_ids.includes(id));
+    if (assigned) group.member_ids.forEach((id) => coveredTargets.add(id));
+    return assigned;
+  });
+  const individualCount = mission.target_ids.filter((id) => !coveredTargets.has(id)).length;
+  const scopeParts = [...assignedGroups.map((group) => `${group.code} · ${group.name}`), ...(individualCount ? [`${individualCount} individual${individualCount === 1 ? "" : "s"}`] : [])];
+
+  return <div className="planner mission-editor">
+    <div className="planner-layout">
+      <section className="planner-chat-pane planner-editor-pane">
+        <div className="mission-summary">
+          <div className="mission-summary-actions">
+            <span>{mission.status}</span>
+            <button aria-label={`${mission.status === "paused" ? "Resume" : "Pause"} ${mission.name}`} title={mission.status === "paused" ? "Resume mission" : "Pause mission"} disabled={mission.status !== "executing" && mission.status !== "paused"} onClick={() => onStatus(mission.status === "paused" ? "executing" : "paused")}>{mission.status === "paused" ? <Play /> : <Pause />}</button>
+            <button className="delete" aria-label={`Delete ${mission.name}`} title="Delete mission" onClick={onDelete}><Trash2 /></button>
+          </div>
+          <EditableTitle value={mission.name} label="mission" onSave={onRename} />
+          <p>{mission.target_ids.length} {pirate ? "sworn hands" : "assigned assets"} · geometry r{mission.geometry.revision} · {pirate ? "voyage" : "mission"} v{mission.version}</p>
+        </div>
+        <div className="mission-scope-strip" title="Mission membership mirrors the current Fleet selection.">
+          <Ship /><span><small>{pirate ? "VOYAGE CREW" : "MISSION ASSETS"}</small><b>{scopeParts.length ? scopeParts.join(" · ") : pirate ? "Choose ships in Flotilla" : "Select vessels or groups in Fleet"}</b></span><em>{mission.target_ids.length}</em>
+          <button type="button" className={mission.loop ? "active" : ""} aria-label={mission.loop ? "Disable mission loop" : "Enable mission loop"} aria-pressed={mission.loop} title={mission.loop ? "Loop enabled" : "Hold at the final marker"} disabled={busy} onClick={() => onLoop(!mission.loop)}><RotateCcw />{mission.loop ? "LOOP" : "HOLD AT END"}</button>
+        </div>
+        {contactSeed && <div className="planner-contact-seed"><i style={{ background: contactSeed.color }} /><span><b>{contactSeed.name}</b><small>{contactSeed.boat_id} · uncommitted objective</small></span><button onClick={() => onApplyContactSeed(false)}>Use here</button><button onClick={() => onApplyContactSeed(true)}>New mission</button><button aria-label="Dismiss contact planning context" onClick={onClearContactSeed}><X /></button></div>}
+        <details className="planner-section objective-section" open>
+          <summary>MISSION DEFINITION <em>{missionType.replaceAll("_", " ")}</em></summary>
+          <label>MISSION TYPE<select aria-label="MISSION TYPE" value={missionType} onChange={(event) => setMissionType(event.target.value)}><option value="transit">Transit</option><option value="patrol">Patrol</option><option value="search">Search</option><option value="follow_contact">Follow contact</option><option value="hold">Hold</option><option value="orbit">Orbit</option><option value="custom_route">Custom route</option></select></label>
+          <label>OBJECTIVE<textarea aria-label="OBJECTIVE" value={manualObjective} onChange={(event) => setManualObjective(event.target.value)} placeholder="Describe the mission outcome." /></label>
+          {mission.target_ids.length > 1 ? <label className="formation-control">{pirate ? "SAILING FORMATION" : "FORMATION"}<select value={mission.formation} onChange={(event) => onFormation(event.target.value)}>{formations.map((formation) => <option value={formation} key={formation}>{formation.replaceAll("_", " ")}</option>)}</select></label> : mission.target_ids.length === 1 ? <div className="solo-mode"><Ship /><span><b>INDEPENDENT VESSEL</b><small>Formation controls do not apply.</small></span></div> : null}
+        </details>
+        <details className="planner-section map-authoring">
+          <summary>MAP &amp; ROUTE AUTHORING <em>{mission.geometry.waypoints.length + mission.geometry.pois.length} markers</em></summary>
+          <div className="authoring-status"><b>{mission.name.toUpperCase()}</b><span>{tool === "select" ? "READY · SELECT OR EDIT" : `${tool.replaceAll("_", " ").toUpperCase()} ACTIVE · ESC TO CANCEL`}</span></div>
+          <div className="geometry-actions">
+            <button aria-label="Select or edit mission geometry" className={tool === "select" ? "active" : ""} onClick={() => onTool("select")} title="Select or drag mission geometry"><MousePointer2 /></button>
+            <button aria-label="Assign vessels by rectangle" className={tool === "box" ? "active" : ""} onClick={() => onTool("box")} title="Assign vessels inside a rectangle"><BoxSelect /></button>
+            <button aria-label="Add operating area" className={tool === "include" ? "active" : ""} onClick={() => onArea("include")} title="Draw an allowed operating area"><Plus /><BoxSelect /></button>
+            <button aria-label="Add exclusion area" className={tool === "exclude" ? "active" : ""} onClick={() => onArea("exclude")} title="Draw an exclusion area"><Ban /></button>
+            <button aria-label="Add waypoint" className={tool === "waypoint" ? "active" : ""} onClick={() => onTool("waypoint")} title="Add the next waypoint"><MapPinned /></button>
+            <button aria-label="Add hold point" className={tool === "hold" ? "active" : ""} onClick={() => onTool("hold")} title="Add a hold point"><CircleDot /></button>
+            <button aria-label="Add orbit point" className={tool === "orbit" ? "active" : ""} onClick={() => onTool("orbit")} title="Add an orbit point"><RotateCcw /></button>
+            <button aria-label="Undo mission geometry change" onClick={onUndoGeometry} title="Undo the latest geometry change"><Undo2 /></button>
+          </div>
+          <div className="geometry-summary"><span>{mission.geometry.included_areas.length} operating</span><span>{mission.geometry.exclusion_areas.length} excluded</span><span>{mission.geometry.waypoints.length} waypoints</span><span>{mission.geometry.pois.length} hold/orbit</span></div>
+          <div className="geometry-inventory">
+            {mission.geometry.included_areas.map((_, index) => <button className={geometryFocus?.kind === "include" && geometryFocus.index === index ? "selected" : ""} key={`include-${index}`} onClick={() => onFocusGeometry({ kind: "include", index })}><span>Operating area {index + 1}</span><Eye /></button>)}
+            {mission.geometry.exclusion_areas.map((_, index) => <button className={geometryFocus?.kind === "exclude" && geometryFocus.index === index ? "selected" : ""} key={`exclude-${index}`} onClick={() => onFocusGeometry({ kind: "exclude", index })}><span>Exclusion area {index + 1}</span><Eye /></button>)}
+            {mission.geometry.waypoints.map((_, index) => <div className={geometryFocus?.kind === "waypoint" && geometryFocus.index === index ? "selected" : ""} key={`waypoint-${index}`}><button onClick={() => onFocusGeometry({ kind: "waypoint", index })}><span>Waypoint {index + 1}</span><Eye /></button><button disabled={index === 0} onClick={() => onReorderWaypoint(index, -1)}><ChevronUp /></button><button disabled={index === mission.geometry.waypoints.length - 1} onClick={() => onReorderWaypoint(index, 1)}><ChevronDown /></button></div>)}
+            {mission.geometry.pois.map((poi, index) => <button className={geometryFocus?.kind === "poi" && geometryFocus.index === index ? "selected" : ""} key={poi.id} onClick={() => onFocusGeometry({ kind: "poi", index })}><span>{poi.kind === "orbit" ? "Orbit" : "Hold"} point {index + 1}</span><Eye /></button>)}
+            {geometryFocus && <button className="geometry-delete" onClick={() => onDeleteGeometry(geometryFocus)}><Trash2 />Delete selected</button>}
+            <div className="geometry-clear-actions"><button onClick={() => onClearGeometry("include")}>Clear operating</button><button onClick={() => onClearGeometry("exclude")}>Clear exclusions</button><button onClick={() => onClearGeometry("waypoint")}>Clear waypoints</button><button onClick={() => onClearGeometry("poi")}>Clear hold/orbit</button></div>
+          </div>
+        </details>
+        <div className="mission-build-actions">
+          <button className="wide" onClick={onOpenConstraints} disabled={busy}><SlidersHorizontal /> Constraints</button>
+          <button className="wide" onClick={() => onObjective(manualObjective.trim())} disabled={busy || !manualObjective.trim() || manualObjective.trim() === mission.objective}><Save /> Save details</button>
+          <button className="wide amber" onClick={() => onGenerateManual(missionType, manualObjective)} disabled={busy || mission.target_ids.length === 0}><Route />{plans.length ? "Rebuild route" : "Build route"}</button>
+          {mission.target_ids.length === 0 && <small>Select vessels or groups in Fleet before building a route.</small>}
+        </div>
+      </section>
+      <section className="planner-options-pane planner-route-pane">
+        <header className="route-workbench-header"><span><b>ROUTE &amp; EXECUTION</b><small>{plans.length > 1 ? `${plans.length} alternatives · select to preview on map` : plans.length === 1 ? "1 validated route" : "Build a route from the mission definition"}</small></span>{activePlan && <em>{activePlan.advisor_source === "deterministic" ? "MANUAL" : "AI REFINED"}</em>}</header>
+        {mission.trajectory && <div className="trajectory-program-summary"><header><Route /><b>ACTIVE PROGRAM · REVISION {mission.trajectory.active_revision}</b>{mission.trajectory.pending_revision && <em>R{mission.trajectory.pending_revision} ARMED · T+{mission.trajectory.activation_tick}</em>}</header><dl><span><small>PROGRAM</small>{Math.ceil(mission.trajectory.duration_seconds / 60)} min</span><span><small>SEGMENTS</small>{mission.trajectory.total_segments}</span><span><small>BUFFER</small>{mission.trajectory.hot_tape_horizon_seconds}s</span><span><small>CURSOR</small>T+{mission.trajectory.mission_tick}s</span></dl></div>}
+        {plans.length === 0 ? <div className="route-workbench-empty"><Route /><b>No route built yet</b><span>Build locally from the mission definition, or optionally ask AI to refine it.</span></div> : <div className="candidate-list mission-route-choices" aria-label="Mission route options">{plans.slice(0, 3).map((plan, index) => {
+          const expanded = expandedPlans.has(plan.id), label = String.fromCharCode(65 + index);
+          return <article key={plan.id} className={`${activePlan?.id === plan.id ? "selected" : ""} ${expanded ? "expanded" : "collapsed"} ${plan.policy_status}`}><header><button className="candidate-select" aria-label={`Preview option ${label}: ${plan.name}`} aria-pressed={activePlan?.id === plan.id} disabled={busy || plan.policy_status === "prohibited"} onClick={() => onChoose(plan.id)}><span className="option-letter">{label}</span><b>{plan.name}</b></button>{plan.recommended && <em>{pirate ? "CAPTAIN'S PICK" : "RECOMMENDED"}</em>}<button className="candidate-expand" aria-label={`${expanded ? "Collapse" : "Expand"} option ${label}`} onClick={() => setExpandedPlans((current) => { const next = new Set(current); next.has(plan.id) ? next.delete(plan.id) : next.add(plan.id); return next; })}>{expanded ? <ChevronUp /> : <ChevronDown />}</button></header><div className="candidate-quick-metrics"><span>{plan.duration_minutes.toFixed(0)} min</span><span>{reservePercent(plan.minimum_reserve)}% reserve</span><span>{plan.minimum_separation_m} m sep</span></div><div className="candidate-detail"><p>{plan.description}</p><small>{plan.maneuvers.join(" → ")}</small><code>{plan.content_hash.slice(0, 18)}…</code></div></article>;
+        })}</div>}
+        {activePlan && <button className="mission-start-action" disabled={busy || activePlan.policy_status === "prohibited"} onClick={() => onConfirmPlan(activePlan.id)}><ShieldCheck />Review and start selected route</button>}
+        <details className="ai-refine-panel" open={aiRefineOpen} onToggle={(event) => setAIRefineOpen(event.currentTarget.open)}>
+          <summary><Sparkles /><span><b>Refine with AI</b><small>Optional assistance for this existing mission</small></span><em>{aiRefineOpen ? "CLOSE" : "OPEN"}</em></summary>
+          <div><label>ADDITIONAL INSTRUCTION<textarea aria-label="AI refinement instruction" value={aiInstruction} onChange={(event) => setAIInstruction(event.target.value)} placeholder="Example: reduce shallow-water exposure and preserve more reserve." /></label><label className="ai-alternatives-toggle"><input type="checkbox" checked={aiAlternatives} onChange={(event) => setAIAlternatives(event.target.checked)} /><span><b>Offer alternatives</b><small>Return three routes to compare instead of one recommendation.</small></span></label><button className="wide" disabled={busy || mission.target_ids.length === 0} onClick={() => onRefineAI(missionType, manualObjective, aiInstruction, aiAlternatives)}><Sparkles />{aiAlternatives ? "Generate AI alternatives" : "Apply AI refinement"}</button>{busy && <div className="agent-work-chips"><span><Sparkles /> Reviewing mission</span><span>Checking constraints</span><span>Validating route</span></div>}</div>
+        </details>
+      </section>
+    </div>
+  </div>;
+}
+
+function LegacyMissionCanvas({
   pirate,
   mission,
   groups,
