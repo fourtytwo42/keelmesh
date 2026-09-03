@@ -16,14 +16,13 @@ function normalizeTitles(root: ParentNode) {
 }
 
 function helpText(target: Element | null) {
-  const element = target?.closest<HTMLElement>("[data-help],[title],button,[aria-label],input,select,textarea");
+  // Hover help is opt-in. Falling back to every aria-label made large
+  // structural regions (most noticeably the MapLibre canvas) announce
+  // obvious labels such as "Map" whenever the pointer merely crossed them.
+  const element = target?.closest<HTMLElement>("[data-help],[title]");
   if (!element || element.closest(".hover-help")) return "";
   normalizeTitle(element);
-  return (
-    element.dataset.help ||
-    element.getAttribute("aria-label") ||
-    (element instanceof HTMLButtonElement ? element.innerText.trim() : "")
-  );
+  return element.dataset.help || "";
 }
 
 export function HoverHelp() {

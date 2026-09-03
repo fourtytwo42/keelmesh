@@ -131,6 +131,9 @@ test("map-first workspace exposes the persistent operating picture without heade
   await expect(page.getByRole("tooltip")).toContainText("Show or hide fleet");
   await expect(fleetButton).not.toHaveAttribute("title");
   await expect(fleetButton).toHaveAttribute("data-help", "Show or hide fleet and operational groups");
+  await page.locator(".operations-map .maplibregl-canvas").hover({ position: { x: 900, y: 400 } });
+  await page.waitForTimeout(500);
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
   await overlays.getByRole("button", { name: /WIND/ }).click();
   await expect(overlays.getByRole("button", { name: /WIND/ })).not.toHaveClass(/on/);
   expect(rasterRequests).toEqual([]);
