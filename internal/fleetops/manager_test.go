@@ -648,6 +648,32 @@ func TestMissionNamesAreUniqueAndPersistedDuplicatesAreRenumbered(t *testing.T) 
 	}
 }
 
+func TestEmptyMissionDraftAcceptsTargetsAfterCreation(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation: Mutation{RequestID: "empty-mission", IdempotencyKey: "empty-mission", ExpectedVersion: snapshot.FleetVersion},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mission.Status != "draft" || len(mission.TargetIDs) != 0 {
+		t.Fatalf("expected an empty persistent draft, got %#v", mission)
+	}
+
+	targets := append([]string(nil), snapshot.Groups[0].MemberIDs...)
+	updated, err := m.PatchMission(mission.ID, PatchMissionRequest{
+		Mutation:  Mutation{RequestID: "assign-after-create", IdempotencyKey: "assign-after-create", ExpectedVersion: mission.Version},
+		TargetIDs: &targets,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.TargetIDs) != len(targets) || updated.AuthorizedPlanID != "" {
+		t.Fatalf("targets were not assigned safely: %#v", updated)
+	}
+}
+
 func TestGeneratedAndAINamedMissionsAndEntityRenames(t *testing.T) {
 	m := New("", slog.Default())
 	snapshot := m.Snapshot()

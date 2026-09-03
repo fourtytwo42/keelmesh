@@ -377,14 +377,6 @@ export function FleetWorkspace() {
     targetIDs: string[],
     namingMode: "operator" | "ai" = "operator",
   ) {
-    if (targetIDs.length === 0) {
-      setError(
-        pirate
-          ? "Muster one or more ships first."
-          : "Select one or more vessels first.",
-      );
-      return null;
-    }
     const current = await api<FleetSnapshotV2>("/api/v2/fleet");
     const group = current.groups.find(
       (g) =>
@@ -429,6 +421,8 @@ export function FleetWorkspace() {
     return m;
   }
   async function createMission() {
+    // Selection is convenient but no longer a prerequisite: + opens a blank
+    // draft when nothing is selected, and carries an existing selection when present.
     await createMissionFor([...selected]);
   }
   async function createGroupFor(memberIDs: string[], name?: string) {
@@ -1280,6 +1274,7 @@ export function FleetWorkspace() {
           pirate={pirate}
           mission={mission}
           groups={fleet.groups}
+          selectedIDs={[...selected]}
           draft={draft}
           command={command}
           setCommand={setCommand}
@@ -1316,6 +1311,14 @@ export function FleetWorkspace() {
               void updateMission({ target_ids: group.member_ids });
             }
           }}
+          onAssignAssets={(targetIDs) => {
+            setPlans([]);
+            setDraft(null);
+            setPreview(null);
+            setLease(null);
+            void updateMission({ target_ids: targetIDs });
+          }}
+          onOpenFleet={() => open("fleet")}
           onArea={(kind) => setTool(kind)}
           onTool={setTool}
           onCreate={(intent) => createPlans(mission, intent, "ai_assisted")}
@@ -2864,6 +2867,7 @@ function Planner({
   pirate,
   mission,
   groups,
+  selectedIDs,
   draft,
   command,
   setCommand,
@@ -2888,6 +2892,8 @@ function Planner({
   onFormation,
   onObjective,
   onAssignGroup,
+  onAssignAssets,
+  onOpenFleet,
   onArea,
   onTool,
   onCreate,
@@ -2910,6 +2916,7 @@ function Planner({
   pirate: boolean;
   mission: MissionWorkspaceV2 | null;
   groups: FleetSnapshotV2["groups"];
+  selectedIDs: string[];
   draft: CommandDraftV2 | null;
   command: string;
   setCommand: (v: string) => void;
@@ -2934,6 +2941,8 @@ function Planner({
   onFormation: (v: string) => void;
   onObjective: (v: string) => void;
   onAssignGroup: (groupID: string) => void;
+  onAssignAssets: (targetIDs: string[]) => void;
+  onOpenFleet: () => void;
   onArea: (k: "include" | "exclude") => void;
   onTool: (t: Tool) => void;
   onCreate: (intent: string) => void;
@@ -3133,8 +3142,9 @@ function Planner({
       </div>
       </section>
       <section className="planner-options-pane">
+      <section className="planner-assets">
       <label>
-        {pirate ? "ASSIGNED CREW" : "ASSIGNED OPERATIONAL GROUP"}
+        {pirate ? "ASSIGNED CREW" : "ASSIGNED ASSETS"}
         <select
           value={
             groups.find(
@@ -3145,7 +3155,11 @@ function Planner({
           }
           onChange={(event) => onAssignGroup(event.target.value)}
         >
-          <option value="" disabled>Mixed or individual assets</option>
+          <option value="" disabled>
+            {mission.target_ids.length === 0
+              ? pirate ? "No ships assigned yet" : "No assets assigned yet"
+              : `${mission.target_ids.length} mixed or individual assets`}
+          </option>
           {groups.map((group) => (
             <option value={group.id} key={group.id}>
               {group.code} · {group.name} · {group.color_name}
@@ -3153,6 +3167,38 @@ function Planner({
           ))}
         </select>
       </label>
+      <div className="planner-asset-actions">
+        <span>
+          <Users />
+          {mission.target_ids.length} {pirate ? "aboard" : "assigned"}
+        </span>
+        <button type="button" onClick={onOpenFleet}>
+          <Ship /> {pirate ? "Choose ships" : "Open Fleet"}
+        </button>
+        <button
+          type="button"
+          disabled={selectedIDs.length === 0 || busy}
+          onClick={() => onAssignAssets(selectedIDs)}
+        >
+          <CheckCircle2 />
+          {pirate
+            ? `Muster selected (${selectedIDs.length})`
+            : `Use fleet selection (${selectedIDs.length})`}
+        </button>
+        {mission.target_ids.length > 0 && (
+          <button type="button" disabled={busy} onClick={() => onAssignAssets([])}>
+            <X /> {pirate ? "Dismiss crew" : "Clear assignment"}
+          </button>
+        )}
+      </div>
+      {mission.target_ids.length === 0 && (
+        <p className="planner-assets-hint">
+          {pirate
+            ? "Choose a crew, use the current fleet selection, or tell the ship's intelligence which crew you intend to command."
+            : "Choose an operational group or select any mix in Fleet / Groups, then apply that selection here. The planner and AI chat stay available while you build the mission."}
+        </p>
+      )}
+      </section>
       {mission.trajectory && (
         <div className="trajectory-program-summary">
           <header>
@@ -3188,13 +3234,25 @@ function Planner({
             ))}
           </select>
         </label>
-      ) : (
+      ) : mission.target_ids.length === 1 ? (
         <div className="solo-mode">
           <Ship />
           <span>
             <b>INDEPENDENT VESSEL</b>
             <small>
               Strategy options replace fleet formations for a single target.
+            </small>
+          </span>
+        </div>
+      ) : (
+        <div className="solo-mode pending">
+          <Users />
+          <span>
+            <b>{pirate ? "CREW NOT YET MUSTERED" : "ASSET ASSIGNMENT PENDING"}</b>
+            <small>
+              {pirate
+                ? "Choose a crew or muster selected ships before plotting routes."
+                : "Choose a group or apply the current Fleet selection before generating routes."}
             </small>
           </span>
         </div>

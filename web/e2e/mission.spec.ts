@@ -109,6 +109,27 @@ test("map-first workspace exposes the persistent 48-vessel operating picture", a
   expect(rasterRequests).toEqual([]);
 });
 
+test("new mission opens as an empty planning workspace and accepts assets afterward", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "New mission" }).click();
+
+  const planner = page.getByRole("region", { name: "Mission Planner" });
+  await expect(planner).toBeVisible();
+  await expect(planner.getByText(/0 frozen assets/)).toBeVisible();
+  await expect(planner.getByLabel("ASSIGNED ASSETS")).toHaveValue("");
+  await expect(planner.getByRole("button", { name: "Use fleet selection (0)" })).toBeDisabled();
+
+  const blockGuard = await planner
+    .getByLabel("ASSIGNED ASSETS")
+    .locator("option")
+    .filter({ hasText: "BG · Block Guard" })
+    .getAttribute("value");
+  expect(blockGuard).not.toBeNull();
+  await planner.getByLabel("ASSIGNED ASSETS").selectOption(blockGuard!);
+  await expect(planner.getByText(/6 frozen assets/)).toBeVisible();
+  await expect(planner.getByText("6 assigned", { exact: true })).toBeVisible();
+});
+
 test("fictional surface traffic moves on stable identified routes", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("12 CONTACTS", { exact: true })).toBeVisible();
