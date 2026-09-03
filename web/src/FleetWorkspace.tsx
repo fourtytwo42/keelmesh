@@ -76,6 +76,16 @@ const formations = [
   "ring",
   "search_grid",
 ];
+const groupPalette = [
+  { name: "amber", hex: "#e9a93f" },
+  { name: "teal", hex: "#62c5a8" },
+  { name: "coral", hex: "#d86f5f" },
+  { name: "violet", hex: "#b895d8" },
+  { name: "blue", hex: "#7eb4df" },
+  { name: "yellow", hex: "#d2c05d" },
+  { name: "pink", hex: "#df8fb0" },
+  { name: "lime", hex: "#8fca72" },
+] as const;
 const vesselAsset = (classID: string, pirate: boolean) =>
   `/assets/vessels/${pirate ? "pirate-" : ""}${classID}.png`;
 
@@ -86,7 +96,7 @@ export function FleetWorkspace() {
     [agent, setAgent] = useState<AgentSnapshot | null>(null),
     [arena, setArena] = useState<ArenaSnapshotV1 | null>(null),
     [voices, setVoices] = useState<VoiceV2[]>([]),
-    [voice, setVoice] = useState("morgan"),
+    [voice, setVoice] = useState("jarvis"),
     [speechState, setSpeechState] = useState("ready"),
     [selected, setSelected] = useState<Set<string>>(new Set()),
     [activeMissionID, setActiveMissionID] = useState<string>(""),
@@ -191,9 +201,10 @@ export function FleetWorkspace() {
       api<PlatformSnapshot>("/api/v1/platform").then(setPlatform),
       api<AgentSnapshot>("/api/v1/ai").then(setAgent),
       api<ArenaSnapshotV1>("/api/v3/arena?faction=A").then(setArena),
-      api<{ voices: VoiceV2[] }>("/api/v2/voices").then((v) =>
-        setVoices(v.voices),
-      ),
+      api<{ voices: VoiceV2[] }>("/api/v2/voices").then((v) => {
+        setVoices(v.voices);
+        setVoice(v.voices.find((candidate) => candidate.default)?.id ?? "jarvis");
+      }),
     ]);
     const t = window.setInterval(() => {
       refresh()
@@ -400,14 +411,10 @@ export function FleetWorkspace() {
   async function createGroupFor(memberIDs: string[], name?: string) {
     if (memberIDs.length === 0) return null;
     const current = await api<FleetSnapshotV2>("/api/v2/fleet");
-    const palette = [
-      "#e5a23a",
-      "#59bdd1",
-      "#62c58e",
-      "#b895d8",
-      "#e36e62",
-      "#ece8dc",
-    ];
+    const usedColors = new Set(current.groups.map((group) => group.color.toLowerCase()));
+    const nextColor =
+      groupPalette.find((candidate) => !usedColors.has(candidate.hex))?.hex ??
+      groupPalette[current.groups.length % groupPalette.length].hex;
     const g = await mutate(() =>
       api<FleetSnapshotV2["groups"][number]>("/api/v2/groups", {
         method: "POST",
@@ -418,7 +425,7 @@ export function FleetWorkspace() {
           name:
             name?.trim() ||
             `${pirate ? "Crew" : "Task Group"} ${current.groups.length - 7}`,
-          color: palette[current.groups.length % palette.length],
+          color: nextColor,
           pattern: "chevron",
           member_ids: memberIDs,
         }),
@@ -1614,7 +1621,7 @@ function VesselGroupContextMenu({
               <i style={{ background: group.color }} />
               <span>
                 <b>{group.code}</b>
-                {group.name}
+                {group.name} · {group.color_name}
               </span>
               <small>
                 {group.id === state.vessel.group_id
@@ -1771,6 +1778,7 @@ function FleetRail({
                 <i style={{ background: g.color }} />
                 <b>{g.code}</b>
                 <span>{g.name}</span>
+                <em>{g.color_name}</em>
                 <small>
                   {g.member_ids.filter((id) => selected.has(id)).length}/
                   {g.member_ids.length}
@@ -2008,7 +2016,7 @@ function SelectionDrawer({
                     {group.code} · {group.name}
                   </b>
                   <small>
-                    {members.length}/{group.member_ids.length} selected
+                    {group.color_name} team · {members.length}/{group.member_ids.length} selected
                   </small>
                 </span>
                 <button
@@ -2199,7 +2207,7 @@ function GroupManager({
             {group.code} · {name}
           </h2>
           <span>
-            {group.member_ids.length} exclusive members · revision{" "}
+            {group.color_name} team · {group.member_ids.length} exclusive members · revision{" "}
             {group.revision}
           </span>
         </div>
@@ -2238,11 +2246,16 @@ function GroupManager({
       </label>
       <label>
         IDENTITY COLOR
-        <input
-          type="color"
-          value={color}
-          onChange={(e) => setColor(e.target.value)}
-        />
+        <select value={color} onChange={(e) => setColor(e.target.value)}>
+          {!groupPalette.some((candidate) => candidate.hex === color) && (
+            <option value={color}>{group.color_name}</option>
+          )}
+          {groupPalette.map((candidate) => (
+            <option value={candidate.hex} key={candidate.name}>
+              {candidate.name[0].toUpperCase() + candidate.name.slice(1)}
+            </option>
+          ))}
+        </select>
       </label>
       <label>
         MAP PATTERN
@@ -2361,7 +2374,7 @@ function VesselInspector({
         <img src={vesselAsset(vessel.class.id, pirate)} />
         <div>
           <span style={{ color: vessel.group_color }}>
-            {vessel.group_code} · {vessel.class.name.toUpperCase()}
+            {vessel.group_code} · {vessel.group_color_name.toUpperCase()} TEAM · {vessel.class.name.toUpperCase()}
           </span>
           <EditableTitle
             value={vessel.callsign}

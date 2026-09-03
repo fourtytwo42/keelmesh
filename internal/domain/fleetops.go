@@ -52,6 +52,7 @@ type VesselProfileV2 struct {
 	GroupID         string            `json:"group_id"`
 	GroupCode       string            `json:"group_code"`
 	GroupColor      string            `json:"group_color"`
+	GroupColorName  string            `json:"group_color_name"`
 	GroupPattern    string            `json:"group_pattern"`
 	Available       bool              `json:"available"`
 	DecisionCapable bool              `json:"decision_capable"`
@@ -64,6 +65,7 @@ type OperationalGroupV2 struct {
 	Code               string      `json:"code"`
 	Name               string      `json:"name"`
 	Color              string      `json:"color"`
+	ColorName          string      `json:"color_name"`
 	Pattern            string      `json:"pattern"`
 	MemberIDs          []string    `json:"member_ids"`
 	Formation          string      `json:"formation"`
@@ -242,6 +244,8 @@ type MissionPlanningVesselV2 struct {
 	PNTIntegrity   string     `json:"pnt_integrity"`
 	UncertaintyM   float64    `json:"uncertainty_m"`
 	GroupCode      string     `json:"group_code"`
+	GroupName      string     `json:"group_name"`
+	GroupColorName string     `json:"group_color_name"`
 	Communications string     `json:"communications"`
 }
 

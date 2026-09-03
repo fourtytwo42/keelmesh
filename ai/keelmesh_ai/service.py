@@ -99,6 +99,8 @@ class MissionVessel(BaseModel):
     pnt_integrity: str
     uncertainty_m: float = Field(ge=0, le=10000)
     group_code: str
+    group_name: str
+    group_color_name: str
     communications: str
 
 
@@ -434,6 +436,7 @@ def mission_system_prompt(target_count: int, waypoint_count: int, geometry_ids: 
         "Each option requires id, name, description, formation, speed_factor (0.25..1), reserve_bias (0..1), and maneuvers (2..6 short steps). "
         f"{formation_rule} {geometry_rule} Supported formations: {sorted(ALLOWED_FORMATIONS)}. "
         "Use vessel count, class, reserve, environment, constraints, map geometry, and the operator's exact intent. "
+        "Treat each target's group_name, group_code, and group_color_name as equivalent human-facing identifiers; a color-team phrase must resolve only to the supplied group metadata. "
         f"There are {waypoint_count} current waypoints; candidate geometry may replace them only through geometry_option_id. "
         "You propose bounded strategies only. Never invent coordinates, routes, authority, policy changes, weapons, or hidden information."
     )

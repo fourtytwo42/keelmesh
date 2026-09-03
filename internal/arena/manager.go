@@ -336,7 +336,7 @@ func (m *Manager) CreateSession(req AgentMessageRequest) (domain.AgentSessionV1,
 	c := m.coords[f]
 	message := "Node agent ready with the same faction knowledge projection as the operator."
 	if req.Persona == "pirate" {
-		message = "Aye, Captain. Morgan is aboard with the same chart and faction knowledge ye can see—no secret waters and no authority beyond your signed orders."
+		message = "Aye, Captain. Jarvis is aboard with the same chart and faction knowledge ye can see—no secret waters and no authority beyond your signed orders."
 	}
 	s := domain.AgentSessionV1{ID: "agent-" + short(req.IdempotencyKey), Faction: f, State: "ready", CoordinatorID: c.NodeID, CoordinatorEpoch: c.Epoch, Message: message}
 	m.sessions[s.ID] = s

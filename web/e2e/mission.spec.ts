@@ -102,7 +102,7 @@ test("pirate watch changes nomenclature, agent voice, and returns cleanly to nav
 
   await page.getByRole("button", { name: /High Seas/ }).click();
   const arena = page.getByRole("region", { name: /High Seas/ });
-  await arena.getByRole("button", { name: /ASK MORGAN, ARR!/ }).click();
+  await arena.getByRole("button", { name: /ASK JARVIS, ARR!/ }).click();
   await expect(arena.locator(".arena-agent p")).toContainText("Arrr, Captain");
 
   await expect(page.evaluate(() => localStorage.getItem("keelmesh.theme"))).resolves.toBe("pirate");
@@ -141,7 +141,7 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   await page.waitForTimeout(1_000);
   // The widened station-keeping layout places Block Guard around this
   // rendered hull cluster at the release viewport.
-  await canvas.click({ position: { x: 560, y: 237 }, button: "right" });
+  await canvas.click({ position: { x: 605, y: 200 }, button: "right" });
   const groupMenu = page.getByRole("menu");
   await expect(groupMenu.getByRole("menuitem", { name: "Select operational group" })).toBeEnabled();
   await groupMenu.getByRole("menuitem", { name: "Select operational group" }).click();
@@ -164,7 +164,7 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   await allMenu.getByRole("menuitem", { name: "Select all vessels" }).click();
   await expectSelected(page, 48);
   await page.waitForTimeout(250);
-  await canvas.click({ position: { x: 560, y: 237 }, button: "right" });
+  await canvas.click({ position: { x: 605, y: 200 }, button: "right" });
   await page.getByRole("menu").getByRole("menuitem", { name: "Clear selection" }).click();
   await expectSelected(page, 0);
 });
@@ -180,20 +180,20 @@ test("water context menu manages numbered colored waypoints and preview-only gui
   // Keep fixtures in clear open water. The original points now intersect the
   // wider six-vessel station-keeping cells and correctly invoke vessel rather
   // than water context behavior.
-  const first = { x: 430, y: 450 };
-  const second = { x: 520, y: 450 };
+  const first = { x: 700, y: 500 };
+  const second = { x: 760, y: 520 };
   const menuPoint = first;
-  const destination = { x: 580, y: 470 };
+  const destination = { x: 780, y: 570 };
 
   await canvas.click({ position: first, button: "right" });
   const water = page.getByRole("menu", { name: "Water navigation menu" });
   await expect(water).toBeVisible();
-  await water.getByRole("button", { name: "Red waypoint" }).click();
+  await water.getByRole("button", { name: "Coral · SK Sakonnet waypoint" }).click();
   await water.getByRole("menuitem", { name: "Add numbered waypoint" }).click();
   await expect.poll(async () => {
     const fleet = await (await page.request.get("/api/v2/fleet")).json();
     return fleet.missions[0]?.geometry.waypoint_details?.map((w: { color: string; sequence: number }) => `${w.color}:${w.sequence}`);
-  }).toEqual(["red:1"]);
+  }).toEqual(["coral:1"]);
 
   // A waypoint owns its own context gesture: right-click deletes it directly.
   await canvas.click({ position: first, button: "right" });
@@ -205,27 +205,27 @@ test("water context menu manages numbered colored waypoints and preview-only gui
   await page.waitForTimeout(1200);
 
   await canvas.click({ position: menuPoint, button: "right" });
-  await water.getByRole("button", { name: "Red waypoint" }).click();
+  await water.getByRole("button", { name: "Coral · SK Sakonnet waypoint" }).click();
   await water.getByRole("menuitem", { name: "Add numbered waypoint" }).click();
   await canvas.click({ position: second, button: "right" });
-  await water.getByRole("button", { name: "Green waypoint" }).click();
+  await water.getByRole("button", { name: "Teal · BL Bay Lantern waypoint" }).click();
   await water.getByRole("menuitem", { name: "Add numbered waypoint" }).click();
   await expect.poll(async () => {
     const fleet = await (await page.request.get("/api/v2/fleet")).json();
     return fleet.missions[0]?.geometry.waypoint_details?.map((w: { color: string; sequence: number }) => `${w.color}:${w.sequence}`);
-  }).toEqual(["red:1", "green:2"]);
+  }).toEqual(["coral:1", "teal:2"]);
 
   await canvas.click({ position: destination, button: "right" });
-  await water.getByRole("button", { name: "Red waypoint" }).click();
-  await water.getByRole("menuitem", { name: "Clear red waypoints" }).click();
+  await water.getByRole("button", { name: "Coral · SK Sakonnet waypoint" }).click();
+  await water.getByRole("menuitem", { name: "Clear coral waypoints" }).click();
   await expect.poll(async () => {
     const fleet = await (await page.request.get("/api/v2/fleet")).json();
     return fleet.missions[0]?.geometry.waypoint_details?.map((w: { color: string; sequence: number }) => `${w.color}:${w.sequence}`);
-  }).toEqual(["green:1"]);
+  }).toEqual(["teal:1"]);
   await page.waitForTimeout(250);
 
   await canvas.click({ position: destination, button: "right" });
-  await water.getByRole("button", { name: "Cyan waypoint" }).click();
+  await water.getByRole("button", { name: "Blue · BR Brenton waypoint" }).click();
   await water.getByRole("menuitem", { name: "Go to location · preview first" }).click();
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await expect.poll(()=>planner.locator(".candidate-list > article").count(), { timeout: 25_000 }).toBeGreaterThanOrEqual(2);
@@ -234,7 +234,7 @@ test("water context menu manages numbered colored waypoints and preview-only gui
   await expect.poll(async () => {
     const fleet = await (await page.request.get("/api/v2/fleet")).json();
     return fleet.missions[0]?.geometry.waypoint_details?.map((w: { color: string; sequence: number }) => `${w.color}:${w.sequence}`);
-  }).toEqual(["cyan:1"]);
+  }).toEqual(["blue:1"]);
 });
 
 test("fleet rail is the single selection and group-reassignment surface", async ({ page }) => {
@@ -516,11 +516,14 @@ test("mission chat starts blank and exposes streamlined voice controls", async (
   await expect(planner.getByRole("textbox", { name: "Message mission AI" })).toHaveValue("");
 });
 
-test("spoken multi-leg cardinal intent creates multiple plans and requests Morgan speech", async ({ page }) => {
+test("spoken multi-leg cardinal intent creates multiple plans and requests Jarvis speech", async ({ page }) => {
   test.setTimeout(45_000);
   let speechRequests = 0;
   page.on("request", (request) => {
-    if (request.url().includes("/api/v2/speech:synthesize")) speechRequests++;
+    if (request.url().includes("/api/v2/speech:synthesize")) {
+      speechRequests++;
+      expect(request.postDataJSON().voice).toBe("jarvis");
+    }
   });
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet / Groups" });

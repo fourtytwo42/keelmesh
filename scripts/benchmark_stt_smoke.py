@@ -34,7 +34,7 @@ def word_error_rate(expected: str, actual: str) -> float:
 
 
 for command in COMMANDS:
-    audio = RUNTIME.synthesize(command, "morgan")
+    audio = RUNTIME.synthesize(command, "jarvis")
     result = RUNTIME.transcribe(audio, ".wav")
     print(
         json.dumps(

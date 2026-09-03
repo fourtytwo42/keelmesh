@@ -14,7 +14,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-VOICE_NAMES = ("anna", "vera", "charles", "paul", "jeff", "patrick", "james", "morgan", "trailer", "ian", "sam", "david")
+VOICE_NAMES = ("jarvis", "anna", "vera", "charles", "paul", "jeff", "patrick", "james", "morgan", "trailer", "ian", "sam", "david")
+DEFAULT_VOICE = "jarvis"
 MODEL_ROOT = Path(os.getenv("KEELMESH_SPEECH_MODEL_ROOT", "/models"))
 STT_ROOT = Path(os.getenv("KEELMESH_STT_MODEL_ROOT", "/stt-model"))
 
@@ -22,7 +23,7 @@ STT_ROOT = Path(os.getenv("KEELMESH_STT_MODEL_ROOT", "/stt-model"))
 class SynthesisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str = Field(min_length=1, max_length=1200)
-    voice: str = "morgan"
+    voice: str = DEFAULT_VOICE
     request_id: str = Field(min_length=4, max_length=160)
 
 
@@ -63,7 +64,8 @@ class Runtime:
             raise ValueError("unknown voice")
         if name not in self.voices:
             model = self.load()
-            source = MODEL_ROOT / "built-in-voices" / f"{name}.wav"
+            custom_state = MODEL_ROOT / "custom-voices" / f"{name}.safetensors"
+            source = custom_state if custom_state.is_file() else MODEL_ROOT / "built-in-voices" / f"{name}.wav"
             if not source.is_file():
                 raise RuntimeError("voice prompt missing from model pack")
             self.voices[name] = model.get_state_for_audio_prompt(str(source), truncate=True)
@@ -136,7 +138,7 @@ app = FastAPI(title="KeelMesh Speech Node", version="0.6.0")
 def warm_default_voice() -> None:
     """Move the expensive model/voice load to appliance startup, not first speech."""
     try:
-        RUNTIME.voice("morgan")
+        RUNTIME.voice(DEFAULT_VOICE)
         RUNTIME.load_stt()
     except RuntimeError:
         # Health remains degraded and visible text stays authoritative.
@@ -151,12 +153,12 @@ def health() -> dict[str, Any]:
     except (RuntimeError, OSError):
         ready = False
     stt_ready = (STT_ROOT / "model.bin").is_file()
-    return {"status": "ready" if ready else "degraded", "engine": "Pocket TTS", "version": "2.1.0", "default_voice": "morgan", "offline_ready": ready, "loaded": RUNTIME.model is not None, "stt_ready": stt_ready, "stt_engine": "faster-whisper", "stt_model": "distil-small.en-int8"}
+    return {"status": "ready" if ready else "degraded", "engine": "Pocket TTS", "version": "2.1.0", "default_voice": DEFAULT_VOICE, "offline_ready": ready, "loaded": RUNTIME.model is not None, "stt_ready": stt_ready, "stt_engine": "faster-whisper", "stt_model": "distil-small.en-int8"}
 
 
 @app.get("/v1/voices")
 def voices() -> dict[str, Any]:
-    return {"voices": [{"id": name, "name": "Movie Trailer Voice" if name == "trailer" else name.title(), "default": name == "morgan", "available": (MODEL_ROOT / "built-in-voices" / f"{name}.wav").is_file()} for name in VOICE_NAMES]}
+    return {"voices": [{"id": name, "name": "Movie Trailer Voice" if name == "trailer" else name.title(), "default": name == DEFAULT_VOICE, "available": (MODEL_ROOT / "custom-voices" / f"{name}.safetensors").is_file() or (MODEL_ROOT / "built-in-voices" / f"{name}.wav").is_file()} for name in VOICE_NAMES]}
 
 
 @app.post("/v1/synthesize")

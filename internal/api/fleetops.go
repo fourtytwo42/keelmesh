@@ -244,7 +244,7 @@ func (s *Server) synthesizeV2(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if payload.Voice == "" {
-		payload.Voice = "morgan"
+		payload.Voice = "jarvis"
 	}
 	if payload.RequestID == "" || len(payload.Text) > 1200 {
 		writeJSON(w, http.StatusUnprocessableEntity, domain.APIError{Code: "TOOL_ARGUMENT_INVALID", Message: "request_id and text up to 1200 characters are required."})

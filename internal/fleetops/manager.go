@@ -137,6 +137,7 @@ var callsigns = []string{"Gannet", "Osprey", "Tern", "Petrel", "Shearwater", "Co
 var groupNames = []string{"Watch Shoal", "Bay Lantern", "Sakonnet", "Block Guard", "Brenton", "Narragansett", "Point Judith", "Ocean State"}
 var groupCodes = []string{"WS", "BL", "SK", "BG", "BR", "NG", "PJ", "OS"}
 var groupColors = []string{"#e9a93f", "#62c5a8", "#d86f5f", "#b895d8", "#7eb4df", "#d2c05d", "#df8fb0", "#8fca72"}
+var groupColorNames = []string{"amber", "teal", "coral", "violet", "blue", "yellow", "pink", "lime"}
 var missionNames = []string{"Harbor Lantern", "Silver Wake", "Tidal Compass", "Coastal Sentinel", "Sound Guardian", "Northstar Passage", "Sable Current", "Watch Meridian", "Seaward Beacon", "Iron Gull", "Quiet Horizon", "Amber Shoal"}
 var patterns = []string{"solid", "diagonal", "dots", "crosshatch", "vertical", "rings", "dash", "chevron"}
 var spawnCenters = []domain.GeoPointV2{{-71.385, 41.43}, {-71.30, 41.43}, {-71.24, 41.45}, {-71.42, 41.39}, {-71.33, 41.37}, {-71.23, 41.35}, {-71.47, 41.25}, {-71.30, 41.20}}
@@ -147,7 +148,7 @@ var coastalDistance = regexp.MustCompile(`(?i)(?:within|inside|no more than|max(
 var relativeTravelDistance = regexp.MustCompile(`(?i)\b(?:travel|go|proceed|sail|run|head|move)?\s*([0-9]+(?:\.[0-9]+)?)\s*(nm|nmi|nautical\s*miles?|km|kilometers?|mi|miles?)\b`)
 var relativeCardinalLeg = regexp.MustCompile(`(?i)\b([0-9]+(?:\.[0-9]+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)[ -]*(nm|nmi|nautical[ -]*miles?|km|kilometers?|mi|miles?)[ ,]*(?:to(?:ward|wards)?(?: the)? |due )?(north(?:ward)?|north[ -]?east|northeast|east(?:ward)?|south[ -]?east|southeast|south(?:ward)?|south[ -]?west|southwest|west(?:ward)?|north[ -]?west|northwest)\b`)
 var explicitHeading = regexp.MustCompile(`(?i)\b(?:heading|bearing|course)\s*(?:of|to|at)?\s*([0-9]{1,3}(?:\.[0-9]+)?)\s*(?:deg(?:rees?)?|°)?\b`)
-var waypointColor = regexp.MustCompile(`(?i)\b(amber|red|green|cyan|blue|violet|purple|white)\s+(?:waypoints?|route|markers?)\b`)
+var waypointColor = regexp.MustCompile(`(?i)\b(amber|teal|coral|violet|blue|yellow|pink|lime|red|green|cyan|purple|white)\s+(?:waypoints?|route|markers?)\b`)
 var numberedMissionName = regexp.MustCompile(`(?i)^(mission|voyage)\s+([0-9]+)$`)
 
 // coastalDepthRoutes are deterministic samples from the packaged NOAA ETOPO
@@ -222,10 +223,10 @@ func (m *Manager) seed() {
 			// routing, and distance calculations all agree with the map.
 			p := spawnPoint(spawnCenters, g, slot, .022, .028)
 			env := environmentAt(p, float64(idx))
-			m.vessels[id] = domain.VesselProfileV2{SchemaVersion: 2, ID: id, Designation: fmt.Sprintf("KM-%03d", 214+idx), Callsign: callsigns[idx], DisplayName: fmt.Sprintf("%s (KM-%03d)", callsigns[idx], 214+idx), Class: class, GroupID: gid, GroupCode: groupCodes[g], GroupColor: groupColors[g], GroupPattern: patterns[g], Available: true, DecisionCapable: true, Telemetry: domain.VesselTelemetryV2{Position: p, HeadingDeg: float64((idx * 37) % 360), SpeedMPS: .4 + float64(idx%5)*.11, Reserve: .96 - float64(idx%9)*.025, ProjectedReserve: .89 - float64(idx%9)*.025, Mode: "patrol", Health: "nominal", PNTIntegrity: "trusted", UncertaintyM: 4 + float64(idx%5), TapeDepthSeconds: 60, Environment: env}}
+			m.vessels[id] = domain.VesselProfileV2{SchemaVersion: 2, ID: id, Designation: fmt.Sprintf("KM-%03d", 214+idx), Callsign: callsigns[idx], DisplayName: fmt.Sprintf("%s (KM-%03d)", callsigns[idx], 214+idx), Class: class, GroupID: gid, GroupCode: groupCodes[g], GroupColor: groupColors[g], GroupColorName: groupColorNames[g], GroupPattern: patterns[g], Available: true, DecisionCapable: true, Telemetry: domain.VesselTelemetryV2{Position: p, HeadingDeg: float64((idx * 37) % 360), SpeedMPS: .4 + float64(idx%5)*.11, Reserve: .96 - float64(idx%9)*.025, ProjectedReserve: .89 - float64(idx%9)*.025, Mode: "patrol", Health: "nominal", PNTIntegrity: "trusted", UncertaintyM: 4 + float64(idx%5), TapeDepthSeconds: 60, Environment: env}}
 		}
 		assembly := m.vessels[members[0]].Telemetry.Position
-		m.groups[gid] = domain.OperationalGroupV2{SchemaVersion: 2, ID: gid, Code: groupCodes[g], Name: groupNames[g], Color: groupColors[g], Pattern: patterns[g], MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: &assembly, AssemblySource: "first-member", DecisionPolicy: "lowest_reachable_capable_id", DecisionNodeID: members[0], DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
+		m.groups[gid] = domain.OperationalGroupV2{SchemaVersion: 2, ID: gid, Code: groupCodes[g], Name: groupNames[g], Color: groupColors[g], ColorName: groupColorNames[g], Pattern: patterns[g], MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: &assembly, AssemblySource: "first-member", DecisionPolicy: "lowest_reachable_capable_id", DecisionNodeID: members[0], DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
 	}
 	all := make([]string, 0, 48)
 	for id := range m.vessels {
@@ -269,6 +270,7 @@ func clearVesselGroup(vessel *domain.VesselProfileV2) {
 	vessel.GroupID = ""
 	vessel.GroupCode = ""
 	vessel.GroupColor = "#737973"
+	vessel.GroupColorName = "unassigned"
 	vessel.GroupPattern = "unassigned"
 }
 
@@ -326,19 +328,18 @@ func (m *Manager) defaultAssemblyPointLocked(color string, members []string) (*d
 }
 
 func nearestWaypointColor(value string) string {
-	palette := map[string][3]int{
-		"amber": {230, 166, 59}, "red": {227, 110, 98}, "green": {98, 197, 142},
-		"cyan": {89, 189, 209}, "violet": {184, 149, 216}, "white": {236, 232, 220},
-	}
 	var r, g, b int
 	if _, err := fmt.Sscanf(strings.TrimSpace(value), "#%02x%02x%02x", &r, &g, &b); err != nil {
 		return "amber"
 	}
 	best, score := "amber", math.MaxFloat64
-	for name, rgb := range palette {
+	for index, hexColor := range groupColors {
+		var red, green, blue int
+		_, _ = fmt.Sscanf(hexColor, "#%02x%02x%02x", &red, &green, &blue)
+		rgb := [3]int{red, green, blue}
 		distance := math.Pow(float64(r-rgb[0]), 2) + math.Pow(float64(g-rgb[1]), 2) + math.Pow(float64(b-rgb[2]), 2)
 		if distance < score {
-			best, score = name, distance
+			best, score = groupColorNames[index], distance
 		}
 	}
 	return best
@@ -537,7 +538,7 @@ func (m *Manager) CreateGroup(req CreateGroupRequest) (domain.OperationalGroupV2
 	id := "group-custom-" + shortHash(req.IdempotencyKey)
 	members := unique(req.MemberIDs)
 	assembly, source, waypointID := m.defaultAssemblyPointLocked(req.Color, members)
-	g := domain.OperationalGroupV2{SchemaVersion: 2, ID: id, Code: m.nextGroupCodeLocked(), Name: name, Color: req.Color, Pattern: req.Pattern, MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: assembly, AssemblySource: source, AssemblyWaypointID: waypointID, DecisionPolicy: "lowest_reachable_capable_id", DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
+	g := domain.OperationalGroupV2{SchemaVersion: 2, ID: id, Code: m.nextGroupCodeLocked(), Name: name, Color: req.Color, ColorName: nearestWaypointColor(req.Color), Pattern: req.Pattern, MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: assembly, AssemblySource: source, AssemblyWaypointID: waypointID, DecisionPolicy: "lowest_reachable_capable_id", DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
 	g = m.groupDecisionSnapshotLocked(g)
 	for _, vid := range g.MemberIDs {
 		v := m.vessels[vid]
@@ -549,6 +550,7 @@ func (m *Manager) CreateGroup(req CreateGroupRequest) (domain.OperationalGroupV2
 		v.GroupID = id
 		v.GroupCode = g.Code
 		v.GroupColor = g.Color
+		v.GroupColorName = g.ColorName
 		v.GroupPattern = g.Pattern
 		m.vessels[vid] = v
 	}
@@ -581,6 +583,7 @@ func (m *Manager) PatchGroup(id string, req PatchGroupRequest) (domain.Operation
 	}
 	if req.Color != nil {
 		g.Color = *req.Color
+		g.ColorName = nearestWaypointColor(*req.Color)
 	}
 	if req.Pattern != nil {
 		g.Pattern = *req.Pattern
@@ -656,6 +659,7 @@ func (m *Manager) PatchGroup(id string, req PatchGroupRequest) (domain.Operation
 		v.GroupID = id
 		v.GroupCode = g.Code
 		v.GroupColor = g.Color
+		v.GroupColorName = g.ColorName
 		v.GroupPattern = g.Pattern
 		m.vessels[vid] = v
 	}
@@ -716,6 +720,7 @@ func (m *Manager) MoveGroupMember(id string, req MoveGroupMemberRequest) (domain
 	vessel.GroupID = destination.ID
 	vessel.GroupCode = destination.Code
 	vessel.GroupColor = destination.Color
+	vessel.GroupColorName = destination.ColorName
 	vessel.GroupPattern = destination.Pattern
 	m.groups[destination.ID] = destination
 	m.vessels[vessel.ID] = vessel
@@ -1162,7 +1167,11 @@ func (m *Manager) PlanningContext(draftID string) (domain.MissionPlanningContext
 	targets := make([]domain.MissionPlanningVesselV2, 0, len(draft.TargetIDs))
 	for _, id := range draft.TargetIDs {
 		v := m.vessels[id]
-		targets = append(targets, domain.MissionPlanningVesselV2{ID: v.ID, Name: v.DisplayName, Class: v.Class.Name, Position: v.Telemetry.Position, Reserve: v.Telemetry.Reserve, MaxSpeedMPS: v.Class.MaxSpeedMPS, PNTIntegrity: v.Telemetry.PNTIntegrity, UncertaintyM: v.Telemetry.UncertaintyM, GroupCode: v.GroupCode, Communications: "authenticated mesh reachable"})
+		groupName := "unassigned"
+		if group, exists := m.groups[v.GroupID]; exists {
+			groupName = group.Name
+		}
+		targets = append(targets, domain.MissionPlanningVesselV2{ID: v.ID, Name: v.DisplayName, Class: v.Class.Name, Position: v.Telemetry.Position, Reserve: v.Telemetry.Reserve, MaxSpeedMPS: v.Class.MaxSpeedMPS, PNTIntegrity: v.Telemetry.PNTIntegrity, UncertaintyM: v.Telemetry.UncertaintyM, GroupCode: v.GroupCode, GroupName: groupName, GroupColorName: v.GroupColorName, Communications: "authenticated mesh reachable"})
 	}
 	geometryOptions := []domain.MissionGeometryOptionV2{}
 	if advisorGeometryEligible(draft, mission) {
@@ -1324,11 +1333,23 @@ func normalizeWaypointColor(color string) string {
 	switch strings.ToLower(strings.TrimSpace(color)) {
 	case "amber":
 		return "amber"
+	case "teal":
+		return "teal"
+	case "coral":
+		return "coral"
+	case "blue":
+		return "blue"
+	case "yellow":
+		return "yellow"
+	case "pink":
+		return "pink"
+	case "lime":
+		return "lime"
 	case "red":
 		return "red"
 	case "green":
 		return "green"
-	case "cyan", "blue":
+	case "cyan":
 		return "cyan"
 	case "violet", "purple":
 		return "violet"
@@ -2551,15 +2572,15 @@ func (m *Manager) deduplicateMissionNamesLocked() {
 }
 
 func (m *Manager) Voices() []domain.VoiceV2 {
-	names := []string{"Anna", "Vera", "Charles", "Paul", "Jeff", "Patrick", "James", "Morgan", "Movie Trailer Voice", "Ian", "Sam", "David"}
+	names := []string{"Jarvis", "Anna", "Vera", "Charles", "Paul", "Jeff", "Patrick", "James", "Morgan", "Movie Trailer Voice", "Ian", "Sam", "David"}
 	out := make([]domain.VoiceV2, 0, len(names))
 	for _, n := range names {
-		out = append(out, domain.VoiceV2{ID: strings.ToLower(strings.ReplaceAll(n, " ", "-")), Name: n, Default: n == "Morgan", Available: n == "Morgan"})
+		out = append(out, domain.VoiceV2{ID: strings.ToLower(strings.ReplaceAll(n, " ", "-")), Name: n, Default: n == "Jarvis", Available: false})
 	}
 	return out
 }
 func (m *Manager) SpeechCapabilities() domain.SpeechCapabilitiesV2 {
-	return domain.SpeechCapabilitiesV2{TTSNode: "vm-214", TTSEngine: "Pocket TTS", TTSVersion: "2.1.0", DefaultVoice: "Morgan", Streaming: true, BargeIn: true, TranscriptionRoutes: []string{"browser-webgpu", "browser-wasm", "colocated-node", "trusted-peer", "typed-input"}, HTTPSRequired: true, DemoLimitations: []string{"TTS service wiring is deployment-optional; visible text is authoritative.", "Browser microphone and WebGPU require HTTPS.", "Logical node isolation is simulated on VM 214."}}
+	return domain.SpeechCapabilitiesV2{TTSNode: "vm-214", TTSEngine: "Pocket TTS", TTSVersion: "2.1.0", DefaultVoice: "Jarvis", Streaming: true, BargeIn: true, TranscriptionRoutes: []string{"browser-webgpu", "browser-wasm", "colocated-node", "trusted-peer", "typed-input"}, HTTPSRequired: true, DemoLimitations: []string{"TTS service wiring is deployment-optional; visible text is authoritative.", "Browser microphone and WebGPU require HTTPS.", "Logical node isolation is simulated on VM 214."}}
 }
 
 func (m *Manager) persistAsync() {
@@ -2759,6 +2780,7 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 		}
 	})
 	for id, group := range m.groups {
+		group.ColorName = nearestWaypointColor(group.Color)
 		if !validFormation(group.Formation) {
 			group.Formation = "column"
 		}
@@ -2777,10 +2799,15 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 	}
 	for id, vessel := range m.vessels {
 		if vessel.GroupID != "" {
-			if _, ok := m.groups[vessel.GroupID]; !ok {
+			if group, ok := m.groups[vessel.GroupID]; !ok {
 				clearVesselGroup(&vessel)
-				m.vessels[id] = vessel
+			} else {
+				vessel.GroupCode = group.Code
+				vessel.GroupColor = group.Color
+				vessel.GroupColorName = group.ColorName
+				vessel.GroupPattern = group.Pattern
 			}
+			m.vessels[id] = vessel
 		}
 	}
 	m.deduplicateMissionNamesLocked()

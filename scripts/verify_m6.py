@@ -175,7 +175,7 @@ started = call(
 assert started["status"] == "executing"
 
 voices = call("/api/v2/voices")["voices"]
-assert len(voices) == 12 and next(v for v in voices if v["default"])["id"] == "morgan"
+assert len(voices) == 13 and next(v for v in voices if v["default"])["id"] == "jarvis"
 speech = call("/api/v2/speech/capabilities")
 assert speech["tts_engine"] == "Pocket TTS" and speech["transcription_routes"][-1] == "typed-input"
 
@@ -191,7 +191,7 @@ print(
             "formation": plan["formation"],
             "exact_hash": plan["content_hash"],
             "voices": len(voices),
-            "default_voice": "morgan",
+            "default_voice": "jarvis",
         }
     )
 )

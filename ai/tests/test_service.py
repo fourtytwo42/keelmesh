@@ -125,6 +125,8 @@ def test_mock_mission_advisor_is_target_aware() -> None:
                     "pnt_integrity": "trusted",
                     "uncertainty_m": 4,
                     "group_code": "WS",
+                    "group_name": "Watch Shoal",
+                    "group_color_name": "amber",
                     "communications": "mesh",
                 }
             ],

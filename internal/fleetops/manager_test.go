@@ -521,6 +521,9 @@ func TestAdvisorSelectsDepthValidatedMissionGeometry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(context.Targets) != 1 || context.Targets[0].GroupName == "" || context.Targets[0].GroupCode == "" || context.Targets[0].GroupColorName == "" {
+		t.Fatalf("advisor group identity is incomplete: %#v", context.Targets)
+	}
 	var selected domain.MissionGeometryOptionV2
 	for _, option := range context.GeometryOptions {
 		if option.ID == "coastal-corridor-03" {

@@ -590,6 +590,7 @@ export type VesselProfileV2 = {
   group_id: string;
   group_code: string;
   group_color: string;
+  group_color_name: string;
   group_pattern: string;
   available: boolean;
   telemetry: {
@@ -614,6 +615,7 @@ export type OperationalGroupV2 = {
   code: string;
   name: string;
   color: string;
+  color_name: string;
   pattern: string;
   member_ids: string[];
   formation: string;
@@ -677,7 +679,19 @@ export type MissionPOIV2 = {
 export type MissionWaypointV2 = {
   id: string;
   position: Point;
-  color: "amber" | "red" | "green" | "cyan" | "violet" | "white";
+  color:
+    | "amber"
+    | "teal"
+    | "coral"
+    | "violet"
+    | "blue"
+    | "yellow"
+    | "pink"
+    | "lime"
+    | "red"
+    | "green"
+    | "cyan"
+    | "white";
   sequence: number;
 };
 export type MissionGeometryV2 = {

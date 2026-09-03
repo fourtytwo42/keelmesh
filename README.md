@@ -116,7 +116,8 @@ every option still follows preview → exact-hash authorization → execution.
 
 The chart is a packaged NOAA NCDS extract and all vessel/environment state is
 clearly labeled simulation data. Pocket TTS and faster-whisper run privately on
-VM 214; Morgan is the default voice. Browser capture requires HTTPS, so the
+VM 214; the user-authorized Jarvis clone is the default voice and remains a
+VM-local runtime artifact outside Git. Browser capture requires HTTPS, so the
 temporary Cloudflare Quick Tunnel is used for microphone demos while the LAN URL
 continues to provide the rest of the workspace.
 

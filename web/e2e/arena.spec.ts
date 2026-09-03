@@ -17,7 +17,7 @@ test("distributed Fleet Arena keeps protected planes up through coordinator fail
   await expect(page.getByText(`COORDINATOR NODE-${faction}-02`)).toBeVisible();
   await expect(page.getByText("protected · connected")).toBeVisible();
   await expect(page.getByText("protected · direct HTTPS")).toBeVisible();
-  await page.getByRole("button", { name: "ASK MORGAN" }).click();
+  await page.getByRole("button", { name: "ASK JARVIS" }).click();
   await expect(page.locator(".arena-agent p")).toContainText("I arranged your operating picture");
   await page.getByRole("button", { name: "DRAFT ENGAGEMENT" }).click();
   await expect(page.getByRole("button", { name: "CONFIRM EXACT HASH" })).toBeVisible();
