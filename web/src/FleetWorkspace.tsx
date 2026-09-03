@@ -169,6 +169,10 @@ export function FleetWorkspace() {
     [pendingPlanID, setPendingPlanID] = useState(""),
     [commandScenes, setCommandScenes] = useState<CommandSceneV1[]>([]),
     [activeSceneID, setActiveSceneID] = useState(""),
+    [sceneCameraRequest, setSceneCameraRequest] = useState<{
+      sceneID: string;
+      token: number;
+    } | null>(null),
     [assistantTurns, setAssistantTurns] = useState<ConversationTurnV1[]>([]),
     [assistantChatInput, setAssistantChatInput] = useState(""),
     [assistantChatBusy, setAssistantChatBusy] = useState(false);
@@ -189,6 +193,20 @@ export function FleetWorkspace() {
   const [pirate, setPirate] = useState(
     () => localStorage.getItem("keelmesh.theme") === "pirate",
   );
+  function focusCommandScene(sceneID: string, moveCamera = true) {
+    setActiveSceneID(sceneID);
+    if (moveCamera)
+      setSceneCameraRequest((current) => ({
+        sceneID,
+        token: (current?.token ?? 0) + 1,
+      }));
+  }
+  function releaseCommandScene(sceneID: string) {
+    setActiveSceneID((current) => (current === sceneID ? "" : current));
+    setSceneCameraRequest((current) =>
+      current?.sceneID === sceneID ? null : current,
+    );
+  }
   const voice = pirate ? "barbossa" : "jarvis";
   const words = pirate
     ? {
@@ -257,7 +275,7 @@ export function FleetWorkspace() {
         const visible = value.scenes.filter((scene) => scene.state === "active" || scene.pinned);
         setCommandScenes(value.scenes);
         setAssistantTurns(value.turns ?? []);
-        setActiveSceneID(visible[0]?.id ?? "");
+        if (visible[0]) focusCommandScene(visible[0].id);
         const hasMissionCanvas = visible.some((scene) => scene.type === "mission_canvas");
         setWindows((current) => new Set([...current, ...(hasMissionCanvas ? ["planner"] : []), ...visible.filter((scene) => scene.type !== "mission_canvas").map((scene) => `scene-${scene.id}`)]));
         if (hasMissionCanvas) setPlannerVisible(true);
@@ -1442,7 +1460,7 @@ export function FleetWorkspace() {
       }),
     });
     setCommandScenes((current) => [turn.scene, ...current.map((scene) => scene.state === "active" && !scene.pinned && !scene.critical && !scene.pending_approval ? { ...scene, state: "replaced" } : scene).filter((scene) => scene.id !== turn.scene.id)].slice(0, 50));
-    setActiveSceneID(turn.scene.id);
+    focusCommandScene(turn.scene.id);
     if (turn.scene.type === "mission_canvas") open("planner");
     else if (presentScene) open(`scene-${turn.scene.id}`);
     return turn.assistant;
@@ -1460,14 +1478,17 @@ export function FleetWorkspace() {
       }),
     });
     setCommandScenes((current) => operation === "dismiss" ? current.filter((item) => item.id !== scene.id) : current.map((item) => item.id === scene.id ? value : item));
-    if (operation === "dismiss") setWindows((current) => { const next = new Set(current); next.delete(`scene-${scene.id}`); return next; });
+    if (operation === "dismiss") {
+      releaseCommandScene(scene.id);
+      setWindows((current) => { const next = new Set(current); next.delete(`scene-${scene.id}`); return next; });
+    }
   }
 
   async function applySceneAction(scene: CommandSceneV1, action: CommandSceneV1["suggested_actions"][number]) {
     if (action.kind === "pin_scene") { await mutateScene(scene, "pin"); return; }
     if (action.kind === "dismiss_scene") { await mutateScene(scene, "dismiss"); return; }
     if (action.kind === "frame_entities" && scene.map_camera) {
-      setActiveSceneID(scene.id);
+      focusCommandScene(scene.id);
       return;
     }
     if (action.kind === "open_window") open("planner");
@@ -1901,6 +1922,10 @@ export function FleetWorkspace() {
       title: scene.title,
       icon: <Sparkles />,
       initial: { x: Math.max(280, window.innerWidth - 760 - index * 24), y: 110 + index * 26, width: 420, height: 390 },
+      onVisibilityChange: (visible) => {
+        if (visible) setActiveSceneID(scene.id);
+        else releaseCommandScene(scene.id);
+      },
       content: <SceneArtifact scene={scene} onAction={(action) => void applySceneAction(scene, action)} onPin={() => void mutateScene(scene, scene.pinned ? "unpin" : "pin")} onDismiss={() => void mutateScene(scene, "dismiss")} />,
     });
   }
@@ -1910,7 +1935,7 @@ export function FleetWorkspace() {
       toggleActivation: windowToggleActivations["assistant-chat"],
       initial: { x: Math.max(20, window.innerWidth - 470), y: Math.max(90, window.innerHeight - 620), width: 430, height: 520 }, minWidth: 310, minHeight: 260,
       preferredDock: "right", maximizable: true, minimizable: false, toggleMode: "close",
-      content: <AssistantChat turns={assistantTurns} value={assistantChatInput} busy={assistantChatBusy} pirate={pirate} onChange={setAssistantChatInput} onSend={(text) => void handleGlobalTypedMessage(text)} onOpenScene={(scene) => { setActiveSceneID(scene.id); if (scene.type === "mission_canvas") open("planner"); else open(`scene-${scene.id}`); }} scenes={commandScenes} />,
+      content: <AssistantChat turns={assistantTurns} value={assistantChatInput} busy={assistantChatBusy} pirate={pirate} onChange={setAssistantChatInput} onSend={(text) => void handleGlobalTypedMessage(text)} onOpenScene={(scene) => { focusCommandScene(scene.id); if (scene.type === "mission_canvas") open("planner"); else open(`scene-${scene.id}`); }} scenes={commandScenes} />,
     });
   return (
     <main className="m6-shell">
@@ -2062,7 +2087,8 @@ export function FleetWorkspace() {
         onArea={addPolygon}
         onToolDone={() => setTool("select")}
         sceneAnnotations={commandScenes.find((scene) => scene.id === activeSceneID && scene.state === "active")?.map_annotations ?? []}
-        sceneCamera={commandScenes.find((scene) => scene.id === activeSceneID && scene.state === "active")?.map_camera}
+        sceneCamera={commandScenes.find((scene) => scene.id === sceneCameraRequest?.sceneID && scene.state === "active")?.map_camera}
+        sceneCameraRequest={sceneCameraRequest?.token}
       />
       <button className="assistant-chat-trigger" aria-label="Toggle text chat with KeelMesh AI" title="Open or close text chat" onClick={() => toggleWindow("assistant-chat")}><MessageCircle /><span className="assistant-chat-dots" aria-hidden="true"><i /><i /><i /></span></button>
       {pendingDeleteMission && (

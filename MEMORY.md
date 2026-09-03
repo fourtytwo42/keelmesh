@@ -5,7 +5,7 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M11 Distributed Agent Memory and Learning Plane is implemented and deployed without GitHub-hosted workflows or snapshots.
-- Last meaningful change: global voice, typed chat, and Mission now use one continuous exact-turn history. Assistant context includes every visible vessel/contact position, recent entity references, and core-computed nearest-vessel facts, so follow-up pronouns and spatial questions are grounded in live map state.
+- Last meaningful change: AI command surfaces now retain one A2UI renderer across one-second live-binding updates, preventing mobile/desktop flashing. Scene camera movement is a one-shot presentation command; closing or minimizing the AI artifact immediately releases its map/entity focus and scene annotations.
 - Next step: only broader M7 physical mesh replication remains a separate architecture follow-up; do not describe the current memory bundles as real radio-plane replication until that transport exists.
 - Blockers: none for the delivered central/node-local M11 slice. No snapshot is authorized.
 
@@ -162,6 +162,15 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+### 2026-09-03 - Stable live AI artifacts and releasable map focus
+
+- Context: AI-opened A2UI windows visibly flashed on each live refresh, especially on phones, and their continuously recomputed camera recentered the map after the operator panned away or closed the window.
+- Decision: retain the A2UI message processor for the lifetime of a surface, apply subsequent ordered messages without replaying `createSurface`, and separate live entity bindings from one-shot scene camera requests. Closing, minimizing, or dismissing an artifact clears its active scene focus and annotations; explicit Frame/Open actions may request a new camera move.
+- Files: `web/src/A2UISurface.tsx`, `web/src/A2UISurface.test.tsx`, `web/src/FleetWorkspace.tsx`, `web/src/OperationsMap.tsx`, and `web/e2e/scene.spec.ts`.
+- Commands/tests: strict TypeScript; 13 Vitest assertions; production Vite/Docker builds; deployed 390×844 Playwright scene regression proving the A2UI DOM remains mounted across more than two live refresh intervals and camera/annotation focus clears on close; central and twelve-node health/hash verification.
+- Result: VM 214 and all twelve vessel nodes run binary SHA-256 `e64862ef69c8b975fe4c3292e08dfe48a7ba6aaea0d37d38e02f2f12b12f0e38`. No GitHub-hosted workflow or Proxmox snapshot ran.
+- Follow-up: none.
 
 ### 2026-09-03 - Vessel and group intelligence-card redesign
 
