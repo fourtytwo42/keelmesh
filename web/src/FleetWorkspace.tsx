@@ -120,6 +120,11 @@ const groupPalette = [
 ] as const;
 const vesselAsset = (classID: string, pirate: boolean) =>
   `/assets/vessels/${pirate ? "pirate-" : ""}${classID}.png`;
+const reservePercent = (reserve: number) => {
+  const percent = Math.max(0, Math.min(100, reserve * 100));
+  if (percent === 100) return "100";
+  return percent >= 99 ? percent.toFixed(2) : percent.toFixed(1);
+};
 
 function commandSceneSessionID() {
   const key = "keelmesh.command-scene-session.v1";
@@ -2206,7 +2211,7 @@ export function FleetWorkspace() {
             </header>
             <p>{pendingPlan.description}</p>
             <dl>
-              <span><small>RESERVE</small>{Math.round(pendingPlan.minimum_reserve * 100)}%</span>
+              <span><small>RESERVE</small>{reservePercent(pendingPlan.minimum_reserve)}%</span>
               <span><small>DURATION</small>{pendingPlan.duration_minutes.toFixed(1)} min</span>
               <span><small>SEPARATION</small>{pendingPlan.minimum_separation_m} m</span>
             </dl>
@@ -2471,7 +2476,7 @@ function vesselFleetHelp(vessel: VesselProfileV2) {
   return [
     `${vessel.callsign} · ${vessel.designation} · ${vessel.class.name}`,
     `${telemetry.mode.replaceAll("_", " ")} · ${telemetry.speed_mps.toFixed(1)} m/s · heading ${Math.round(telemetry.heading_deg)}°`,
-    `Reserve ${Math.round(telemetry.reserve * 100)}% · projected ${Math.round(telemetry.projected_reserve * 100)}%`,
+    `Reserve ${reservePercent(telemetry.reserve)}% · projected ${reservePercent(telemetry.projected_reserve)}%`,
     `PNT ${telemetry.pnt_integrity} ±${Math.round(telemetry.uncertainty_m)} m · ${telemetry.health}`,
     `Group ${group}`,
   ].join("\n");
@@ -2491,7 +2496,7 @@ function groupFleetHelp(group: OperationalGroupV2, fleet: FleetSnapshotV2) {
     `${group.code} · ${group.name} · ${group.color_name} team`,
     `${available}/${members.length} available · ${underway} underway`,
     `${group.formation.replaceAll("_", " ")} · ${group.formation_spacing_m} m spacing · heading ${Math.round(group.formation_heading_deg)}°`,
-    `Average reserve ${Math.round(averageReserve * 100)}% · ${group.route_mode.replaceAll("_", " ")}`,
+    `Average reserve ${reservePercent(averageReserve)}% · ${group.route_mode.replaceAll("_", " ")}`,
     `Decision node ${decisionNode?.callsign || "Unavailable"} · epoch ${group.decision_epoch}`,
   ].join("\n");
 }
@@ -2672,7 +2677,7 @@ function FleetRail({
                       {v.designation} · {v.class.name}
                     </small>
                   </span>
-                  <em>{Math.round(v.telemetry.reserve * 100)}%</em>
+                  <em>{reservePercent(v.telemetry.reserve)}%</em>
                   <button
                     className="vessel-view"
                     aria-label={`View status of ${v.callsign}`}
@@ -2748,7 +2753,7 @@ function FleetRail({
                     <b>{v.callsign}</b>
                     <small>{v.designation} · {v.class.name}</small>
                   </span>
-                  <em>{Math.round(v.telemetry.reserve * 100)}%</em>
+                  <em>{reservePercent(v.telemetry.reserve)}%</em>
                   <button
                     className="vessel-view"
                     aria-label={`View status of ${v.callsign}`}
@@ -2888,7 +2893,7 @@ function SelectionDrawer({
                       {v.designation} · {v.class.name}
                     </small>
                   </span>
-                  <em>{Math.round(v.telemetry.reserve * 100)}%</em>
+                  <em>{reservePercent(v.telemetry.reserve)}%</em>
                   <button
                     title={`Inspect ${v.callsign}`}
                     onClick={() => onInspectVessel(v.id)}
@@ -2985,7 +2990,7 @@ function SelectionInspector({
                     {v.designation} · {v.telemetry.mode}
                   </small>
                 </span>
-                <em>{Math.round(v.telemetry.reserve * 100)}%</em>
+                <em>{reservePercent(v.telemetry.reserve)}%</em>
                 <Eye />
               </button>
             ))}
@@ -3072,7 +3077,7 @@ function GroupManager({
         </div>
       </div>
       <div className="group-insight-strip">
-        <div><small>ENERGY</small><strong>{Math.round(averageReserve * 100)}%</strong><span>min {Math.round(minimumReserve * 100)}%</span></div>
+        <div><small>ENERGY</small><strong>{reservePercent(averageReserve)}%</strong><span>min {reservePercent(minimumReserve)}%</span></div>
         <div><small>FORMATION</small><strong>{formation.replaceAll("_", " ")}</strong><span>{spacing} m spacing</span></div>
         <div><small>DECISION NODE</small><strong>{decisionNode?.callsign || "Unavailable"}</strong><span>epoch {group.decision_epoch}</span></div>
       </div>
@@ -3179,8 +3184,8 @@ function VesselInspector({
   onRename: (name: string) => void;
 }) {
   const t = vessel.telemetry;
-  const reservePercent = Math.round(t.reserve * 100);
-  const projectedPercent = Math.round(t.projected_reserve * 100);
+  const reserveValue = Math.max(0, Math.min(100, t.reserve * 100));
+  const projectedValue = Math.max(0, Math.min(100, t.projected_reserve * 100));
   const bufferPercent = Math.min(100, Math.round((t.tape_depth_seconds / 60) * 100));
   return (
     <div className="vessel-inspector">
@@ -3203,13 +3208,13 @@ function VesselInspector({
         </div>
       </div>
       <div className="vessel-readiness">
-        <div className="reserve-ring" style={{ "--reserve-angle": `${reservePercent * 3.6}deg`, "--ring-color": reservePercent < 30 ? "#cf6d62" : "#70b88f" } as CSSProperties}>
-          <span><BatteryCharging /><strong>{reservePercent}%</strong><small>ENERGY</small></span>
+        <div className="reserve-ring" style={{ "--reserve-angle": `${reserveValue * 3.6}deg`, "--ring-color": reserveValue < 30 ? "#cf6d62" : "#70b88f" } as CSSProperties}>
+          <span><BatteryCharging /><strong>{reservePercent(t.reserve)}%</strong><small>ENERGY</small></span>
         </div>
         <div className="readiness-bars">
-          <StatusBar icon={<BatteryCharging />} label="PROJECTED MISSION END" value={`${projectedPercent}%`} percent={projectedPercent} />
+          <StatusBar icon={<BatteryCharging />} label="PROJECTED MISSION END" value={`${reservePercent(t.projected_reserve)}%`} percent={projectedValue} />
           <StatusBar icon={<Route />} label="HOT EXECUTION BUFFER" value={`${t.tape_depth_seconds}s`} percent={bufferPercent} />
-          <StatusBar icon={<Gauge />} label="BATTERY-ONLY RANGE" value={`${(t.reserve * vessel.class.nominal_range_nm).toFixed(1)} nm`} percent={reservePercent} />
+          <StatusBar icon={<Gauge />} label="BATTERY-ONLY RANGE" value={`${(t.reserve * vessel.class.nominal_range_nm).toFixed(1)} nm`} percent={reserveValue} />
         </div>
       </div>
       <div className="hot-buffer-note">
