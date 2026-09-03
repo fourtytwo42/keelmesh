@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-VOICE_NAMES = ("jarvis", "anna", "vera", "charles", "paul", "jeff", "patrick", "james", "morgan", "trailer", "ian", "sam", "david")
+VOICE_NAMES = ("jarvis", "barbossa", "anna", "vera", "charles", "paul", "jeff", "patrick", "james", "morgan", "trailer", "ian", "sam", "david")
 DEFAULT_VOICE = "jarvis"
 MODEL_ROOT = Path(os.getenv("KEELMESH_SPEECH_MODEL_ROOT", "/models"))
 STT_ROOT = Path(os.getenv("KEELMESH_STT_MODEL_ROOT", "/stt-model"))
@@ -158,7 +158,8 @@ def health() -> dict[str, Any]:
 
 @app.get("/v1/voices")
 def voices() -> dict[str, Any]:
-    return {"voices": [{"id": name, "name": "Movie Trailer Voice" if name == "trailer" else name.title(), "default": name == DEFAULT_VOICE, "available": (MODEL_ROOT / "custom-voices" / f"{name}.safetensors").is_file() or (MODEL_ROOT / "built-in-voices" / f"{name}.wav").is_file()} for name in VOICE_NAMES]}
+    display_names = {"barbossa": "Captain Barbossa", "trailer": "Movie Trailer Voice"}
+    return {"voices": [{"id": name, "name": display_names.get(name, name.title()), "default": name == DEFAULT_VOICE, "available": (MODEL_ROOT / "custom-voices" / f"{name}.safetensors").is_file() or (MODEL_ROOT / "built-in-voices" / f"{name}.wav").is_file()} for name in VOICE_NAMES]}
 
 
 @app.post("/v1/synthesize")

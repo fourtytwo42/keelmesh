@@ -198,6 +198,12 @@ export function FleetWorkspace() {
     document.documentElement.dataset.theme = pirate ? "pirate" : "navy";
   }, [pirate]);
   useEffect(() => {
+    const preferredVoice = pirate ? "barbossa" : "jarvis";
+    if (voices.some((candidate) => candidate.id === preferredVoice && candidate.available)) {
+      setVoice(preferredVoice);
+    }
+  }, [pirate, voices]);
+  useEffect(() => {
     localStorage.setItem("keelmesh.auto-read.v2", String(autoRead));
   }, [autoRead]);
   const refresh = useCallback(async () => {
@@ -3106,7 +3112,7 @@ function Planner({
         </div>
       </div>
       <div className="voice-row">
-        <select value={voice} onChange={(e) => onVoice(e.target.value)}>
+        <select aria-label="AI voice" value={voice} onChange={(e) => onVoice(e.target.value)}>
           {voices.map((v) => (
             <option value={v.id} key={v.id}>
               {v.name}

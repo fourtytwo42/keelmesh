@@ -2948,10 +2948,14 @@ func (m *Manager) deduplicateMissionNamesLocked() {
 }
 
 func (m *Manager) Voices() []domain.VoiceV2 {
-	names := []string{"Jarvis", "Anna", "Vera", "Charles", "Paul", "Jeff", "Patrick", "James", "Morgan", "Movie Trailer Voice", "Ian", "Sam", "David"}
+	names := []string{"Jarvis", "Captain Barbossa", "Anna", "Vera", "Charles", "Paul", "Jeff", "Patrick", "James", "Morgan", "Movie Trailer Voice", "Ian", "Sam", "David"}
 	out := make([]domain.VoiceV2, 0, len(names))
 	for _, n := range names {
-		out = append(out, domain.VoiceV2{ID: strings.ToLower(strings.ReplaceAll(n, " ", "-")), Name: n, Default: n == "Jarvis", Available: false})
+		id := strings.ToLower(strings.ReplaceAll(n, " ", "-"))
+		if n == "Captain Barbossa" {
+			id = "barbossa"
+		}
+		out = append(out, domain.VoiceV2{ID: id, Name: n, Default: n == "Jarvis", Available: false})
 	}
 	return out
 }

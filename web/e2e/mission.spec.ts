@@ -137,15 +137,22 @@ test("pirate watch changes nomenclature, agent voice, and returns cleanly to nav
   await expect(page.getByRole("button", { name: /High Seas/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Return to navy mode" })).toBeVisible();
 
+  const pirateFleet = page.getByRole("region", { name: "Flotilla / Crews" });
+  await pirateFleet.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
+  await page.getByRole("button", { name: "New voyage" }).click();
+  const piratePlanner = page.getByRole("region", { name: /Voyage Plotter/ });
+  await expect(piratePlanner.getByRole("combobox", { name: "AI voice" })).toHaveValue("barbossa");
+
   await page.getByRole("button", { name: /High Seas/ }).click();
   const arena = page.getByRole("region", { name: /High Seas/ });
-  await arena.getByRole("button", { name: /ASK JARVIS, ARR!/ }).click();
+  await arena.getByRole("button", { name: /ASK BARBOSSA, ARR!/ }).click();
   await expect(arena.locator(".arena-agent p")).toContainText("Arrr, Captain");
 
   await expect(page.evaluate(() => localStorage.getItem("keelmesh.theme"))).resolves.toBe("pirate");
   await page.getByRole("button", { name: "Return to navy mode" }).click();
   await expect(page.getByText("MISSION OPERATIONS", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Enter pirate mode" })).toBeVisible();
+  await expect(page.getByRole("region", { name: /Mission Planner/ }).getByRole("combobox", { name: "AI voice" })).toHaveValue("jarvis");
 });
 
 test("fleet rail, search, group, and filtered selection resolve exact targets", async ({ page }) => {
