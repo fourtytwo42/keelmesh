@@ -127,3 +127,32 @@ func TestInterpretMissionCommandBindsDynamicSurfaceContact(t *testing.T) {
 		t.Fatalf("unexpected semantic interpretation: %#v", result)
 	}
 }
+
+func TestWorkspaceCommandUsesModelForBoundedPresentationAction(t *testing.T) {
+	keyFile := filepath.Join(t.TempDir(), "openai-key")
+	if err := os.WriteFile(keyFile, []byte("test-key\n"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request["model"] != "gpt-5.6-luna" || request["store"] != false {
+			t.Fatalf("unexpected workspace request: %#v", request)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"mode\":\"workspace\",\"speech\":\"Opening Gannet's vessel status.\",\"mission_intent\":\"\",\"actions\":[{\"kind\":\"inspect_vessel\",\"target\":\"Gannet\",\"value\":0}]}"}]}]}`))
+	}))
+	defer provider.Close()
+	manager := NewManager(Config{OpenAIKeyFile: keyFile, OpenAIModel: "gpt-5.6-luna", OpenAIURL: provider.URL}, slog.Default())
+	result, err := manager.WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{Text: "Show me Gannet's status.", Persona: "navy"}, domain.FleetSnapshotV2{
+		Vessels: []domain.VesselProfileV2{{ID: "vessel-1", Callsign: "Gannet", Designation: "KM-214", DisplayName: "Gannet (KM-214)"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Provider != "openai" || result.Mode != "workspace" || len(result.Actions) != 1 || result.Actions[0].Kind != "inspect_vessel" {
+		t.Fatalf("unexpected workspace command: %#v", result)
+	}
+}

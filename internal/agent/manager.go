@@ -138,6 +138,216 @@ func (m *Manager) Snapshot() domain.AgentSnapshotV1 {
 	return clone(m.snapshot)
 }
 
+// WorkspaceCommand gives the global push-to-talk control a bounded semantic
+// interface. Returned actions are presentation or draft actions only; mission
+// authorization, deletion, and simulated effects remain on their existing
+// deterministic approval paths.
+func (m *Manager) WorkspaceCommand(ctx context.Context, request domain.WorkspaceAssistantRequestV1, fleet domain.FleetSnapshotV2) (domain.WorkspaceAssistantResponseV1, error) {
+	if strings.TrimSpace(request.Text) == "" || len(request.Text) > 1600 {
+		return domain.WorkspaceAssistantResponseV1{}, problem("TOOL_ARGUMENT_INVALID", "Voice command must contain between 1 and 1600 characters.")
+	}
+	key := readSecret(m.cfg.OpenAIKeyFile)
+	if key == "" {
+		return deterministicWorkspaceCommand(request, fleet), nil
+	}
+	contextValue := workspaceContext(request, fleet)
+	contextJSON, _ := json.Marshal(contextValue)
+	payload := map[string]any{
+		"model":             m.cfg.OpenAIModel,
+		"instructions":      workspaceCommandInstructions(request.Persona),
+		"input":             string(contextJSON),
+		"reasoning":         map[string]any{"effort": "none"},
+		"text":              map[string]any{"verbosity": "low", "format": map[string]any{"type": "json_schema", "name": "keelmesh_workspace_command", "strict": true, "schema": workspaceCommandSchema()}},
+		"max_output_tokens": 900,
+		"store":             false,
+	}
+	body, _ := json.Marshal(payload)
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.OpenAIURL, bytes.NewReader(body))
+	if err != nil {
+		return domain.WorkspaceAssistantResponseV1{}, problem("AI_UNAVAILABLE", err.Error())
+	}
+	httpRequest.Header.Set("Authorization", "Bearer "+key)
+	httpRequest.Header.Set("Content-Type", "application/json")
+	started := time.Now().UTC()
+	response, err := m.http.Do(httpRequest)
+	latency := time.Since(started).Milliseconds()
+	if err != nil {
+		m.logger.Warn("workspace assistant provider failed; using bounded fallback", "error", err)
+		return deterministicWorkspaceCommand(request, fleet), nil
+	}
+	defer response.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(response.Body, 128<<10))
+	if response.StatusCode != http.StatusOK {
+		m.logger.Warn("workspace assistant provider rejected request; using bounded fallback", "status", response.StatusCode)
+		return deterministicWorkspaceCommand(request, fleet), nil
+	}
+	var result domain.WorkspaceAssistantResponseV1
+	output := responseOutputText(raw)
+	if output == "" {
+		m.logger.Warn("workspace assistant provider returned no output; using bounded fallback")
+		return deterministicWorkspaceCommand(request, fleet), nil
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		m.logger.Warn("workspace assistant provider returned malformed output; using bounded fallback", "error", err)
+		return deterministicWorkspaceCommand(request, fleet), nil
+	}
+	if err := validateWorkspaceCommand(result, fleet); err != nil {
+		m.logger.Warn("workspace assistant provider returned an invalid action; using bounded fallback", "error", err)
+		return deterministicWorkspaceCommand(request, fleet), nil
+	}
+	result.SchemaVersion = 1
+	result.Provider, result.Model = "openai", m.cfg.OpenAIModel
+	result.Attempts = []domain.ProviderAttemptV1{{Provider: "openai", Model: m.cfg.OpenAIModel, State: "accepted", StartedAt: started, LatencyMS: latency, StatusCode: response.StatusCode}}
+	return result, nil
+}
+
+func workspaceContext(request domain.WorkspaceAssistantRequestV1, fleet domain.FleetSnapshotV2) map[string]any {
+	type vessel struct {
+		ID, Name, Designation, Class, Group, Mode string
+		Reserve                                   float64
+	}
+	type group struct {
+		ID, Code, Name, Color, Formation string
+		Members                          int
+	}
+	type contact struct {
+		ID, Name, BoatID, Class, Activity, Color string
+		Speed                                    float64
+	}
+	type mission struct {
+		ID, Name, Status, Objective string
+		Targets                     int
+	}
+	vessels := make([]vessel, 0, len(fleet.Vessels))
+	for _, value := range fleet.Vessels {
+		vessels = append(vessels, vessel{value.ID, value.Callsign, value.Designation, value.Class.Name, value.GroupCode, value.Telemetry.Mode, value.Telemetry.Reserve})
+	}
+	groups := make([]group, 0, len(fleet.Groups))
+	for _, value := range fleet.Groups {
+		groups = append(groups, group{value.ID, value.Code, value.Name, value.ColorName, value.Formation, len(value.MemberIDs)})
+	}
+	contacts := make([]contact, 0, len(fleet.SurfaceContacts))
+	for _, value := range fleet.SurfaceContacts {
+		contacts = append(contacts, contact{value.ID, value.Name, value.BoatID, value.Class, value.Activity, value.ColorName, value.SpeedMPS})
+	}
+	missions := make([]mission, 0, len(fleet.Missions))
+	for _, value := range fleet.Missions {
+		missions = append(missions, mission{value.ID, value.Name, value.Status, value.Objective, len(value.TargetIDs)})
+	}
+	return map[string]any{"utterance": request.Text, "persona": request.Persona, "selected_ids": request.SelectedIDs, "open_windows": request.OpenWindows, "authority_status": "healthy", "simulation_rate": fleet.SimulationRate, "simulation_tick_ms": fleet.SimulationTick, "environment": fleet.Environment, "vessels": vessels, "groups": groups, "surface_contacts": contacts, "missions": missions, "available_windows": []string{"fleet", "mission", "engineer", "cutaway", "arena", "resilience", "quiet"}}
+}
+
+func workspaceCommandInstructions(persona string) string {
+	style := "Respond in concise professional naval operations language."
+	if persona == "pirate" {
+		style = "Respond concisely in a theatrical, friendly pirate voice."
+	}
+	return "You are the voice interface for a fictional maritime autonomy simulation. Classify the utterance as conversation, workspace, or mission. " + style + " Use only supplied IDs and facts. Questions should normally be conversation with no UI action. Explicit requests to show, open, close, inspect, select, change simulation speed, or change theme are workspace actions. Requests that draft, move, patrol, search, follow, intercept, surround, hold, route, or otherwise task vessels are mission requests: preserve the complete utterance in mission_intent and include create_mission. Never authorize, start, pause, delete, fire, jam, or apply effects. For those, open the relevant window and explain that confirmation is required. Do not mention JSON, tools, hidden context, or provider mechanics."
+}
+
+func workspaceCommandSchema() map[string]any {
+	return map[string]any{"type": "object", "additionalProperties": false, "required": []string{"mode", "speech", "mission_intent", "actions"}, "properties": map[string]any{
+		"mode":           map[string]any{"type": "string", "enum": []string{"conversation", "workspace", "mission"}},
+		"speech":         map[string]any{"type": "string", "minLength": 1, "maxLength": 800},
+		"mission_intent": map[string]any{"type": "string", "maxLength": 1600},
+		"actions": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"kind", "target", "value"}, "properties": map[string]any{
+			"kind":   map[string]any{"type": "string", "enum": []string{"open_window", "close_window", "select_group", "select_vessel", "select_all", "clear_selection", "inspect_group", "inspect_vessel", "inspect_contact", "set_simulation_rate", "set_theme", "create_mission", "none"}},
+			"target": map[string]any{"type": "string", "maxLength": 120},
+			"value":  map[string]any{"type": "number", "minimum": 0, "maximum": 500},
+		}}},
+	}}
+}
+
+func validateWorkspaceCommand(value domain.WorkspaceAssistantResponseV1, fleet domain.FleetSnapshotV2) error {
+	if value.Mode != "conversation" && value.Mode != "workspace" && value.Mode != "mission" {
+		return errors.New("invalid assistant mode")
+	}
+	if strings.TrimSpace(value.Speech) == "" || (value.Mode == "mission" && strings.TrimSpace(value.MissionIntent) == "") {
+		return errors.New("incomplete assistant response")
+	}
+	allowed := map[string]bool{"open_window": true, "close_window": true, "select_group": true, "select_vessel": true, "select_all": true, "clear_selection": true, "inspect_group": true, "inspect_vessel": true, "inspect_contact": true, "set_simulation_rate": true, "set_theme": true, "create_mission": true, "none": true}
+	windows := map[string]bool{"fleet": true, "mission": true, "mission_planner": true, "planner": true, "engineer": true, "autonomy_engineer": true, "cutaway": true, "infrastructure": true, "arena": true, "fleet_arena": true, "resilience": true, "resilience_drill": true, "quiet": true, "quiet_fleet": true}
+	groups, vessels, contacts := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, item := range fleet.Groups {
+		for _, alias := range []string{item.ID, item.Code, item.Name, item.ColorName + " team", item.ColorName + " group"} {
+			groups[strings.ToLower(alias)] = true
+		}
+	}
+	for _, item := range fleet.Vessels {
+		for _, alias := range []string{item.ID, item.Callsign, item.Designation, item.DisplayName} {
+			vessels[strings.ToLower(alias)] = true
+		}
+	}
+	for _, item := range fleet.SurfaceContacts {
+		for _, alias := range []string{item.ID, item.Name, item.BoatID, item.Callsign} {
+			contacts[strings.ToLower(alias)] = true
+		}
+	}
+	for _, action := range value.Actions {
+		if !allowed[action.Kind] {
+			return errors.New("unsupported workspace action")
+		}
+		target := strings.ToLower(strings.TrimSpace(action.Target))
+		switch action.Kind {
+		case "open_window", "close_window":
+			if !windows[target] {
+				return errors.New("unknown workspace window")
+			}
+		case "select_group", "inspect_group":
+			if !groups[target] {
+				return errors.New("unknown group target")
+			}
+		case "select_vessel", "inspect_vessel":
+			if !vessels[target] {
+				return errors.New("unknown vessel target")
+			}
+		case "inspect_contact":
+			if !contacts[target] {
+				return errors.New("unknown contact target")
+			}
+		case "set_simulation_rate":
+			if action.Value != 0 && action.Value != 1 && action.Value != 5 && action.Value != 20 && action.Value != 100 && action.Value != 500 {
+				return errors.New("unsupported simulation rate")
+			}
+		case "set_theme":
+			if target != "navy" && target != "pirate" {
+				return errors.New("unsupported theme")
+			}
+		}
+	}
+	return nil
+}
+
+func deterministicWorkspaceCommand(request domain.WorkspaceAssistantRequestV1, fleet domain.FleetSnapshotV2) domain.WorkspaceAssistantResponseV1 {
+	lower := strings.ToLower(request.Text)
+	result := domain.WorkspaceAssistantResponseV1{SchemaVersion: 1, Mode: "conversation", Speech: "I can answer questions, arrange the workspace, or help draft a mission. Please try that request again with the specific view or objective you want.", Actions: []domain.WorkspaceAssistantActionV1{}, Provider: "mock", Model: "deterministic-workspace-v1"}
+	missionWords := []string{"move ", "patrol", "search", "follow", "intercept", "surround", "hold position", "waypoint", "route ", "go to", "approach"}
+	for _, word := range missionWords {
+		if strings.Contains(lower, word) {
+			result.Mode, result.MissionIntent, result.Speech = "mission", request.Text, "I opened a mission draft and am translating that request into bounded strategy options for your review."
+			result.Actions = []domain.WorkspaceAssistantActionV1{{Kind: "create_mission", Target: "mission", Value: 0}}
+			return result
+		}
+	}
+	windowNames := []string{"fleet", "mission", "engineer", "cutaway", "arena", "resilience", "quiet"}
+	for _, name := range windowNames {
+		if strings.Contains(lower, name) && (strings.Contains(lower, "open") || strings.Contains(lower, "show")) {
+			result.Mode, result.Speech = "workspace", "I opened the requested workspace."
+			result.Actions = []domain.WorkspaceAssistantActionV1{{Kind: "open_window", Target: name, Value: 0}}
+			return result
+		}
+		if strings.Contains(lower, name) && (strings.Contains(lower, "close") || strings.Contains(lower, "hide")) {
+			result.Mode, result.Speech = "workspace", "I closed the requested workspace."
+			result.Actions = []domain.WorkspaceAssistantActionV1{{Kind: "close_window", Target: name, Value: 0}}
+			return result
+		}
+	}
+	if strings.Contains(lower, "how many") && strings.Contains(lower, "boat") {
+		result.Speech = fmt.Sprintf("You currently have %d controlled vessels in the simulation.", len(fleet.Vessels))
+	}
+	return result
+}
+
 // MissionOptions asks the bounded provider router for advisory planning
 // strategies. It cannot return routes, mutate mission state, or authorize an
 // effect; those responsibilities remain in fleetops and policy.

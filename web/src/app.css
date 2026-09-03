@@ -181,6 +181,18 @@ code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
 .planner-assets{margin-bottom:7px;padding:7px;border:1px solid #39413d;background:#151b19}.planner-assets>label{margin:0}.planner-asset-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:5px}.planner-asset-actions>span,.planner-asset-actions>button{display:inline-flex;align-items:center;gap:4px;min-height:25px;padding:4px 7px;border:1px solid #424a45;background:#202724;color:#c9c8bf;font:7px inherit}.planner-asset-actions>span{margin-right:auto;border-color:#66512e;color:#e0a33f}.planner-asset-actions>button{cursor:pointer}.planner-asset-actions>button:hover:not(:disabled){border-color:#b47d2c;color:#efb24c}.planner-asset-actions>button:disabled{opacity:.38;cursor:default}.planner-asset-actions svg{width:11px;height:11px}.planner-assets-hint{margin:6px 0 0;color:#8e948d;font-size:7px;line-height:1.45}
 @media(max-width:1180px){.float-window.maximized .candidate-list{grid-template-columns:repeat(2,minmax(210px,1fr))}}
 
+/* Global hold-to-talk control. It deliberately sits over the two lower rails
+   and is fixed inside the overflow-clipped application shell. */
+.global-voice-orb{--voice-progress:0deg;position:fixed;z-index:420;right:-5px;bottom:-5px;width:70px;height:70px;display:grid;place-items:center;border-radius:50%;isolation:isolate;filter:drop-shadow(0 7px 16px #000b);touch-action:none;user-select:none}
+.global-voice-orb::before{content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(from -90deg,#73bfff 0 var(--voice-progress),#415158 var(--voice-progress) 360deg);transition:background .18s linear;z-index:-2}
+.global-voice-orb::after{content:"";position:absolute;inset:4px;border-radius:50%;background:#111718;z-index:-1}
+.global-voice-orb button{width:58px;height:58px;display:grid;place-items:center;padding:0;border:1px solid #a9e4c0;border-radius:50%;background:#3b9d67;color:#f5fff8;cursor:pointer;box-shadow:inset 0 0 0 1px #ffffff16,0 0 18px #50bb7d38;transition:background .14s,border-color .14s,transform .14s}
+.global-voice-orb button:hover:not(:disabled){transform:scale(1.035);background:#43ad72}.global-voice-orb button:focus-visible{outline:2px solid #efad43;outline-offset:3px}.global-voice-orb button svg{width:24px!important;height:24px!important;stroke-width:1.8}.global-voice-orb button:disabled{cursor:wait;opacity:1}
+.global-voice-orb.listening button{background:#b84640;border-color:#ffaaa2;box-shadow:inset 0 0 0 1px #ffffff18,0 0 22px #d44d4666}.global-voice-orb.transcribing button,.global-voice-orb.thinking button,.global-voice-orb.received button,.global-voice-orb.synthesizing button{background:#2d70aa;border-color:#8fcfff;animation:voice-orb-pulse .9s ease-in-out infinite alternate}.global-voice-orb.speaking button{background:#3b9d67;border-color:#d1ffe1;animation:voice-speaking 650ms ease-in-out infinite alternate}
+@keyframes voice-orb-pulse{to{box-shadow:inset 0 0 0 1px #ffffff20,0 0 27px #4ca9ef99;transform:scale(1.03)}}@keyframes voice-speaking{to{box-shadow:inset 0 0 0 1px #ffffff20,0 0 25px #62d69488;transform:scale(1.025)}}
+:root[data-theme="pirate"] .global-voice-orb.idle button,:root[data-theme="pirate"] .global-voice-orb.speaking button{background:#40895c;border-color:#d5c187}
+@media(max-width:640px){.global-voice-orb{width:66px;height:66px;right:-4px;bottom:-4px}.global-voice-orb button{width:54px;height:54px}.global-voice-orb button svg{width:22px!important;height:22px!important}}
+
 /* Mission Planner density system: one hierarchy, tuned per window mode. */
 .float-window .planner{padding:8px}
 .float-window .planner-layout{gap:7px}

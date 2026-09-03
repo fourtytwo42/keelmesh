@@ -950,6 +950,36 @@ export type VoiceV2 = {
   default: boolean;
   available: boolean;
 };
+
+export type WorkspaceAssistantActionV1 = {
+  kind:
+    | "open_window"
+    | "close_window"
+    | "select_group"
+    | "select_vessel"
+    | "select_all"
+    | "clear_selection"
+    | "inspect_group"
+    | "inspect_vessel"
+    | "inspect_contact"
+    | "set_simulation_rate"
+    | "set_theme"
+    | "create_mission"
+    | "none";
+  target: string;
+  value: number;
+};
+
+export type WorkspaceAssistantResponseV1 = {
+  schema_version: 1;
+  mode: "conversation" | "workspace" | "mission";
+  speech: string;
+  mission_intent: string;
+  actions: WorkspaceAssistantActionV1[];
+  provider: string;
+  model: string;
+  attempts: ProviderAttempt[];
+};
 export type ArenaNodeV1 = {
   id: string;
   faction: "A" | "B";

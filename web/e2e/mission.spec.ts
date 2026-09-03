@@ -95,6 +95,18 @@ test("map-first workspace exposes the persistent operating picture without heade
   await expect(page.getByRole("button", { name: "Resilience" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Quiet Fleet" })).toHaveCount(0);
   await expect(page.locator(".operations-map .maplibregl-canvas")).toBeVisible();
+  const voiceOrb = page.getByRole("button", { name: "Hold to speak to KeelMesh AI" });
+  await expect(voiceOrb).toBeVisible();
+  await expect(voiceOrb.locator("svg")).toBeVisible();
+  await expect(voiceOrb).toHaveCSS("border-radius", "50%");
+  const voiceBox = await voiceOrb.boundingBox();
+  expect(voiceBox).not.toBeNull();
+  expect(voiceBox!.x + voiceBox!.width).toBeGreaterThan(1260);
+  expect(voiceBox!.y + voiceBox!.height).toBeGreaterThan(700);
+  expect(await page.evaluate(() => ({
+    horizontal: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    vertical: document.documentElement.scrollHeight > document.documentElement.clientHeight,
+  }))).toEqual({ horizontal: false, vertical: false });
   await expect(page.getByText("NOAA-DERIVED FIXTURE", { exact: true })).toBeVisible();
   await expect(page.getByText("SIMULATION ONLY", { exact: true })).toBeVisible();
   await expect(page.locator("img[src='/assets/vessels/kestrel.png']").first()).toBeVisible();

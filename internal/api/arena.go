@@ -169,6 +169,23 @@ func (s *Server) agentMessageV3(w http.ResponseWriter, r *http.Request) {
 	v, e := s.arena.AgentMessage(r.PathValue("id"), req)
 	respondArena(w, v, e, http.StatusOK)
 }
+
+func (s *Server) workspaceAssistantV3(w http.ResponseWriter, r *http.Request) {
+	var req domain.WorkspaceAssistantRequestV1
+	if !decode(w, r, &req) {
+		return
+	}
+	if s.agent == nil || s.fleetops == nil {
+		writeJSON(w, http.StatusServiceUnavailable, domain.APIError{Code: "AI_UNAVAILABLE", Message: "Workspace assistant is unavailable."})
+		return
+	}
+	value, err := s.agent.WorkspaceCommand(r.Context(), req, s.fleetops.Snapshot())
+	if err != nil {
+		respondAgent(w, nil, err, http.StatusOK)
+		return
+	}
+	writeJSON(w, http.StatusOK, value)
+}
 func (s *Server) workspaceActionV3(w http.ResponseWriter, r *http.Request) {
 	var req arena.ActionRequest
 	if !decode(w, r, &req) {

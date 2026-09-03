@@ -166,6 +166,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v3/agent/sessions", s.createAgentSessionV3)
 	mux.HandleFunc("POST /api/v3/agent/sessions/{id}/messages", s.agentMessageV3)
 	mux.HandleFunc("POST /api/v3/workspaces/{session_id}/actions", s.workspaceActionV3)
+	mux.HandleFunc("POST /api/v3/assistant:command", s.workspaceAssistantV3)
 	mux.HandleFunc("POST /api/v3/scenarios/fleet-arena:reset", s.resetArenaV3)
 	mux.Handle("GET /", spaHandler(s.web))
 	return requestLog(s.logger, mux)

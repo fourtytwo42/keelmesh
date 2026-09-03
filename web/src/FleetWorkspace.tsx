@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -19,6 +19,8 @@ import type {
   ReachabilityV2,
   SurfaceContactV2,
   VesselProfileV2,
+  WorkspaceAssistantActionV1,
+  WorkspaceAssistantResponseV1,
 } from "./types";
 import { OperationsMap, type WaypointColor } from "./OperationsMap";
 import { WindowManager, type WindowDefinition } from "./WindowManager";
@@ -71,6 +73,14 @@ import {
 
 type Tool = "select" | "box" | "waypoint" | "include" | "exclude" | "hold" | "orbit";
 type GeometryFocus = { kind: "waypoint" | "include" | "exclude" | "poi"; index: number };
+type GlobalVoicePhase =
+  | "idle"
+  | "listening"
+  | "transcribing"
+  | "thinking"
+  | "received"
+  | "synthesizing"
+  | "speaking";
 const formations = [
   "column",
   "line_abreast",
@@ -102,6 +112,8 @@ export function FleetWorkspace() {
     [agent, setAgent] = useState<AgentSnapshot | null>(null),
     [arena, setArena] = useState<ArenaSnapshotV1 | null>(null),
     [speechState, setSpeechState] = useState("ready"),
+    [globalVoicePhase, setGlobalVoicePhase] = useState<GlobalVoicePhase>("idle"),
+    [globalVoiceProgress, setGlobalVoiceProgress] = useState(0),
     [selected, setSelected] = useState<Set<string>>(new Set()),
     [activeMissionID, setActiveMissionID] = useState<string>(""),
     [activeGroupID, setActiveGroupID] = useState<string>(""),
@@ -402,6 +414,7 @@ export function FleetWorkspace() {
   async function createMissionFor(
     targetIDs: string[],
     namingMode: "operator" | "ai" = "operator",
+    objectiveOverride = "",
   ) {
     const current = await api<FleetSnapshotV2>("/api/v2/fleet");
     const group = current.groups.find(
@@ -413,8 +426,9 @@ export function FleetWorkspace() {
       namingMode === "operator" && group
         ? `${group.code} · ${group.name} ${pirate ? "Voyage" : "Mission"}`
         : "";
-    const objective =
-      namingMode === "ai"
+    const objective = objectiveOverride.trim()
+      ? objectiveOverride.trim()
+      : namingMode === "ai"
         ? command
         : group
           ? `${pirate ? "Crew" : "Operational group"} ${group.code} task`
@@ -968,6 +982,7 @@ export function FleetWorkspace() {
     planningMode: "manual" | "ai_assisted" = "ai_assisted",
     guidanceKind = "",
     followContactID = "",
+    suppressSpeech = false,
   ) {
     if (!targetMission) return;
     const compiled = await mutate(() =>
@@ -992,7 +1007,7 @@ export function FleetWorkspace() {
     if (!compiled) return;
     setDraft(compiled);
     setCommand("");
-    if (planningMode === "ai_assisted" && compiled.advisor?.summary)
+    if (planningMode === "ai_assisted" && compiled.advisor?.summary && !suppressSpeech)
       void speak(compiled.advisor.summary);
     const current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find(
       (m) => m.id === targetMission.id,
@@ -1087,12 +1102,16 @@ export function FleetWorkspace() {
     );
     await refresh();
   }
-  async function speak(text: string) {
+  async function speak(text: string, global = false) {
     speechAbort.current?.abort();
     audio.current?.pause();
     const controller = new AbortController();
     speechAbort.current = controller;
     setSpeechState("synthesizing");
+    if (global) {
+      setGlobalVoicePhase("synthesizing");
+      setGlobalVoiceProgress(0.82);
+    }
     try {
       const response = await fetch("/api/v2/speech:synthesize", {
         method: "POST",
@@ -1111,22 +1130,44 @@ export function FleetWorkspace() {
       const blob = await response.blob();
       const player = new Audio(URL.createObjectURL(blob));
       audio.current = player;
-      player.onended = () => setSpeechState("ready");
+      player.onended = () => {
+        setSpeechState("ready");
+        if (global) {
+          setGlobalVoicePhase("idle");
+          setGlobalVoiceProgress(0);
+        }
+      };
       setSpeechState("speaking");
+      if (global) {
+        setGlobalVoiceProgress(1);
+        setGlobalVoicePhase("speaking");
+      }
       await player.play();
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
         setSpeechState("text fallback");
         setError((e as Error).message);
+        if (global) {
+          setGlobalVoicePhase("idle");
+          setGlobalVoiceProgress(0);
+        }
       }
     }
   }
-  async function beginTranscription() {
+  async function captureTranscription(
+    onTranscript: (text: string) => Promise<void>,
+    global = false,
+  ) {
     if (recorder.current?.state === "recording") return;
-    const targetMission = mission;
+    speechAbort.current?.abort();
+    audio.current?.pause();
     stopRequested.current = false;
     setError("");
     setSpeechState("requesting microphone");
+    if (global) {
+      setGlobalVoicePhase("listening");
+      setGlobalVoiceProgress(0);
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -1141,6 +1182,7 @@ export function FleetWorkspace() {
       if (stopRequested.current) {
         stream.getTracks().forEach((track) => track.stop());
         setSpeechState("ready");
+        if (global) setGlobalVoicePhase("idle");
         return;
       }
       recordingStream.current = stream;
@@ -1165,6 +1207,10 @@ export function FleetWorkspace() {
           type: active.mimeType || "audio/webm",
         });
         setSpeechState("transcribing on VM node");
+        if (global) {
+          setGlobalVoicePhase("transcribing");
+          setGlobalVoiceProgress(0.16);
+        }
         try {
           const response = await fetch(
             `/api/v2/transcription?request_id=${encodeURIComponent(requestID("stt"))}`,
@@ -1191,10 +1237,14 @@ export function FleetWorkspace() {
           setSpeechState(
             `${result.route} · RTF ${result.real_time_factor ?? "—"}`,
           );
-          if (targetMission) await createPlans(targetMission, result.text);
+          await onTranscript(result.text);
         } catch (e) {
           setSpeechState("typed fallback");
           setError((e as Error).message);
+          if (global) {
+            setGlobalVoicePhase("idle");
+            setGlobalVoiceProgress(0);
+          }
         }
       };
       active.start(200);
@@ -1204,11 +1254,148 @@ export function FleetWorkspace() {
       setError(
         "Microphone access requires HTTPS. Use the ephemeral Cloudflare tunnel or typed input.",
       );
+      if (global) {
+        setGlobalVoicePhase("idle");
+        setGlobalVoiceProgress(0);
+      }
     }
+  }
+  async function beginTranscription() {
+    const targetMission = mission;
+    await captureTranscription(async (text) => {
+      if (targetMission) await createPlans(targetMission, text);
+    });
   }
   function endTranscription() {
     stopRequested.current = true;
     if (recorder.current?.state === "recording") recorder.current.stop();
+  }
+
+  function normalizeWindowTarget(target: string) {
+    const value = target.toLowerCase().trim().replaceAll(" ", "_");
+    if (["mission", "mission_planner", "planner"].includes(value)) return "planner";
+    if (["fleet", "fleet_groups", "groups"].includes(value)) return "fleet";
+    if (["autonomy_engineer", "engineer"].includes(value)) return "engineer";
+    if (["infrastructure", "live_cutaway", "cutaway"].includes(value)) return "cutaway";
+    if (["fleet_arena", "arena"].includes(value)) return "arena";
+    if (["quiet_fleet", "quiet"].includes(value)) return "quiet";
+    if (["resilience_drill", "resilience"].includes(value)) return "resilience";
+    return value;
+  }
+
+  function resolveVessel(target: string) {
+    const needle = target.toLowerCase().trim();
+    return fleet?.vessels.find((value) =>
+      [value.id, value.callsign, value.designation, value.display_name]
+        .some((candidate) => candidate.toLowerCase() === needle),
+    );
+  }
+
+  function resolveGroup(target: string) {
+    const needle = target.toLowerCase().trim();
+    return fleet?.groups.find((value) =>
+      [value.id, value.code, value.name, `${value.color_name} team`, `${value.color_name} group`]
+        .some((candidate) => candidate.toLowerCase() === needle),
+    );
+  }
+
+  function resolveContact(target: string) {
+    const needle = target.toLowerCase().trim();
+    return fleet?.surface_contacts.find((value) =>
+      [value.id, value.name, value.boat_id, value.callsign]
+        .some((candidate) => candidate.toLowerCase() === needle),
+    );
+  }
+
+  async function applyAssistantAction(action: WorkspaceAssistantActionV1) {
+    const target = normalizeWindowTarget(action.target);
+    if (action.kind === "open_window") open(target);
+    if (action.kind === "close_window") {
+      if (target === "planner") setPlannerVisible(false);
+      setWindows((current) => {
+        const next = new Set(current);
+        next.delete(target);
+        return next;
+      });
+    }
+    if (action.kind === "select_all") {
+      revealFleet();
+      setSelected(new Set(fleet?.vessels.map((value) => value.id) ?? []));
+    }
+    if (action.kind === "clear_selection") setSelected(new Set());
+    if (action.kind === "select_group") {
+      const group = resolveGroup(action.target);
+      if (group) selectGroup(group.id);
+    }
+    if (action.kind === "select_vessel") {
+      const vessel = resolveVessel(action.target);
+      if (vessel) select([vessel.id], "replace");
+    }
+    if (action.kind === "inspect_group") {
+      const group = resolveGroup(action.target);
+      if (group) {
+        setActiveGroupID(group.id);
+        open("group-manager");
+      }
+    }
+    if (action.kind === "inspect_vessel") {
+      const vessel = resolveVessel(action.target);
+      if (vessel) {
+        setInspectVesselID(vessel.id);
+        open("inspector");
+      }
+    }
+    if (action.kind === "inspect_contact") {
+      const contact = resolveContact(action.target);
+      if (contact) {
+        setInspectContactID(contact.id);
+        open("contact-inspector");
+      }
+    }
+    if (action.kind === "set_theme") setPirate(action.target.toLowerCase() === "pirate");
+    if (action.kind === "set_simulation_rate") {
+      const rate = [0, 1, 5, 20, 100, 500].includes(action.value) ? action.value : 20;
+      await setSimulationRate(rate as FleetSnapshotV2["simulation_rate"]);
+    }
+  }
+
+  async function handleGlobalTranscript(text: string) {
+    setGlobalVoicePhase("thinking");
+    setGlobalVoiceProgress(0.3);
+    try {
+      const response = await api<WorkspaceAssistantResponseV1>("/api/v3/assistant:command", {
+        method: "POST",
+        body: JSON.stringify({
+          schema_version: 1,
+          request_id: requestID("global-voice"),
+          idempotency_key: requestID("global-voice-key"),
+          text,
+          persona: pirate ? "pirate" : "navy",
+          selected_ids: [...selected],
+          open_windows: [...windows],
+        }),
+      });
+      setGlobalVoicePhase("received");
+      setGlobalVoiceProgress(0.68);
+      for (const action of response.actions) {
+        if (action.kind !== "create_mission" && action.kind !== "none")
+          await applyAssistantAction(action);
+      }
+      if (response.mode === "mission") {
+        const intent = response.mission_intent.trim() || text;
+        const created = await createMissionFor([], "ai", intent);
+        if (created) await createPlans(created, intent, "ai_assisted", "", "", true);
+      }
+      await speak(response.speech, true);
+    } catch (e) {
+      setGlobalVoicePhase("idle");
+      setGlobalVoiceProgress(0);
+      setError(e instanceof KeelMeshError ? `${e.code}: ${e.message}` : String(e));
+    }
+  }
+
+  async function beginGlobalTranscription() {
+    await captureTranscription(handleGlobalTranscript, true);
   }
   if (!fleet)
     return (
@@ -1739,6 +1926,53 @@ export function FleetWorkspace() {
       )}
       <WindowManager windows={defs} />
       <HoverHelp />
+      <div
+        className={`global-voice-orb ${globalVoicePhase}`}
+        style={{ "--voice-progress": `${globalVoiceProgress * 360}deg` } as CSSProperties}
+        data-phase={globalVoicePhase}
+      >
+        <button
+          type="button"
+          aria-label={
+            globalVoicePhase === "listening"
+              ? "Listening; release to send"
+              : globalVoicePhase === "speaking"
+                ? "Hold to interrupt and speak"
+                : globalVoicePhase === "idle"
+                  ? "Hold to speak to KeelMesh AI"
+                  : `KeelMesh AI ${globalVoicePhase}`
+          }
+          title="Hold to speak to KeelMesh AI"
+          disabled={!["idle", "listening", "speaking"].includes(globalVoicePhase)}
+          onContextMenu={(event) => event.preventDefault()}
+          onPointerDown={(event) => {
+            if (event.button !== 0 || !["idle", "speaking"].includes(globalVoicePhase)) return;
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            void beginGlobalTranscription();
+          }}
+          onPointerUp={(event) => {
+            if (event.currentTarget.hasPointerCapture(event.pointerId))
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            endTranscription();
+          }}
+          onPointerCancel={endTranscription}
+          onKeyDown={(event) => {
+            if ((event.key === " " || event.key === "Enter") && !event.repeat && ["idle", "speaking"].includes(globalVoicePhase)) {
+              event.preventDefault();
+              void beginGlobalTranscription();
+            }
+          }}
+          onKeyUp={(event) => {
+            if (event.key === " " || event.key === "Enter") {
+              event.preventDefault();
+              endTranscription();
+            }
+          }}
+        >
+          <Mic />
+        </button>
+      </div>
       <footer className="ops-status">
         <span>
           <i className="green" />
