@@ -4,8 +4,8 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: consumable mission-route overlays are implemented, verified, and deployed on VM 214 and all twelve vessel nodes.
-- Last meaningful change: executing and paused mission routes render only the untraveled polyline from each vessel's current projected position; passed waypoint markers and waypoint-route sections disappear after every assigned vessel passes them. Immutable plans and trajectory journals remain unchanged.
+- Current task: reduced, explicit hover help is implemented, verified, and deployed on VM 214 and all twelve vessel nodes.
+- Last meaningful change: the shared tooltip system no longer derives hover cards from every accessibility label or structural region. Only controls with explicit help copy show the amber tooltip; map-object operational telemetry remains available.
 - Next step: rehearse the AI-first command-scene flow through the current Quick Tunnel, then continue M8D automatic node-agent interruption escalation or M9 signed group adaptation.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -820,6 +820,14 @@ When sources conflict, use this order:
 - Files: `web/src/OperationsMap.tsx`, `web/src/routeProgress.ts`, `web/src/routeProgress.test.ts`, and `web/e2e/mission.spec.ts`.
 - Commands/tests: strict TypeScript; 11 Vitest assertions; Vite/Docker production build; focused deployed Playwright route-consumption workflow; central and twelve-node health/hash verification.
 - Result: commit `384eb34` is pushed. VM 214 and all twelve vessel nodes run the change; node binary SHA-256 is `93288a39cab7d8d40f4ff31189e7d2c820bb40a95688a6144c9011405cbe9daa`. No GitHub-hosted workflow or Proxmox snapshot ran.
+
+### 2026-09-03 - Quieter explicit hover help
+
+- Context: the global tooltip fallback treated structural accessibility labels as hover help, causing low-value messages such as `Map` whenever the pointer crossed the operating canvas.
+- Decision: make styled hover help explicit through `data-help` or authored `title` copy only. Preserve accessibility labels independently and retain rich map-object telemetry for vessels, contacts, waypoints, environmental vectors, and hold points.
+- Files: `web/src/HoverHelp.tsx` and `web/e2e/mission.spec.ts`.
+- Commands/tests: strict TypeScript; 11 Vitest assertions; Docker production build; focused deployed Playwright map-hover regression; central and twelve-node health/hash verification.
+- Result: commit `196590c` is pushed. VM 214 and all twelve vessel nodes run binary SHA-256 `685321d1cdb4f93477188fda7f1fb1a823ce5c91b6f360a9fc5e34f941657b37`. No GitHub-hosted workflow or Proxmox snapshot ran.
 
 ## Open Follow-ups
 
