@@ -201,6 +201,66 @@ def test_mock_mission_advisor_is_target_aware() -> None:
     assert {item["formation"] for item in options} == {"independent"}
 
 
+def test_mission_context_accepts_stationary_anchored_contact() -> None:
+    request = MissionOptionsRequest.model_validate(
+        {
+            "schema_version": 2,
+            "mission_id": "mission-anchor-watch",
+            "intent": "approach and observe Safe Haven",
+            "guidance_kind": "follow_contact",
+            "target_count": 1,
+            "targets": [
+                {
+                    "id": "v1",
+                    "name": "Gannet",
+                    "class": "Kestrel",
+                    "position": [-71.3, 41.4],
+                    "reserve": 0.8,
+                    "max_speed_mps": 3.4,
+                    "pnt_integrity": "trusted",
+                    "uncertainty_m": 4,
+                    "group_code": "WS",
+                    "group_name": "Watch Shoal",
+                    "group_color_name": "amber",
+                    "communications": "mesh",
+                }
+            ],
+            "constraints": {},
+            "environment": {},
+            "operating_areas": 0,
+            "exclusion_areas": 0,
+            "waypoint_count": 1,
+            "geometry_source": "intent:contact",
+            "formation_current": "column",
+            "surface_contacts": [
+                {
+                    "id": "surface-16",
+                    "boat_id": "NPC-4116",
+                    "name": "MT Safe Haven",
+                    "callsign": "SAFE HAVEN",
+                    "class": "tanker",
+                    "activity": "anchored · simulated weather hold",
+                    "color_name": "aqua",
+                    "color": "#63b9b4",
+                    "position": [-71.275, 41.285],
+                    "heading_deg": 0,
+                    "speed_mps": 0,
+                    "speed_knots": 0,
+                    "length_m": 138,
+                    "draft_m": 8.2,
+                    "navigation_state": "at anchor",
+                    "route_name": "Rhode Island Sound anchorage",
+                    "route": [[-71.275, 41.285]],
+                    "looping": False,
+                    "updated_at": "2026-09-03T12:00:00Z",
+                }
+            ],
+        }
+    )
+    assert request.surface_contacts[0].navigation_state == "at anchor"
+    assert request.surface_contacts[0].route == [(-71.275, 41.285)]
+
+
 def test_strategy_name_maps_to_bounded_operation_name() -> None:
     strategy_name = "Close Shoreline Patrol"
     mission_name = (

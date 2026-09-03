@@ -4,8 +4,8 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: continuous contact following, anchored surface traffic, and current-location mission release are implemented, verified, and deployed.
-- Last meaningful change: moving fictional traffic remains capped at 2.8 m/s and is now joined by four stationary anchored contacts. Follow missions use signed rolling future trajectory revisions instead of ending after the initial prediction, while completed/deleted missions clear map markings and regroup released vessels around their actual current positions.
+- Current task: anchored-contact AI planning compatibility and redundant provider routing are implemented, verified, and deployed on VM 214.
+- Last meaningful change: the Python mission boundary now accepts a single-point route for anchored contacts. Core also receives the read-only OpenAI runtime secret so it can use direct GPT-5.6 Luna if the Python service fails, before deterministic fallback.
 - Next step: continue M8D automatic node-agent interruption escalation or M9 signed group adaptation from this clean checkpoint.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -747,6 +747,15 @@ When sources conflict, use this order:
 - Files: `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, `web/src/types.ts`, `web/src/OperationsMap.tsx`, `web/src/FleetWorkspace.tsx`, and `web/e2e/mission.spec.ts`.
 - Commands/tests: full Go tests/vet in Go 1.27; strict TypeScript; seven Vitest assertions; Vite production build; focused deployed Playwright surface-traffic workflow; live API and browser inspection; LAN/Quick Tunnel health; central and twelve-node binary/hash/health verification.
 - Result: Commit `8743a50` is pushed. VM 214 and all twelve vessel nodes are healthy on binary SHA-256 `531a1068fa8f9e5ba2de6434dcdaef69d3d6234da82b670e376ddb24eeb098e4`. Live state reports 16 contacts: 12 underway, four anchored, and 2.8 m/s maximum. VM 214 root storage is 30% used. No GitHub-hosted workflow or Proxmox snapshot ran.
+
+### 2026-09-03 - Anchored-contact AI contract repair
+
+- Context: Sending `approach and surround Safe Haven` returned `Target-aware fallback used: AI service unavailable` and left the planner without the expected AI options.
+- Cause: the new anchored contacts expose one fixed anchorage point, while the Python `SurfaceContact` boundary still required every contact route to contain at least two points. FastAPI rejected the otherwise valid planning context with HTTP 422 even though the AI container itself was healthy.
+- Decision: accept one-point routes as valid anchored-contact context and mount the existing read-only OpenAI runtime secret into core as an independent direct-provider fallback.
+- Files: `ai/keelmesh_ai/service.py`, `ai/tests/test_service.py`, and `compose.yaml`.
+- Commands/tests: 13 Python tests; Ruff; mypy; Compose validation; live AI/core health; temporary end-to-end anchored Safe Haven mission compile/plan/delete.
+- Result: the live service returned three accepted GPT-5.6 Luna strategies and three deterministic plans for anchored Safe Haven. The temporary probe mission was deleted. No GitHub-hosted workflow or Proxmox snapshot ran.
 
 ## Open Follow-ups
 

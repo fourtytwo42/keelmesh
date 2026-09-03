@@ -114,7 +114,10 @@ services:
     build: *app-build
     image: keelmesh/core:m7
     restart: unless-stopped
-    environment: *app-env
+    environment:
+      <<: *app-env
+      OPENAI_API_KEY_FILE: /run/keelmesh-auth/openai/token
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -127,6 +130,7 @@ services:
       - mcp-investigator-token:/run/keelmesh-auth/investigator:ro
       - mcp-seeder-token:/run/keelmesh-auth/seeder:ro
       - mcp-control-token:/run/keelmesh-auth/control:ro
+      - openai-runtime:/run/keelmesh-auth/openai:ro
     ports:
       - "${KEELMESH_PORT:-8080}:8080"
     healthcheck:

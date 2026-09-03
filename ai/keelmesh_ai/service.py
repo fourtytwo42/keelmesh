@@ -122,7 +122,10 @@ class SurfaceContact(BaseModel):
     draft_m: float = Field(gt=0, le=30)
     navigation_state: str
     route_name: str
-    route: list[tuple[float, float]] = Field(min_length=2, max_length=24)
+    # Underway contacts expose a multi-point programmed track. Anchored
+    # contacts intentionally expose their single fixed anchorage so the model
+    # can reason about them without pretending they are moving.
+    route: list[tuple[float, float]] = Field(min_length=1, max_length=24)
     looping: bool
     updated_at: str
 
