@@ -4,7 +4,7 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: continuous contact following, anchored surface traffic, and current-location mission release are implemented and under final deployment verification.
+- Current task: continuous contact following, anchored surface traffic, and current-location mission release are implemented, verified, and deployed.
 - Last meaningful change: moving fictional traffic remains capped at 2.8 m/s and is now joined by four stationary anchored contacts. Follow missions use signed rolling future trajectory revisions instead of ending after the initial prediction, while completed/deleted missions clear map markings and regroup released vessels around their actual current positions.
 - Next step: continue M8D automatic node-agent interruption escalation or M9 signed group adaptation from this clean checkpoint.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
@@ -739,6 +739,14 @@ When sources conflict, use this order:
 - Files: `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, `web/src/types.ts`, `web/src/FleetWorkspace.tsx`, and `web/e2e/mission.spec.ts`.
 - Commands/tests: full Go tests/vet in Go 1.27; strict TypeScript; seven Vitest assertions; Vite production build; live class-contract inspection; focused deployed Playwright vessel-inspector workflow; central and twelve-node health/hash verification.
 - Result: At full sun, a stationary Kestrel gains about 21% charge per simulated hour and normal 1.8 m/s cruise is solar-positive. VM 214 and all twelve vessel nodes run binary SHA-256 `9fa3c69fa39f4ff73241799c3c3b4c131a7f3b5bf97d2fcfad914c1bfbce984a`. No GitHub-hosted workflow or Proxmox snapshot ran.
+
+### 2026-09-03 - Continuous contact tracking and anchored traffic
+
+- Context: Contact inspectors led with knots, making the 2.8 m/s NPC cap appear to exceed 4 m/s; follow missions ended after one finite predicted route; mission completion/deletion could leave stale overlays or pull released groups toward an old assembly point.
+- Decision: Lead with m/s and show knots secondarily. Add four zero-speed anchored contacts beside the twelve bounded moving contacts. Bind contact identity, a 60-second refresh cadence, and a 180-second horizon into follow-plan hashes, then generate signed future trajectory revisions from current vessel/contact state. On completion/deletion, replace the group's assembly point with the released vessels' current centroid. Hide completed/ended mission geometry and render live follower-to-contact lines for continuous tracking.
+- Files: `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, `web/src/types.ts`, `web/src/OperationsMap.tsx`, `web/src/FleetWorkspace.tsx`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: full Go tests/vet in Go 1.27; strict TypeScript; seven Vitest assertions; Vite production build; focused deployed Playwright surface-traffic workflow; live API and browser inspection; LAN/Quick Tunnel health; central and twelve-node binary/hash/health verification.
+- Result: Commit `8743a50` is pushed. VM 214 and all twelve vessel nodes are healthy on binary SHA-256 `531a1068fa8f9e5ba2de6434dcdaef69d3d6234da82b670e376ddb24eeb098e4`. Live state reports 16 contacts: 12 underway, four anchored, and 2.8 m/s maximum. VM 214 root storage is 30% used. No GitHub-hosted workflow or Proxmox snapshot ran.
 
 ## Open Follow-ups
 
