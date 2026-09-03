@@ -60,28 +60,29 @@ type VesselProfileV2 struct {
 }
 
 type OperationalGroupV2 struct {
-	SchemaVersion      int                 `json:"schema_version"`
-	ID                 string              `json:"id"`
-	Code               string              `json:"code"`
-	Name               string              `json:"name"`
-	Color              string              `json:"color"`
-	ColorName          string              `json:"color_name"`
-	Pattern            string              `json:"pattern"`
-	MemberIDs          []string            `json:"member_ids"`
-	Formation          string              `json:"formation"`
-	FormationSpacingM  float64             `json:"formation_spacing_m"`
-	AssemblyPoint      *GeoPointV2         `json:"assembly_point,omitempty"`
-	AssemblySource     string              `json:"assembly_source,omitempty"`
-	AssemblyWaypointID string              `json:"assembly_waypoint_id,omitempty"`
-	RouteWaypoints     []MissionWaypointV2 `json:"route_waypoints,omitempty"`
-	RouteMode          string              `json:"route_mode"`
-	RouteIndex         int                 `json:"route_index"`
-	RouteRevision      int64               `json:"route_revision"`
-	DecisionPolicy     string              `json:"decision_policy"`
-	DecisionNodeID     string              `json:"decision_node_id,omitempty"`
-	DecisionEpoch      int64               `json:"decision_epoch"`
-	FallbackPolicy     string              `json:"fallback_policy"`
-	Revision           int64               `json:"revision"`
+	SchemaVersion       int                 `json:"schema_version"`
+	ID                  string              `json:"id"`
+	Code                string              `json:"code"`
+	Name                string              `json:"name"`
+	Color               string              `json:"color"`
+	ColorName           string              `json:"color_name"`
+	Pattern             string              `json:"pattern"`
+	MemberIDs           []string            `json:"member_ids"`
+	Formation           string              `json:"formation"`
+	FormationSpacingM   float64             `json:"formation_spacing_m"`
+	FormationHeadingDeg float64             `json:"formation_heading_deg"`
+	AssemblyPoint       *GeoPointV2         `json:"assembly_point,omitempty"`
+	AssemblySource      string              `json:"assembly_source,omitempty"`
+	AssemblyWaypointID  string              `json:"assembly_waypoint_id,omitempty"`
+	RouteWaypoints      []MissionWaypointV2 `json:"route_waypoints,omitempty"`
+	RouteMode           string              `json:"route_mode"`
+	RouteIndex          int                 `json:"route_index"`
+	RouteRevision       int64               `json:"route_revision"`
+	DecisionPolicy      string              `json:"decision_policy"`
+	DecisionNodeID      string              `json:"decision_node_id,omitempty"`
+	DecisionEpoch       int64               `json:"decision_epoch"`
+	FallbackPolicy      string              `json:"fallback_policy"`
+	Revision            int64               `json:"revision"`
 }
 
 type SavedCollectionV2 struct {

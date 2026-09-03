@@ -975,14 +975,46 @@ func TestDeleteGroupUnassignsMembersAndKeepsVessels(t *testing.T) {
 func TestGroupStationPolicyAndAssemblyPointAreVersioned(t *testing.T) {
 	m := New("", slog.Default())
 	group := m.groups["group-02"]
-	formation, spacing := "ring", 85.0
+	formation, spacing, heading := "ring", 85.0, 275.0
 	point := domain.GeoPointV2{-71.31, 41.42}
-	updated, err := m.PatchGroup(group.ID, PatchGroupRequest{Mutation: Mutation{RequestID: "station-policy", IdempotencyKey: "station-policy", ExpectedVersion: group.Revision}, Formation: &formation, FormationSpacingM: &spacing, AssemblyPoint: &point})
+	updated, err := m.PatchGroup(group.ID, PatchGroupRequest{Mutation: Mutation{RequestID: "station-policy", IdempotencyKey: "station-policy", ExpectedVersion: group.Revision}, Formation: &formation, FormationSpacingM: &spacing, FormationHeadingDeg: &heading, AssemblyPoint: &point})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Formation != formation || updated.FormationSpacingM != spacing || updated.AssemblyPoint == nil || *updated.AssemblyPoint != point || updated.AssemblySource != "operator" {
+	if updated.Formation != formation || updated.FormationSpacingM != spacing || updated.FormationHeadingDeg != heading || updated.AssemblyPoint == nil || *updated.AssemblyPoint != point || updated.AssemblySource != "operator" {
 		t.Fatalf("station policy not retained: %#v", updated)
+	}
+}
+
+func TestIdleFormationUsesOrientedSlotsAndCommonHeading(t *testing.T) {
+	m := New("", slog.Default())
+	group := m.groups["group-02"]
+	formation, spacing, heading := "line_abreast", 100.0, 90.0
+	center := *group.AssemblyPoint
+	group.Formation = formation
+	group.FormationSpacingM = spacing
+	group.FormationHeadingDeg = heading
+	m.groups[group.ID] = group
+
+	for index, vesselID := range group.MemberIDs {
+		offset := orientedFormationOffset(formation, index, len(group.MemberIDs), spacing, center[1], heading)
+		vessel := m.vessels[vesselID]
+		vessel.Telemetry.Position = domain.GeoPointV2{center[0] + offset[0], center[1] + offset[1]}
+		vessel.Telemetry.HeadingDeg = float64(index * 47)
+		m.vessels[vesselID] = vessel
+	}
+
+	m.tickIdleGroupsLocked()
+	for _, vesselID := range group.MemberIDs {
+		vessel := m.vessels[vesselID]
+		if math.Abs(vessel.Telemetry.HeadingDeg-heading) > .001 || vessel.Telemetry.SpeedMPS != 0 {
+			t.Fatalf("vessel did not hold the common formation heading: %#v", vessel.Telemetry)
+		}
+	}
+	first := m.vessels[group.MemberIDs[0]].Telemetry.Position
+	second := m.vessels[group.MemberIDs[1]].Telemetry.Position
+	if distance := geoDistanceM(first, second); math.Abs(distance-spacing) > .5 {
+		t.Fatalf("oriented slot spacing = %.2fm, want %.2fm", distance, spacing)
 	}
 }
 

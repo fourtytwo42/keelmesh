@@ -51,6 +51,7 @@ type PatchGroupRequest struct {
 	MemberIDs              *[]string          `json:"member_ids"`
 	Formation              *string            `json:"formation"`
 	FormationSpacingM      *float64           `json:"formation_spacing_m"`
+	FormationHeadingDeg    *float64           `json:"formation_heading_deg"`
 	AssemblyPoint          *domain.GeoPointV2 `json:"assembly_point"`
 	ClearAssemblyPoint     bool               `json:"clear_assembly_point"`
 	UseFirstMemberAssembly bool               `json:"use_first_member_assembly"`
@@ -297,7 +298,7 @@ func (m *Manager) seed() {
 			m.vessels[id] = domain.VesselProfileV2{SchemaVersion: 2, ID: id, Designation: fmt.Sprintf("KM-%03d", 214+idx), Callsign: callsigns[idx], DisplayName: fmt.Sprintf("%s (KM-%03d)", callsigns[idx], 214+idx), Class: class, GroupID: gid, GroupCode: groupCodes[g], GroupColor: groupColors[g], GroupColorName: groupColorNames[g], GroupPattern: patterns[g], Available: true, DecisionCapable: true, Telemetry: domain.VesselTelemetryV2{Position: p, HeadingDeg: float64((idx * 37) % 360), SpeedMPS: .4 + float64(idx%5)*.11, Reserve: .96 - float64(idx%9)*.025, ProjectedReserve: .89 - float64(idx%9)*.025, Mode: "patrol", Health: "nominal", PNTIntegrity: "trusted", UncertaintyM: 4 + float64(idx%5), TapeDepthSeconds: 60, Environment: env}}
 		}
 		assembly := m.vessels[members[0]].Telemetry.Position
-		m.groups[gid] = domain.OperationalGroupV2{SchemaVersion: 2, ID: gid, Code: groupCodes[g], Name: groupNames[g], Color: groupColors[g], ColorName: groupColorNames[g], Pattern: patterns[g], MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: &assembly, AssemblySource: "first-member", RouteMode: "hold", RouteRevision: 1, DecisionPolicy: "lowest_reachable_capable_id", DecisionNodeID: members[0], DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
+		m.groups[gid] = domain.OperationalGroupV2{SchemaVersion: 2, ID: gid, Code: groupCodes[g], Name: groupNames[g], Color: groupColors[g], ColorName: groupColorNames[g], Pattern: patterns[g], MemberIDs: members, Formation: "column", FormationSpacingM: 60, FormationHeadingDeg: 0, AssemblyPoint: &assembly, AssemblySource: "first-member", RouteMode: "hold", RouteRevision: 1, DecisionPolicy: "lowest_reachable_capable_id", DecisionNodeID: members[0], DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
 	}
 	all := make([]string, 0, 48)
 	for id := range m.vessels {
@@ -636,7 +637,7 @@ func (m *Manager) CreateGroup(req CreateGroupRequest) (domain.OperationalGroupV2
 	id := "group-custom-" + shortHash(req.IdempotencyKey)
 	members := unique(req.MemberIDs)
 	assembly, source, waypointID := m.defaultAssemblyPointLocked(req.Color, members)
-	g := domain.OperationalGroupV2{SchemaVersion: 2, ID: id, Code: m.nextGroupCodeLocked(), Name: name, Color: req.Color, ColorName: nearestWaypointColor(req.Color), Pattern: req.Pattern, MemberIDs: members, Formation: "column", FormationSpacingM: 60, AssemblyPoint: assembly, AssemblySource: source, AssemblyWaypointID: waypointID, RouteMode: "hold", RouteRevision: 1, DecisionPolicy: "lowest_reachable_capable_id", DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
+	g := domain.OperationalGroupV2{SchemaVersion: 2, ID: id, Code: m.nextGroupCodeLocked(), Name: name, Color: req.Color, ColorName: nearestWaypointColor(req.Color), Pattern: req.Pattern, MemberIDs: members, Formation: "column", FormationSpacingM: 60, FormationHeadingDeg: 0, AssemblyPoint: assembly, AssemblySource: source, AssemblyWaypointID: waypointID, RouteMode: "hold", RouteRevision: 1, DecisionPolicy: "lowest_reachable_capable_id", DecisionEpoch: 1, FallbackPolicy: "safe_hold_then_signal_seek_then_return_home_if_authorized", Revision: 1}
 	g = m.groupDecisionSnapshotLocked(g)
 	for _, vid := range g.MemberIDs {
 		v := m.vessels[vid]
@@ -726,6 +727,12 @@ func (m *Manager) PatchGroup(id string, req PatchGroupRequest) (domain.Operation
 			return g, &Error{"INVALID_FORMATION_SPACING", "Formation spacing must be between 15 and 1,000 metres."}
 		}
 		g.FormationSpacingM = *req.FormationSpacingM
+	}
+	if req.FormationHeadingDeg != nil {
+		if math.IsNaN(*req.FormationHeadingDeg) || math.IsInf(*req.FormationHeadingDeg, 0) {
+			return g, &Error{"INVALID_FORMATION_HEADING", "Formation heading must be a finite compass bearing."}
+		}
+		g.FormationHeadingDeg = normalizeHeading(*req.FormationHeadingDeg)
 	}
 	if req.ClearAssemblyPoint {
 		g.AssemblyPoint = nil
@@ -2526,7 +2533,7 @@ func (m *Manager) tickIdleGroupsLocked() bool {
 				allArrived = false
 				continue
 			}
-			offset := formationOffset(group.Formation, index, len(group.MemberIDs), group.FormationSpacingM, center[1])
+			offset := orientedFormationOffset(group.Formation, index, len(group.MemberIDs), group.FormationSpacingM, center[1], group.FormationHeadingDeg)
 			target := domain.GeoPointV2{center[0] + offset[0], center[1] + offset[1]}
 			distance := geoDistanceM(vessel.Telemetry.Position, target)
 			if distance > 2 {
@@ -2537,7 +2544,10 @@ func (m *Manager) tickIdleGroupsLocked() bool {
 				step := speed * movementSeconds / 111_000
 				vessel.Telemetry.Position[0] += dx / length * math.Min(step, length)
 				vessel.Telemetry.Position[1] += dy / length * math.Min(step, length)
-				vessel.Telemetry.HeadingDeg = math.Mod(math.Atan2(dx, dy)*180/math.Pi+360, 360)
+				// Formation heading is group state, not the last bearing each hull
+				// happened to take toward its own slot. Keeping one heading makes
+				// the station geometry legible and prevents the converging-star look.
+				vessel.Telemetry.HeadingDeg = normalizeHeading(group.FormationHeadingDeg)
 				vessel.Telemetry.SpeedMPS = speed
 				if routing {
 					vessel.Telemetry.Mode = fmt.Sprintf("group route · waypoint %d/%d", group.RouteIndex+1, len(group.RouteWaypoints))
@@ -2547,6 +2557,7 @@ func (m *Manager) tickIdleGroupsLocked() bool {
 				vessel.Telemetry.Route = []domain.GeoPointV2{vessel.Telemetry.Position, target}
 			} else {
 				vessel.Telemetry.SpeedMPS = 0
+				vessel.Telemetry.HeadingDeg = normalizeHeading(group.FormationHeadingDeg)
 				if group.RouteMode == "pause_pending" {
 					vessel.Telemetry.Mode = "route pause pending"
 				} else {
@@ -2715,6 +2726,28 @@ func formationOffset(f string, i, n int, spacing, latitude float64) domain.GeoPo
 	default:
 		return domain.GeoPointV2{0, -float64(i) * latD}
 	}
+}
+
+// orientedFormationOffset rotates the canonical north-up formation around its
+// assembly point. The base offsets are expressed in lon/lat degrees, so rotate
+// in local metres before converting back to geographic coordinates.
+func orientedFormationOffset(f string, i, n int, spacing, latitude, headingDeg float64) domain.GeoPointV2 {
+	base := formationOffset(f, i, n, spacing, latitude)
+	cosLat := math.Max(.2, math.Cos(latitude*math.Pi/180))
+	east := base[0] * 111_000 * cosLat
+	north := base[1] * 111_000
+	heading := normalizeHeading(headingDeg) * math.Pi / 180
+	rotatedEast := east*math.Cos(heading) + north*math.Sin(heading)
+	rotatedNorth := -east*math.Sin(heading) + north*math.Cos(heading)
+	return domain.GeoPointV2{rotatedEast / (111_000 * cosLat), rotatedNorth / 111_000}
+}
+
+func normalizeHeading(value float64) float64 {
+	value = math.Mod(value, 360)
+	if value < 0 {
+		value += 360
+	}
+	return value
 }
 func inferFormation(s, def string) string {
 	v := strings.ToLower(s)

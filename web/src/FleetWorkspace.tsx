@@ -470,6 +470,7 @@ export function FleetWorkspace() {
       pattern?: string;
       formation?: string;
       formation_spacing_m?: number;
+      formation_heading_deg?: number;
       assembly_point?: Point;
       clear_assembly_point?: boolean;
       use_first_member_assembly?: boolean;
@@ -2406,6 +2407,7 @@ function GroupManager({
     pattern?: string;
     formation?: string;
     formation_spacing_m?: number;
+    formation_heading_deg?: number;
     clear_assembly_point?: boolean;
     use_first_member_assembly?: boolean;
   }) => void;
@@ -2416,6 +2418,7 @@ function GroupManager({
     [pattern, setPattern] = useState(group.pattern),
     [formation, setFormation] = useState(group.formation || "column"),
     [spacing, setSpacing] = useState(group.formation_spacing_m || 60),
+    [heading, setHeading] = useState(group.formation_heading_deg || 0),
     members = group.member_ids
       .map((id) => vessels.get(id))
       .filter((v): v is VesselProfileV2 => !!v),
@@ -2525,6 +2528,20 @@ function GroupManager({
           <small>metres</small>
         </span>
       </label>
+      <label>
+        FORMATION HEADING
+        <span className="number-field">
+          <input
+            type="number"
+            min={0}
+            max={359}
+            step={5}
+            value={heading}
+            onChange={(e) => setHeading(Number(e.target.value))}
+          />
+          <small>° true</small>
+        </span>
+      </label>
       <div className="assembly-control">
         <header>
           <MapPinned />
@@ -2575,9 +2592,10 @@ function GroupManager({
             pattern,
             formation,
             formation_spacing_m: spacing,
+            formation_heading_deg: heading,
           })
         }
-        disabled={!name.trim() || spacing < 15 || spacing > 1000}
+        disabled={!name.trim() || spacing < 15 || spacing > 1000 || heading < 0 || heading >= 360}
       >
         Save group station policy
       </button>

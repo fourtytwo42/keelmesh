@@ -295,6 +295,7 @@ test("fleet rail is the single selection and group-reassignment surface", async 
   await rail.getByRole("button", { name: "View status of BG Block Guard", exact: true }).click();
   const groupInspector = page.getByRole("region", { name: "Group · BG", exact: true });
   await expect(groupInspector).toBeVisible();
+  await expect(groupInspector.getByRole("spinbutton", { name: /FORMATION HEADING/ })).toHaveValue("0");
   await groupInspector.getByTitle("Close").click();
 
   // Creation uses the same exclusive-membership API, then this test restores its fixture.

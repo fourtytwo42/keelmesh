@@ -620,6 +620,7 @@ export type OperationalGroupV2 = {
   member_ids: string[];
   formation: string;
   formation_spacing_m: number;
+  formation_heading_deg: number;
   assembly_point?: Point;
   assembly_source?: string;
   assembly_waypoint_id?: string;
