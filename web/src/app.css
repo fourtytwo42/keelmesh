@@ -269,6 +269,11 @@ code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
   .float-window.maximized .candidate-list{grid-template-columns:1fr}
 }
 
+/* MapLibre's stylesheet is loaded with the lazy application chunk. Keep its
+   generic .maplibregl-map positioning from collapsing the operations map. */
+.m6-shell .operations-map{position:absolute;top:82px;right:0;bottom:61px;left:0}
+@media (max-width:640px){.m6-shell .operations-map{top:82px;bottom:89px}}
+
 /* Workspace-native resizing, hover help, and technical-view density. */
 .float-window{container:workspace-window / size;min-width:0;min-height:0}
 .window-planner .float-content{overflow:hidden}
