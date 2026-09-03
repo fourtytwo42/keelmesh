@@ -220,6 +220,14 @@ test("contact rendezvous shows a live ETA and suppresses the idle hold marker", 
   await expect(map).toHaveAttribute("data-visible-hold-groups", "7");
   const initialETA = await map.getAttribute("data-rendezvous-status");
   await expect.poll(() => map.getAttribute("data-rendezvous-status"), { timeout: 10_000 }).not.toBe(initialETA);
+
+  const activeMissionTab = page.locator(".mission-tabs .mission-tab.active .mission-tab-main");
+  await activeMissionTab.click();
+  await expect(planner).toBeHidden();
+  await expect(map).toHaveAttribute("data-rendezvous-status", /ETA .* NM/);
+  await activeMissionTab.click();
+  await expect(planner).toBeVisible();
+  await expect(map).toHaveAttribute("data-rendezvous-status", /ETA .* NM/);
 });
 
 test("pirate watch changes nomenclature, agent voice, and returns cleanly to navy mode", async ({ page }) => {

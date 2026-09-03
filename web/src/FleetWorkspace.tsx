@@ -125,6 +125,7 @@ export function FleetWorkspace() {
     [command, setCommand] = useState(""),
     [, setDraft] = useState<CommandDraftV2 | null>(null),
     [plans, setPlans] = useState<FleetPlanV2[]>([]),
+    [activePlansByMission, setActivePlansByMission] = useState<Record<string, FleetPlanV2>>({}),
     [planID, setPlanID] = useState(""),
     [preview, setPreview] = useState<FleetPreviewV2 | null>(null),
     [lease, setLease] = useState<FleetLeaseV2 | null>(null),
@@ -285,6 +286,28 @@ export function FleetWorkspace() {
     }).catch(() => undefined);
     return () => { active = false; };
   }, [mission?.id, (mission?.plan_ids ?? []).join("|")]);
+  const activeMissionPlanKey = useMemo(
+    () => (fleet?.missions ?? [])
+      .filter((item) => ["authorized", "executing", "paused"].includes(item.status) && item.authorized_plan_id)
+      .map((item) => `${item.id}:${item.authorized_plan_id}`)
+      .sort()
+      .join("|"),
+    [fleet?.missions],
+  );
+  useEffect(() => {
+    const activeMissions = (fleet?.missions ?? []).filter(
+      (item) => ["authorized", "executing", "paused"].includes(item.status) && item.authorized_plan_id,
+    );
+    let active = true;
+    void Promise.all(activeMissions.map(async (item) => {
+      const response = await api<{ plans: FleetPlanV2[] }>(`/api/v2/missions/${item.id}/plans`);
+      return [item.id, response.plans.find((plan) => plan.id === item.authorized_plan_id)] as const;
+    })).then((entries) => {
+      if (!active) return;
+      setActivePlansByMission(Object.fromEntries(entries.filter((entry): entry is readonly [string, FleetPlanV2] => !!entry[1])));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [activeMissionPlanKey]);
   useEffect(() => {
     if (!plannerVisible || !mission) return;
     const marker = `${mission.id}:${missionTargetKey}`;
@@ -303,10 +326,20 @@ export function FleetWorkspace() {
     return () => window.clearTimeout(timer);
   }, [plannerVisible, mission?.id, missionTargetKey, selectedKey]);
   const activePlan =
-    plans.find((p) => p.id === mission?.authorized_plan_id) ??
-    plans.find((p) => p.id === planID) ??
-    plans.find((p) => p.recommended) ??
+    plans.find((p) => p.mission_id === mission?.id && p.id === mission?.authorized_plan_id) ??
+    plans.find((p) => p.mission_id === mission?.id && p.id === planID) ??
+    plans.find((p) => p.mission_id === mission?.id && p.recommended) ??
     null;
+  const activeMissionPlans = useMemo(
+    () => (fleet?.missions ?? []).flatMap((item) => {
+      if (!["authorized", "executing", "paused"].includes(item.status)) return [];
+      const plan = item.id === mission?.id && activePlan?.id === item.authorized_plan_id
+        ? activePlan
+        : activePlansByMission[item.id];
+      return plan ? [{ mission: item, plan }] : [];
+    }),
+    [fleet?.missions, mission?.id, activePlan, activePlansByMission],
+  );
   const vesselsByID = useMemo(
     () => new Map(fleet?.vessels.map((v) => [v.id, v]) ?? []),
     [fleet],
@@ -1874,6 +1907,7 @@ export function FleetWorkspace() {
         mission={mission}
         selected={selected}
         activePlan={activePlan}
+        activeMissionPlans={activeMissionPlans}
         tool={tool}
         editingEnabled={plannerVisible && !!mission}
         focusedGeometry={geometryFocus}

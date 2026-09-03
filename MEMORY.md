@@ -4,8 +4,8 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: live rendezvous/follow visualization is implemented, verified, and deployed on VM 214 and all twelve vessel nodes.
-- Last meaningful change: active contact missions now draw a group-colored live path from the controlled group to the predicted contact intercept/stand-off point, update for moving contacts, and show a changing ETA/distance label. Mission-assigned groups no longer render idle `HOLD` labels. Active fleet plans and command drafts are persisted and legacy active plans are reconstructed from the signed trajectory journal after a core restart, so overlays and rolling tracking survive service restarts.
+- Current task: persistent live rendezvous/follow visualization is implemented, verified, and deployed on VM 214 and all twelve vessel nodes.
+- Last meaningful change: the map now loads the authorized plan for every active mission and renders operational contact overlays independently of Mission Planner focus. Clicking a mission tab, selecting another mission, or minimizing/closing its planner no longer removes its live route or ETA; only completing, ending, or deleting the mission does.
 - Next step: continue M8D automatic node-agent interruption escalation or M9 signed group adaptation from this clean checkpoint.
 - Blockers: the current Quick Tunnel hostname is ephemeral. No M7 snapshot is authorized or needed.
 
@@ -150,6 +150,14 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+### 2026-09-03 - Active overlays independent of planner focus
+
+- Context: a live contact route and ETA disappeared when the operator clicked the mission tab because the map overlay was coupled to the planner-selected mission and its local plan list.
+- Files: `web/src/FleetWorkspace.tsx`, `web/src/OperationsMap.tsx`, and `web/e2e/mission.spec.ts`.
+- Commands/tests: production TypeScript/Vite Docker build, non-mutating live VM 214 browser check, and isolated Playwright contact-rendezvous regression on node 220.
+- Result: every authorized/executing/paused mission contributes its own contact overlay. The live ETA remained visible and continued changing with Mission Planner hidden; the isolated regression passed through mission-tab hide/show. VM 214 and all twelve nodes are healthy on binary SHA-256 `d17a96c0599b9ede2b5d01e30585e09a282df30811dcd3d0f1810c193fcd76af`.
+- Follow-up: none for this regression.
 
 ### 2026-09-03 - Live rendezvous ETA and restart-safe plan recovery
 

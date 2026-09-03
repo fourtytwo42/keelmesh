@@ -29,6 +29,10 @@ type Props = {
   mission: MissionWorkspaceV2 | null;
   selected: Set<string>;
   activePlan: FleetPlanV2 | null;
+  activeMissionPlans: Array<{
+    mission: MissionWorkspaceV2;
+    plan: FleetPlanV2;
+  }>;
   tool: Tool;
   editingEnabled: boolean;
   focusedGeometry: { kind: "waypoint" | "include" | "exclude" | "poi"; index: number } | null;
@@ -258,65 +262,65 @@ function formatETA(seconds: number | null): string {
 }
 
 function contactMissionOverlayData(
-  plan: FleetPlanV2 | null,
-  mission: MissionWorkspaceV2 | null,
+  missionPlans: Array<{
+    mission: MissionWorkspaceV2;
+    plan: FleetPlanV2;
+  }>,
   fleet: FleetSnapshotV2,
 ): GeoJSON.FeatureCollection {
-  if (!plan || !mission || !["authorized", "executing", "paused"].includes(mission.status) || !plan.follow_contact_id) {
-    return { type: "FeatureCollection", features: [] };
-  }
-  const contact = fleet.surface_contacts.find((item) => item.id === plan.follow_contact_id);
-  const vessels = mission.target_ids.flatMap((id) => {
-    const vessel = fleet.vessels.find((item) => item.id === id);
-    return vessel ? [vessel] : [];
-  });
-  if (!contact || vessels.length === 0) return { type: "FeatureCollection", features: [] };
+  const features: GeoJSON.Feature[] = [];
+  for (const { mission, plan } of missionPlans) {
+    if (! ["authorized", "executing", "paused"].includes(mission.status) || !plan.follow_contact_id) continue;
+    const contact = fleet.surface_contacts.find((item) => item.id === plan.follow_contact_id);
+    const vessels = mission.target_ids.flatMap((id) => {
+      const vessel = fleet.vessels.find((item) => item.id === id);
+      return vessel ? [vessel] : [];
+    });
+    if (!contact || vessels.length === 0) continue;
 
-  const origin: Point = [
-    vessels.reduce((sum, vessel) => sum + vessel.telemetry.position[0], 0) / vessels.length,
-    vessels.reduce((sum, vessel) => sum + vessel.telemetry.position[1], 0) / vessels.length,
-  ];
-  const group = fleet.groups.find((item) => item.member_ids.some((id) => mission.target_ids.includes(id)));
-  const color = group?.color ?? "#e9a93f";
-  const standoff = Math.max(0, plan.contact_standoff_m ?? mission.contact_standoff_m ?? 0);
-  const currentRendezvous = projectPoint(contact.position, contact.heading_deg + 180, standoff);
-  let eta: number | null = 0;
-  for (const vessel of vessels) {
-    const assignment = plan.assignments.find((item) => item.vessel_id === vessel.id);
-    const speed = Math.max(0.1, assignment?.speed_mps ?? vessel.telemetry.speed_mps);
-    const vesselETA = interceptSeconds(vessel.telemetry.position, currentRendezvous, contact.heading_deg, contact.speed_mps, speed);
-    if (vesselETA === null) {
-      eta = null;
-      break;
+    const origin: Point = [
+      vessels.reduce((sum, vessel) => sum + vessel.telemetry.position[0], 0) / vessels.length,
+      vessels.reduce((sum, vessel) => sum + vessel.telemetry.position[1], 0) / vessels.length,
+    ];
+    const group = fleet.groups.find((item) => item.member_ids.some((id) => mission.target_ids.includes(id)));
+    const color = group?.color ?? "#e9a93f";
+    const standoff = Math.max(0, plan.contact_standoff_m ?? mission.contact_standoff_m ?? 0);
+    const currentRendezvous = projectPoint(contact.position, contact.heading_deg + 180, standoff);
+    let eta: number | null = 0;
+    for (const vessel of vessels) {
+      const assignment = plan.assignments.find((item) => item.vessel_id === vessel.id);
+      const speed = Math.max(0.1, assignment?.speed_mps ?? vessel.telemetry.speed_mps);
+      const vesselETA = interceptSeconds(vessel.telemetry.position, currentRendezvous, contact.heading_deg, contact.speed_mps, speed);
+      if (vesselETA === null) {
+        eta = null;
+        break;
+      }
+      eta = Math.max(eta ?? 0, vesselETA);
     }
-    eta = Math.max(eta ?? 0, vesselETA);
-  }
-  const predictedContact = eta === null
-    ? contact.position
-    : projectPoint(contact.position, contact.heading_deg, contact.speed_mps * eta);
-  const destination = projectPoint(predictedContact, contact.heading_deg + 180, standoff);
-  const midpoint: Point = [(origin[0] + destination[0]) / 2, (origin[1] + destination[1]) / 2];
-  const distanceNM = geoDistanceM(origin, currentRendezvous) / 1852;
-  const groupLabel = group ? `${group.color_name.toUpperCase()} ${group.code}` : mission.name.toUpperCase();
-  const etaText = `ETA ${formatETA(eta)} · ${distanceNM.toFixed(1)} NM`;
-  const features: GeoJSON.Feature[] = [
-    {
-      type: "Feature",
-      properties: { kind: "rendezvous-route", color, label: `${groupLabel} → ${contact.name.toUpperCase()}` },
-      geometry: { type: "LineString", coordinates: [origin, destination] },
-    },
-    {
-      type: "Feature",
-      properties: { kind: "rendezvous-eta", color, label: etaText },
-      geometry: { type: "Point", coordinates: midpoint },
-    },
-  ];
-  if (contact.speed_mps > 0.05 && geoDistanceM(contact.position, predictedContact) > 10) {
+    const predictedContact = eta === null
+      ? contact.position
+      : projectPoint(contact.position, contact.heading_deg, contact.speed_mps * eta);
+    const destination = projectPoint(predictedContact, contact.heading_deg + 180, standoff);
+    const midpoint: Point = [(origin[0] + destination[0]) / 2, (origin[1] + destination[1]) / 2];
+    const distanceNM = geoDistanceM(origin, currentRendezvous) / 1852;
+    const groupLabel = group ? `${group.color_name.toUpperCase()} ${group.code}` : mission.name.toUpperCase();
+    const etaText = `ETA ${formatETA(eta)} · ${distanceNM.toFixed(1)} NM`;
     features.push({
       type: "Feature",
-      properties: { kind: "contact-prediction", color: contact.color },
-      geometry: { type: "LineString", coordinates: [contact.position, predictedContact] },
+      properties: { kind: "rendezvous-route", color, label: `${groupLabel} → ${contact.name.toUpperCase()}`, missionID: mission.id },
+      geometry: { type: "LineString", coordinates: [origin, destination] },
+    }, {
+      type: "Feature",
+      properties: { kind: "rendezvous-eta", color, label: etaText, missionID: mission.id },
+      geometry: { type: "Point", coordinates: midpoint },
     });
+    if (contact.speed_mps > 0.05 && geoDistanceM(contact.position, predictedContact) > 10) {
+      features.push({
+        type: "Feature",
+        properties: { kind: "contact-prediction", color: contact.color, missionID: mission.id },
+        geometry: { type: "LineString", coordinates: [contact.position, predictedContact] },
+      });
+    }
   }
   return { type: "FeatureCollection", features };
 }
@@ -475,6 +479,7 @@ export function OperationsMap({
   mission,
   selected,
   activePlan,
+  activeMissionPlans,
   tool,
   editingEnabled,
   focusedGeometry,
@@ -548,8 +553,8 @@ export function OperationsMap({
     ? (selectedGroup.color_name as WaypointColor)
     : "amber";
   const contactMissionOverlay = useMemo(
-    () => contactMissionOverlayData(activePlan, mission, fleet),
-    [activePlan, mission, fleet],
+    () => contactMissionOverlayData(activeMissionPlans, fleet),
+    [activeMissionPlans, fleet],
   );
   const rendezvousStatus = String(
     contactMissionOverlay.features.find((feature) => feature.properties?.kind === "rendezvous-eta")?.properties?.label ?? "",
