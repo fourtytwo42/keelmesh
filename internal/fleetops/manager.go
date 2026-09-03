@@ -32,6 +32,10 @@ type Mutation struct {
 	IdempotencyKey  string `json:"idempotency_key"`
 	ExpectedVersion int64  `json:"expected_version"`
 }
+type SimulationRateRequest struct {
+	Mutation
+	Rate int `json:"rate"`
+}
 type CreateGroupRequest struct {
 	Mutation
 	Name      string   `json:"name"`
@@ -137,6 +141,8 @@ type Manager struct {
 	startedPlans          map[string]string
 	programs              map[string]domain.TrajectoryProgramV1
 	simTickMS             int64
+	simulationEpochMS     int64
+	simulationRate        int
 }
 
 var callsigns = []string{"Gannet", "Osprey", "Tern", "Petrel", "Shearwater", "Cormorant", "Harrier", "Kite", "Merlin", "Plover", "Skua", "Fulmar", "Albatross", "Razorbill", "Puffin", "Heron", "Kittiwake", "Curlew", "Jaeger", "Avocet", "Sanderling", "Grebe", "Dunlin", "Egret", "Bittern", "Sandpiper", "Stormbird", "Kingfisher", "Loon", "Murre", "Nighthawk", "Pelican", "Rail", "Sparrowhawk", "Turnstone", "Whimbrel", "Auk", "Bunting", "Caspian", "Diver", "Eider", "Frigate", "Godwit", "Hobby", "Ibis", "Junco", "Lapwing", "Merganser"}
@@ -234,8 +240,12 @@ func surfaceContactsAt(at time.Time) []domain.SurfaceContactV2 {
 	return contacts
 }
 
+func (m *Manager) surfaceContactsLocked() []domain.SurfaceContactV2 {
+	return surfaceContactsAt(time.UnixMilli(m.simulationEpochMS + m.simTickMS).UTC())
+}
+
 func New(databaseURL string, logger *slog.Logger) *Manager {
-	m := &Manager{logger: logger, databaseURL: databaseURL, secret: []byte("keelmesh-m6-runtime-authority"), fleetVersion: 1, vessels: map[string]domain.VesselProfileV2{}, groups: map[string]domain.OperationalGroupV2{}, collections: map[string]domain.SavedCollectionV2{}, missions: map[string]domain.MissionWorkspaceV2{}, drafts: map[string]domain.CommandDraftV2{}, plans: map[string]domain.FleetPlanV2{}, leases: map[string]domain.FleetLeaseV2{}, idempotency: map[string]string{}, startedPlans: map[string]string{}, programs: map[string]domain.TrajectoryProgramV1{}}
+	m := &Manager{logger: logger, databaseURL: databaseURL, secret: []byte("keelmesh-m6-runtime-authority"), fleetVersion: 1, vessels: map[string]domain.VesselProfileV2{}, groups: map[string]domain.OperationalGroupV2{}, collections: map[string]domain.SavedCollectionV2{}, missions: map[string]domain.MissionWorkspaceV2{}, drafts: map[string]domain.CommandDraftV2{}, plans: map[string]domain.FleetPlanV2{}, leases: map[string]domain.FleetLeaseV2{}, idempotency: map[string]string{}, startedPlans: map[string]string{}, programs: map[string]domain.TrajectoryProgramV1{}, simulationEpochMS: time.Now().UnixMilli(), simulationRate: 20}
 	m.seed()
 	return m
 }
@@ -449,11 +459,28 @@ func (m *Manager) snapshotLocked() domain.FleetSnapshotV2 {
 		ms = append(ms, v)
 	}
 	sort.Slice(ms, func(i, j int) bool { return ms[i].UpdatedAt.After(ms[j].UpdatedAt) })
-	return domain.FleetSnapshotV2{SchemaVersion: 2, FleetVersion: m.fleetVersion, GeneratedAt: now, Vessels: vs, SurfaceContacts: surfaceContactsAt(now), Groups: gs, Collections: cs, Missions: ms, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, 0), Map: map[string]any{"name": "Narragansett Bay & Rhode Island Sound", "center": domain.GeoPointV2{-71.34, 41.34}, "bounds": [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, "fixture": true, "navigation_warning": "Simulation only — not for navigation"}}
+	return domain.FleetSnapshotV2{SchemaVersion: 2, FleetVersion: m.fleetVersion, SimulationRate: m.simulationRate, SimulationTick: m.simTickMS, GeneratedAt: now, Vessels: vs, SurfaceContacts: m.surfaceContactsLocked(), Groups: gs, Collections: cs, Missions: ms, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, float64(m.simTickMS/1000)), Map: map[string]any{"name": "Narragansett Bay & Rhode Island Sound", "center": domain.GeoPointV2{-71.34, 41.34}, "bounds": [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, "fixture": true, "navigation_warning": "Simulation only — not for navigation"}}
+}
+
+func (m *Manager) SetSimulationRate(req SimulationRateRequest) (domain.FleetSnapshotV2, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.check(req.Mutation, m.fleetVersion); err != nil {
+		return domain.FleetSnapshotV2{}, err
+	}
+	allowed := map[int]bool{0: true, 1: true, 5: true, 20: true, 100: true, 500: true}
+	if !allowed[req.Rate] {
+		return domain.FleetSnapshotV2{}, &Error{"INVALID_SIMULATION_RATE", "Simulation rate must be pause, 1×, 5×, 20×, 100×, or 500×."}
+	}
+	m.simulationRate = req.Rate
+	m.fleetVersion++
+	return m.snapshotLocked(), nil
 }
 
 func (m *Manager) SurfaceContact(id string) (domain.SurfaceContactV2, error) {
-	for _, contact := range surfaceContactsAt(time.Now().UTC()) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, contact := range m.surfaceContactsLocked() {
 		if contact.ID == id || strings.EqualFold(contact.BoatID, id) {
 			return contact, nil
 		}
@@ -1365,7 +1392,7 @@ func (m *Manager) PlanningContext(draftID string) (domain.MissionPlanningContext
 	if len(conversation) > 12 {
 		conversation = conversation[len(conversation)-12:]
 	}
-	contacts := surfaceContactsAt(time.Now().UTC())
+	contacts := m.surfaceContactsLocked()
 	var follow *domain.SurfaceContactV2
 	for i := range contacts {
 		if contacts[i].ID == draft.FollowContactID {
@@ -1374,7 +1401,7 @@ func (m *Manager) PlanningContext(draftID string) (domain.MissionPlanningContext
 			break
 		}
 	}
-	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, 0), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, GeometryOptions: geometryOptions, MapBounds: [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, FormationCurrent: mission.Formation, Conversation: append([]domain.MissionChatMessageV2(nil), conversation...), SurfaceContacts: contacts, FollowContact: follow}, nil
+	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, float64(m.simTickMS/1000)), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, GeometryOptions: geometryOptions, MapBounds: [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, FormationCurrent: mission.Formation, Conversation: append([]domain.MissionChatMessageV2(nil), conversation...), SurfaceContacts: contacts, FollowContact: follow}, nil
 }
 
 // ApplyAdvisor validates and freezes advisory strategies into the immutable
@@ -2240,6 +2267,12 @@ func sweepLane(area [][]float64, index, count int) []domain.GeoPointV2 {
 func (m *Manager) tick() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	for step := 0; step < m.simulationRate; step++ {
+		m.tickStepLocked()
+	}
+}
+
+func (m *Manager) tickStepLocked() {
 	m.simTickMS += 200
 	for mid, program := range m.programs {
 		mission, exists := m.missions[mid]
@@ -2426,7 +2459,7 @@ func (m *Manager) tickIdleGroupsLocked() bool {
 			center = group.RouteWaypoints[group.RouteIndex].Position
 		}
 		allArrived := true
-		movementSeconds := 4.0 // 20× simulation time at the 200 ms wall-clock tick.
+		movementSeconds := .2
 		for index, vesselID := range group.MemberIDs {
 			vessel := m.vessels[vesselID]
 			if vessel.Telemetry.MissionID != "" {

@@ -22,6 +22,7 @@ type Tool = "select" | "box" | "waypoint" | "include" | "exclude";
 export type WaypointColor = MissionWaypointV2["color"];
 type ContextMenu =
   | { kind: "vessel"; x: number; y: number; vessel: string; group: string }
+  | { kind: "contact"; x: number; y: number; contact: string }
   | { kind: "water"; x: number; y: number; point: Point };
 type Props = {
   fleet: FleetSnapshotV2;
@@ -33,6 +34,7 @@ type Props = {
   onSelect: (ids: string[], mode: "replace" | "toggle") => void;
   onGroup: (id: string) => void;
   onContact: (id: string) => void;
+  onFollowContact: (contactID: string, groupID: string) => void;
   onWaypoint: (p: Point, color: WaypointColor) => void;
   onMoveWaypoint: (index: number, p: Point) => void;
   onDeleteWaypoint: (index: number) => void;
@@ -320,6 +322,7 @@ export function OperationsMap({
   onSelect,
   onGroup,
   onContact,
+  onFollowContact,
   onWaypoint,
   onMoveWaypoint,
   onDeleteWaypoint,
@@ -1154,6 +1157,18 @@ export function OperationsMap({
         });
         return;
       }
+      const contact = map.queryRenderedFeatures(vesselBox, {
+        layers: ["surface-contact-symbols", "surface-contact-halos"],
+      })[0];
+      if (contact?.properties?.id) {
+        setContextMenu({
+          kind: "contact",
+          x,
+          y,
+          contact: String(contact.properties.id),
+        });
+        return;
+      }
       const assembly = map.queryRenderedFeatures(waypointBox, {
         layers: ["group-assembly-labels", "group-assembly-rings"],
       })[0];
@@ -1336,6 +1351,10 @@ export function OperationsMap({
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [onSelect]);
+  const contextContact =
+    contextMenu?.kind === "contact"
+      ? fleet.surface_contacts.find((contact) => contact.id === contextMenu.contact)
+      : undefined;
   return (
     <div className="operations-map" ref={host}>
       {box && (
@@ -1442,6 +1461,64 @@ export function OperationsMap({
               </button>
             </>
           )}
+        </div>
+      )}
+      {contextMenu?.kind === "contact" && contextContact && (
+        <div
+          className="map-context-menu contact-menu"
+          role="menu"
+          aria-label="Surface contact menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <strong>
+            {pirate ? "VESSEL ON THE HORIZON" : "SURFACE CONTACT"}
+            <small>{contextContact.boat_id}</small>
+          </strong>
+          <div className="contact-menu-summary">
+            <i style={{ background: contextContact.color }} />
+            <span>
+              <b>{contextContact.name}</b>
+              <small>
+                {contextContact.class} · {contextContact.speed_knots.toFixed(1)} kn
+              </small>
+            </span>
+          </div>
+          <button
+            role="menuitem"
+            onClick={() => {
+              onContact(contextContact.id);
+              setContextMenu(null);
+            }}
+          >
+            {pirate ? "Study this vessel" : "Inspect contact details"}
+          </button>
+          <button
+            role="menuitem"
+            disabled={!selectedGroup}
+            title={
+              selectedGroup
+                ? `Create a follow plan for ${selectedGroup.code} ${selectedGroup.name}`
+                : "Select exactly one complete operational group first"
+            }
+            onClick={() => {
+              if (!selectedGroup) return;
+              onFollowContact(contextContact.id, selectedGroup.id);
+              setContextMenu(null);
+            }}
+          >
+            {selectedGroup
+              ? pirate
+                ? `Shadow with ${selectedGroup.code} ${selectedGroup.name}`
+                : `Follow with ${selectedGroup.code} ${selectedGroup.name}`
+              : pirate
+                ? "Muster one complete crew to shadow"
+                : "Select one complete group to follow"}
+          </button>
+          <p>
+            {pirate
+              ? "Creates a course proposal; the other vessel remains beyond command."
+              : "Creates a previewable follow plan. This contact cannot be commanded."}
+          </p>
         </div>
       )}
       {contextMenu?.kind === "water" && (

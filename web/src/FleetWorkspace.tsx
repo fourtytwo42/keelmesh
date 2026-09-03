@@ -854,6 +854,55 @@ export function FleetWorkspace() {
     setCommand(text);
     await createPlans(mission, text);
   }
+  async function followSurfaceContact(contactID: string, groupID: string) {
+    const current = await api<FleetSnapshotV2>("/api/v2/fleet");
+    const contact = current.surface_contacts.find((item) => item.id === contactID);
+    const group = current.groups.find((item) => item.id === groupID);
+    if (!contact || !group) {
+      setError("The selected group or surface contact is no longer available.");
+      return;
+    }
+    const exactGroupSelected =
+      selected.size === group.member_ids.length &&
+      group.member_ids.every((id) => selected.has(id));
+    if (!exactGroupSelected) {
+      setError("Select exactly one complete operational group before following a contact.");
+      return;
+    }
+    const intent = `Have ${group.code} ${group.name} follow ${contact.name} (${contact.boat_id}) at a safe stand-off distance.`;
+    setCommand(intent);
+    let target = current.missions.find(
+      (item) =>
+        item.status !== "completed" &&
+        item.status !== "ended" &&
+        item.target_ids.length === group.member_ids.length &&
+        item.target_ids.every((id) => group.member_ids.includes(id)),
+    );
+    if (!target) target = await createMissionFor(group.member_ids, "ai") ?? undefined;
+    if (!target) return;
+    setActiveMissionID(target.id);
+    setPlans([]);
+    setDraft(null);
+    setPreview(null);
+    setLease(null);
+    open("planner");
+    await createPlans(target, intent);
+  }
+  async function setSimulationRate(rate: FleetSnapshotV2["simulation_rate"]) {
+    const current = await api<FleetSnapshotV2>("/api/v2/fleet");
+    const updated = await mutate(() =>
+      api<FleetSnapshotV2>("/api/v2/simulation/rate", {
+        method: "POST",
+        body: JSON.stringify({
+          request_id: requestID("simulation-rate"),
+          idempotency_key: requestID("simulation-rate-key"),
+          expected_version: current.fleet_version,
+          rate,
+        }),
+      }),
+    ).catch(() => null);
+    if (updated) setFleet(updated);
+  }
   async function addPolygon(kind: "include" | "exclude", poly: Point[]) {
     let target: MissionWorkspaceV2 | null = mission;
     if (!target && selected.size > 0) target = await createMissionFor([...selected]);
@@ -1547,6 +1596,9 @@ export function FleetWorkspace() {
           setInspectContactID(id);
           open("contact-inspector");
         }}
+        onFollowContact={(contactID, groupID) =>
+          void followSurfaceContact(contactID, groupID)
+        }
         onWaypoint={addWaypoint}
         onMoveWaypoint={moveWaypoint}
         onDeleteWaypoint={deleteWaypoint}
@@ -1680,6 +1732,22 @@ export function FleetWorkspace() {
           <Bot />
           {words.advisory}
         </span>
+        <div className="sim-speed" role="group" aria-label="Simulation speed">
+          <small>SIM</small>
+          {([0, 1, 5, 20, 100, 500] as const).map((rate) => (
+            <button
+              key={rate}
+              type="button"
+              className={fleet.simulation_rate === rate ? "active" : ""}
+              aria-label={rate === 0 ? "Pause simulation" : `Run simulation at ${rate} times speed`}
+              aria-pressed={fleet.simulation_rate === rate}
+              title={rate === 0 ? "Pause simulation" : `${rate}× simulation speed`}
+              onClick={() => void setSimulationRate(rate)}
+            >
+              {rate === 0 ? <Pause /> : `${rate}×`}
+            </button>
+          ))}
+        </div>
         <span>{new Date(fleet.generated_at).toLocaleTimeString()}</span>
       </footer>
     </main>

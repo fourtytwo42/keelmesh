@@ -118,8 +118,11 @@ Idle operational groups also have a bounded map-navigation controller. Hold
 points and numbered waypoints are draggable; group-colored routes can run once,
 switch to a loop, or pause after completing the current leg. Clearing a route
 creates a deterministic hold around the group's lowest vessel ID, and changing
-the group hold point translates the full formation at the displayed 20×
-simulation rate. Right-click vessel controls use the same group route API.
+the group hold point translates the full formation at the operator-selected
+simulation rate. The lower status bar provides pause, 1×, 5×, 20×, 100×, and
+500× controls; every rate advances the same bounded 200 ms simulation steps so
+fast-forward does not bypass trajectory, energy, collision, or waypoint logic.
+Right-click vessel controls use the same group route API.
 
 The chart is a packaged NOAA NCDS extract and all vessel/environment state is
 clearly labeled simulation data. Pocket TTS and faster-whisper run privately on
@@ -128,7 +131,7 @@ VM-local runtime artifact outside Git. Browser capture requires HTTPS, so the
 temporary Cloudflare Quick Tunnel is used for microphone demos while the LAN URL
 continues to provide the rest of the workspace.
 
-The operating picture includes twelve fictional, non-commandable surface contacts on deterministic looped routes. Six original transparent traffic sprites cover container ship, tanker, ferry, fishing trawler, patrol ship, and sailing yacht classes and remain visually unchanged in Pirate mode. Names, simulated boat IDs, colors, motion, and predicted tracks are available to the bounded mission advisor for policy-checked intercept and follow plans.
+The operating picture includes twelve fictional, non-commandable surface contacts on deterministic looped routes. Six original transparent traffic sprites cover container ship, tanker, ferry, fishing trawler, patrol ship, and sailing yacht classes and remain visually unchanged in Pirate mode. Names, simulated boat IDs, colors, motion, and predicted tracks are available to the bounded mission advisor for policy-checked intercept and follow plans. With one complete operational group selected, right-clicking a contact exposes `Follow with <group>` and sends the stable Boat ID through the AI-advisor and deterministic preview/authorization path.
 
 ```bash
 scripts/keelmesh status

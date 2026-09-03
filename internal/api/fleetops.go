@@ -17,6 +17,14 @@ import (
 func (s *Server) fleetV2(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.fleetops.Snapshot())
 }
+func (s *Server) simulationRateV2(w http.ResponseWriter, r *http.Request) {
+	var req fleetops.SimulationRateRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	v, err := s.fleetops.SetSimulationRate(req)
+	respondV2(w, v, err, http.StatusOK)
+}
 func (s *Server) vesselV2(w http.ResponseWriter, r *http.Request) {
 	v, err := s.fleetops.Vessel(r.PathValue("id"))
 	respondV2(w, v, err, http.StatusOK)

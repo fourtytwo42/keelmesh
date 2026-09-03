@@ -356,6 +356,8 @@ type FleetLeaseV2 struct {
 type FleetSnapshotV2 struct {
 	SchemaVersion   int                  `json:"schema_version"`
 	FleetVersion    int64                `json:"fleet_version"`
+	SimulationRate  int                  `json:"simulation_rate"`
+	SimulationTick  int64                `json:"simulation_tick_ms"`
 	GeneratedAt     time.Time            `json:"generated_at"`
 	Vessels         []VesselProfileV2    `json:"vessels"`
 	SurfaceContacts []SurfaceContactV2   `json:"surface_contacts"`

@@ -33,6 +33,42 @@ func TestSeededFleetHasStableClassMix(t *testing.T) {
 	}
 }
 
+func TestSimulationRateIsBoundedAndControlsAuthoritativeClock(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	if snapshot.SimulationRate != 20 || snapshot.SimulationTick != 0 {
+		t.Fatalf("unexpected default simulation clock: rate=%d tick=%d", snapshot.SimulationRate, snapshot.SimulationTick)
+	}
+	paused, err := m.SetSimulationRate(SimulationRateRequest{Mutation: Mutation{RequestID: "pause", IdempotencyKey: "pause", ExpectedVersion: snapshot.FleetVersion}, Rate: 0})
+	if err != nil || paused.SimulationRate != 0 {
+		t.Fatalf("pause failed: snapshot=%#v err=%v", paused, err)
+	}
+	m.tick()
+	pausedAfterTick := m.Snapshot()
+	if pausedAfterTick.SimulationTick != 0 {
+		t.Fatal("paused simulation advanced")
+	}
+	if pausedAfterTick.SurfaceContacts[0].Position != paused.SurfaceContacts[0].Position {
+		t.Fatal("paused surface traffic advanced")
+	}
+	five, err := m.SetSimulationRate(SimulationRateRequest{Mutation: Mutation{RequestID: "five", IdempotencyKey: "five", ExpectedVersion: paused.FleetVersion}, Rate: 5})
+	if err != nil || five.SimulationRate != 5 {
+		t.Fatalf("5x rate failed: snapshot=%#v err=%v", five, err)
+	}
+	m.tick()
+	fiveAfterTick := m.Snapshot()
+	if fiveAfterTick.SimulationTick != 1000 {
+		t.Fatalf("5x tick = %d, want 1000", fiveAfterTick.SimulationTick)
+	}
+	if fiveAfterTick.SurfaceContacts[0].Position == five.SurfaceContacts[0].Position {
+		t.Fatal("surface traffic did not follow the authoritative clock")
+	}
+	_, err = m.SetSimulationRate(SimulationRateRequest{Mutation: Mutation{RequestID: "bad-rate", IdempotencyKey: "bad-rate", ExpectedVersion: five.FleetVersion}, Rate: 50})
+	if typed, ok := err.(*Error); !ok || typed.Code != "INVALID_SIMULATION_RATE" {
+		t.Fatalf("expected bounded-rate rejection, got %v", err)
+	}
+}
+
 func TestLocalAdjustmentStopsAndEscalatesOutsideGuardrails(t *testing.T) {
 	m := New("", slog.Default())
 	vessel := m.vessels[m.groups["group-01"].MemberIDs[1]]

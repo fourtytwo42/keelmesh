@@ -888,6 +888,8 @@ export type FleetLeaseV2 = {
 export type FleetSnapshotV2 = {
   schema_version: number;
   fleet_version: number;
+  simulation_rate: 0 | 1 | 5 | 20 | 100 | 500;
+  simulation_tick_ms: number;
   generated_at: string;
   vessels: VesselProfileV2[];
   surface_contacts: SurfaceContactV2[];
