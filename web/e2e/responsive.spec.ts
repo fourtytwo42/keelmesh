@@ -61,10 +61,27 @@ test.describe("touch-first responsive workspace", () => {
       clientY: point.y,
       isPrimary: true,
     });
-    await page.waitForTimeout(620);
     await canvas.dispatchEvent("pointerup", {
       pointerType: "touch",
       pointerId: 8,
+      clientX: point.x,
+      clientY: point.y,
+      isPrimary: true,
+    });
+    await page.waitForTimeout(700);
+    await expect(page.locator(".map-context-menu")).toHaveCount(0);
+
+    await canvas.dispatchEvent("pointerdown", {
+      pointerType: "touch",
+      pointerId: 9,
+      clientX: point.x,
+      clientY: point.y,
+      isPrimary: true,
+    });
+    await page.waitForTimeout(620);
+    await canvas.dispatchEvent("pointerup", {
+      pointerType: "touch",
+      pointerId: 9,
       clientX: point.x,
       clientY: point.y,
       isPrimary: true,
