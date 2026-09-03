@@ -159,27 +159,52 @@ function surfaceRouteData(
 ): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
-    features: contacts.map((contact) => ({
+    features: contacts.filter((contact) => contact.speed_mps > 0 && contact.route.length > 1).map((contact) => ({
       type: "Feature",
       properties: { id: contact.id, color: contact.color },
       geometry: { type: "LineString", coordinates: contact.route },
     })),
   };
 }
-function routeData(plan: FleetPlanV2 | null): GeoJSON.FeatureCollection {
+function routeData(
+  plan: FleetPlanV2 | null,
+  mission: MissionWorkspaceV2 | null,
+  fleet: FleetSnapshotV2,
+): GeoJSON.FeatureCollection {
+  if (!plan || !mission || ["completed", "ended"].includes(mission.status)) {
+    return { type: "FeatureCollection", features: [] };
+  }
+  if (plan.continuous_tracking && plan.follow_contact_id) {
+    const contact = fleet.surface_contacts.find((item) => item.id === plan.follow_contact_id);
+    if (contact) {
+      return {
+        type: "FeatureCollection",
+        features: plan.assignments.flatMap((assignment) => {
+          const vessel = fleet.vessels.find((item) => item.id === assignment.vessel_id);
+          return vessel ? [{
+            type: "Feature" as const,
+            properties: { vessel: assignment.vessel_id, tracking: true },
+            geometry: { type: "LineString" as const, coordinates: [vessel.telemetry.position, contact.position] },
+          }] : [];
+        }),
+      };
+    }
+  }
   return {
     type: "FeatureCollection",
-    features:
-      plan?.assignments.map((a) => ({
+    features: plan.assignments.map((a) => ({
         type: "Feature",
         properties: { vessel: a.vessel_id },
         geometry: { type: "LineString", coordinates: a.route },
-      })) ?? [],
+      })),
   };
 }
 function geometryData(
   mission: MissionWorkspaceV2 | null,
 ): GeoJSON.FeatureCollection {
+  if (!mission || ["completed", "ended"].includes(mission.status)) {
+    return { type: "FeatureCollection", features: [] };
+  }
   const waypoints = mission?.geometry.waypoints ?? [],
     details = mission?.geometry.waypoint_details ?? [];
   const routes = new Map<string, MissionWaypointV2[]>();
@@ -930,7 +955,7 @@ export function OperationsMap({
       vesselData(fleet),
     );
     (mapRef.current.getSource("routes") as GeoJSONSource)?.setData(
-      routeData(activePlan),
+      routeData(activePlan, mission, fleet),
     );
     (mapRef.current.getSource("surface-contacts") as GeoJSONSource)?.setData(
       surfaceContactData(fleet),
@@ -1481,7 +1506,7 @@ export function OperationsMap({
             x: e.point.x,
             y: e.point.y,
             title: `${contact.name} · ${contact.boat_id}`,
-            detail: `${contact.class} · ${contact.speed_knots.toFixed(1)} kn · heading ${Math.round(contact.heading_deg)}° · neutral simulated contact`,
+            detail: `${contact.class} · ${contact.speed_mps.toFixed(1)} m/s (${contact.speed_knots.toFixed(1)} kn) · ${contact.navigation_state} · heading ${Math.round(contact.heading_deg)}°`,
             accent: contact.color,
           };
         } else if (feature?.layer.id === "mission-waypoint-numbers") {
@@ -1733,7 +1758,7 @@ export function OperationsMap({
             <span>
               <b>{contextContact.name}</b>
               <small>
-                {contextContact.class} · {contextContact.speed_knots.toFixed(1)} kn
+                {contextContact.class} · {contextContact.speed_mps.toFixed(1)} m/s · {contextContact.navigation_state}
               </small>
             </span>
           </div>
@@ -1804,7 +1829,7 @@ export function OperationsMap({
         <span>
           {pirate
             ? `${fleet.surface_contacts.length} neutral contacts · not for navigation`
-            : `${fleet.surface_contacts.length} moving surface contacts · local/offline`}
+            : `${fleet.surface_contacts.filter((contact) => contact.speed_mps > 0).length} underway · ${fleet.surface_contacts.filter((contact) => contact.speed_mps === 0).length} anchored contacts · local/offline`}
         </span>
       </div>
       <div

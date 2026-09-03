@@ -199,21 +199,31 @@ type surfaceTrafficSpec struct {
 }
 
 var surfaceTraffic = []surfaceTrafficSpec{
-	{"surface-01", "NPC-4101", "MV Copper Horizon", "COPPER HORIZON", "container", "container service · New York to Boston", "red", "#ef6a62", "Atlantic coastwise lane", 2.4, 216, 10.8, []domain.GeoPointV2{{-71.62, 41.10}, {-71.42, 41.12}, {-71.12, 41.16}, {-70.84, 41.24}, {-71.12, 41.16}, {-71.42, 41.12}}},
-	{"surface-02", "NPC-4102", "MV Atlantic Beacon", "ATLANTIC BEACON", "container", "eastbound container service", "orange", "#ed8b47", "Rhode Island Sound eastbound", 2.6, 248, 12.1, []domain.GeoPointV2{{-71.58, 41.25}, {-71.36, 41.24}, {-71.10, 41.28}, {-70.82, 41.34}, {-71.10, 41.28}, {-71.36, 41.24}}},
+	{"surface-01", "NPC-4101", "MV Copper Horizon", "COPPER HORIZON", "container", "container service · New York to Boston", "red", "#ef6a62", "Atlantic coastwise lane", 2.4, 216, 10.8, []domain.GeoPointV2{{-71.59, 41.10}, {-71.42, 41.12}, {-71.12, 41.16}, {-71.10, 41.24}, {-71.12, 41.16}, {-71.42, 41.12}}},
+	{"surface-02", "NPC-4102", "MV Atlantic Beacon", "ATLANTIC BEACON", "container", "eastbound container service", "orange", "#ed8b47", "Rhode Island Sound eastbound", 2.6, 248, 12.1, []domain.GeoPointV2{{-71.58, 41.25}, {-71.36, 41.24}, {-71.12, 41.28}, {-71.10, 41.34}, {-71.12, 41.28}, {-71.36, 41.24}}},
 	{"surface-03", "NPC-4103", "MT Resolute Tide", "RESOLUTE TIDE", "tanker", "coastal product tanker", "yellow", "#e3c85a", "Point Judith tanker approach", 2.1, 184, 9.4, []domain.GeoPointV2{{-71.58, 41.30}, {-71.48, 41.34}, {-71.39, 41.39}, {-71.34, 41.45}, {-71.39, 41.39}, {-71.48, 41.34}}},
 	{"surface-04", "NPC-4104", "MT Silver Current", "SILVER CURRENT", "tanker", "ballast transit · simulated", "lime", "#a7cf62", "Sakonnet offshore lane", 2.0, 162, 8.7, []domain.GeoPointV2{{-71.12, 41.18}, {-71.08, 41.30}, {-71.12, 41.44}, {-71.18, 41.52}, {-71.12, 41.44}, {-71.08, 41.30}}},
 	{"surface-05", "NPC-4105", "MV Bay Courier", "BAY COURIER", "ferry", "scheduled passenger crossing", "green", "#64c982", "Newport–Block Island ferry", 2.8, 61, 3.2, []domain.GeoPointV2{{-71.34, 41.48}, {-71.38, 41.40}, {-71.46, 41.29}, {-71.56, 41.18}, {-71.46, 41.29}, {-71.38, 41.40}}},
 	{"surface-06", "NPC-4106", "MV Island Runner", "ISLAND RUNNER", "ferry", "vehicle and passenger ferry", "teal", "#55c6b0", "Point Judith–Block Island ferry", 2.7, 72, 3.6, []domain.GeoPointV2{{-71.49, 41.36}, {-71.53, 41.27}, {-71.57, 41.18}, {-71.53, 41.27}}},
-	{"surface-07", "NPC-4107", "FV North Star", "NORTH STAR", "trawler", "commercial trawling pattern", "cyan", "#5fc8dd", "Block Island fishing grounds", 1.4, 28, 2.8, []domain.GeoPointV2{{-71.62, 41.14}, {-71.67, 41.20}, {-71.63, 41.27}, {-71.55, 41.25}, {-71.52, 41.18}, {-71.58, 41.12}}},
+	{"surface-07", "NPC-4107", "FV North Star", "NORTH STAR", "trawler", "commercial trawling pattern", "cyan", "#5fc8dd", "Block Island fishing grounds", 1.4, 28, 2.8, []domain.GeoPointV2{{-71.59, 41.14}, {-71.60, 41.20}, {-71.59, 41.27}, {-71.55, 41.25}, {-71.52, 41.18}, {-71.58, 41.12}}},
 	{"surface-08", "NPC-4108", "FV Sea Robin", "SEA ROBIN", "trawler", "gear retrieval and slow transit", "blue", "#67aee8", "Rhode Island Sound fishing grounds", 1.2, 24, 2.4, []domain.GeoPointV2{{-71.28, 41.16}, {-71.20, 41.19}, {-71.16, 41.25}, {-71.25, 41.28}, {-71.31, 41.23}}},
-	{"surface-09", "NPC-4109", "NS Vigilant", "VIGILANT", "patrol", "fictional naval training patrol", "indigo", "#7888df", "Offshore security circuit", 2.5, 94, 4.6, []domain.GeoPointV2{{-71.02, 41.16}, {-70.90, 41.24}, {-70.94, 41.38}, {-71.08, 41.42}, {-71.16, 41.30}}},
+	{"surface-09", "NPC-4109", "NS Vigilant", "VIGILANT", "patrol", "fictional naval training patrol", "indigo", "#7888df", "Offshore security circuit", 2.5, 94, 4.6, []domain.GeoPointV2{{-71.12, 41.16}, {-71.10, 41.24}, {-71.11, 41.38}, {-71.13, 41.42}, {-71.16, 41.30}}},
 	{"surface-10", "NPC-4110", "NS Sentinel", "SENTINEL", "patrol", "fictional readiness exercise", "violet", "#b68bdc", "Narragansett outer patrol", 2.4, 82, 4.1, []domain.GeoPointV2{{-71.46, 41.18}, {-71.36, 41.22}, {-71.28, 41.30}, {-71.36, 41.35}, {-71.48, 41.29}}},
 	{"surface-11", "NPC-4111", "SV Wayfarer", "WAYFARER", "yacht", "recreational coastal passage", "magenta", "#df78bc", "Newport sailing circuit", 1.7, 18, 2.1, []domain.GeoPointV2{{-71.35, 41.48}, {-71.31, 41.43}, {-71.32, 41.37}, {-71.39, 41.40}}},
 	{"surface-12", "NPC-4112", "SV Blue Finch", "BLUE FINCH", "yacht", "recreational island passage", "white", "#e9e7dc", "Jamestown–Block Island passage", 1.6, 15, 1.8, []domain.GeoPointV2{{-71.40, 41.47}, {-71.44, 41.36}, {-71.51, 41.25}, {-71.57, 41.18}, {-71.51, 41.25}, {-71.44, 41.36}}},
+	{"surface-13", "NPC-4113", "FV Harbor Light", "HARBOR LIGHT", "trawler", "anchored · gear and deck maintenance", "bronze", "#bb8758", "Point Judith anchorage", 0, 31, 3.0, []domain.GeoPointV2{{-71.486, 41.348}}},
+	{"surface-14", "NPC-4114", "SV Quiet Wake", "QUIET WAKE", "yacht", "anchored · overnight coastal stop", "rose", "#d58c91", "Dutch Harbor anchorage", 0, 19, 2.2, []domain.GeoPointV2{{-71.407, 41.503}}},
+	{"surface-15", "NPC-4115", "MV Breakwater Tender", "BREAKWATER TENDER", "patrol", "anchored · fictional harbor-service standby", "steel", "#8ea6ad", "Newport outer anchorage", 0, 48, 3.5, []domain.GeoPointV2{{-71.329, 41.472}}},
+	{"surface-16", "NPC-4116", "MT Safe Haven", "SAFE HAVEN", "tanker", "anchored · simulated weather hold", "aqua", "#63b9b4", "Rhode Island Sound anchorage", 0, 138, 8.2, []domain.GeoPointV2{{-71.275, 41.285}}},
 }
 
 func surfaceContactAt(spec surfaceTrafficSpec, at time.Time, offsetSeconds float64) domain.SurfaceContactV2 {
+	if len(spec.Route) == 0 {
+		return domain.SurfaceContactV2{}
+	}
+	if spec.SpeedMPS <= 0 || len(spec.Route) == 1 {
+		return domain.SurfaceContactV2{ID: spec.ID, BoatID: spec.BoatID, Name: spec.Name, Callsign: spec.Callsign, Class: spec.Class, Activity: spec.Activity, ColorName: spec.ColorName, Color: spec.Color, Position: spec.Route[0], HeadingDeg: 0, SpeedMPS: 0, SpeedKnots: 0, LengthM: spec.LengthM, DraftM: spec.DraftM, NavigationState: "at anchor", RouteName: spec.RouteName, Route: clonePoints(spec.Route), Looping: false, UpdatedAt: at.UTC()}
+	}
 	lengths, total := make([]float64, len(spec.Route)), 0.0
 	for i := range spec.Route {
 		next := (i + 1) % len(spec.Route)
@@ -1200,16 +1210,7 @@ func (m *Manager) DeleteMission(id string, req Mutation) error {
 	if err := m.deleteMissionPersistence(id); err != nil {
 		return &Error{"MISSION_PERSISTENCE_FAILED", "Mission deletion could not be committed. Nothing was deleted."}
 	}
-	for vesselID, vessel := range m.vessels {
-		if vessel.Telemetry.MissionID != id {
-			continue
-		}
-		vessel.Telemetry.MissionID = ""
-		vessel.Telemetry.Route = nil
-		vessel.Telemetry.Mode = "patrol"
-		vessel.Telemetry.SpeedMPS = 0
-		m.vessels[vesselID] = vessel
-	}
+	m.releaseMissionVesselsLocked(id, "mission-delete")
 	for key, draft := range m.drafts {
 		if draft.MissionID == id {
 			delete(m.drafts, key)
@@ -1559,6 +1560,10 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 			notes = append(notes, description)
 			missionChanged = true
 		}
+	}
+	if mission.FollowContactID != followContactID {
+		mission.FollowContactID = followContactID
+		missionChanged = true
 	}
 	constraints := mission.Constraints
 	if contactFound {
@@ -2450,7 +2455,7 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 		status = "prohibited"
 		reasons = append(reasons, "MAXIMUM_DURATION_VIOLATION")
 	}
-	p := domain.FleetPlanV2{SchemaVersion: 2, ID: fmt.Sprintf("plan-%s-%d", shortHash(draft.ContentHash), index+1), MissionID: mission.ID, DraftID: draft.ID, Name: strategy.Name, Description: strategy.Description, Formation: formation, AdvisorSource: draft.Advisor.Provider, AdvisorModel: draft.Advisor.Model, Maneuvers: cloneStrings(strategy.Maneuvers), Assignments: assignments, CoveragePercent: coverage, MinimumReserve: minReserve, DurationMinutes: duration, EnergyKWH: totalEnergyKWH, LinkExposureSeconds: duration * 60 * .08 * float64(index+1), MinimumSeparationM: minSep, PolicyStatus: status, ReasonCodes: reasons, SourceMissionVersion: mission.Version}
+	p := domain.FleetPlanV2{SchemaVersion: 2, ID: fmt.Sprintf("plan-%s-%d", shortHash(draft.ContentHash), index+1), MissionID: mission.ID, DraftID: draft.ID, Name: strategy.Name, Description: strategy.Description, Formation: formation, AdvisorSource: draft.Advisor.Provider, AdvisorModel: draft.Advisor.Model, Maneuvers: cloneStrings(strategy.Maneuvers), FollowContactID: draft.FollowContactID, ContinuousTracking: draft.FollowContactID != "", ReplanIntervalS: 60, PredictionHorizonS: 180, Assignments: assignments, CoveragePercent: coverage, MinimumReserve: minReserve, DurationMinutes: duration, EnergyKWH: totalEnergyKWH, LinkExposureSeconds: duration * 60 * .08 * float64(index+1), MinimumSeparationM: minSep, PolicyStatus: status, ReasonCodes: reasons, SourceMissionVersion: mission.Version}
 	p.ContentHash = hashWithout(p)
 	return p
 }
@@ -2575,6 +2580,9 @@ func (m *Manager) tickStepLocked() {
 		if !exists || mission.Status == "paused" || mission.Status == "ended" || mission.Status == "completed" {
 			continue
 		}
+		if refreshed, ok := m.refreshContinuousFollowLocked(mission, program); ok {
+			program = refreshed
+		}
 		activated := trajectory.Advance(&program, 200)
 		m.programs[mid] = program
 		active := false
@@ -2587,8 +2595,7 @@ func (m *Manager) tickStepLocked() {
 			if !segmentActive {
 				if cursor.Lifecycle == "completed" {
 					v.Telemetry.Route = nil
-					v.Telemetry.MissionID = ""
-					v.Telemetry.Mode = "station_keep"
+					v.Telemetry.Mode = "mission · awaiting group completion"
 					v.Telemetry.SpeedMPS = 0
 					v.Telemetry.TapeDepthSeconds = 0
 					m.vessels[vesselID] = v
@@ -2649,6 +2656,7 @@ func (m *Manager) tickStepLocked() {
 					continue
 				}
 			}
+			m.releaseMissionVesselsLocked(mid, "mission-complete")
 			mission.Status = "completed"
 			mission.Version++
 			mission.UpdatedAt = time.Now().UTC()
@@ -2664,6 +2672,138 @@ func (m *Manager) tickStepLocked() {
 	// configuration. Keeping their 5 Hz cadence out of fleetVersion prevents
 	// ordinary group/mission writes from racing continuous station keeping.
 	m.tickIdleGroupsLocked()
+}
+
+// refreshContinuousFollowLocked materializes a fresh, signed future revision
+// from live contact state. The original approved plan hash explicitly binds
+// the contact identity, replan cadence, prediction horizon, assets, and safety
+// constraints; this function may update trajectories only inside that envelope.
+func (m *Manager) refreshContinuousFollowLocked(mission domain.MissionWorkspaceV2, program domain.TrajectoryProgramV1) (domain.TrajectoryProgramV1, bool) {
+	if program.PendingRevision > 0 {
+		return program, false
+	}
+	active, ok := program.Revisions[program.ActiveRevision]
+	if !ok {
+		return program, false
+	}
+	plan, ok := m.plans[active.PlanID]
+	if !ok || !plan.ContinuousTracking || plan.FollowContactID == "" || mission.FollowContactID != plan.FollowContactID {
+		return program, false
+	}
+	interval := int64(plan.ReplanIntervalS)
+	if interval <= 0 {
+		interval = 60
+	}
+	remaining := int64(active.DurationS) - (program.MissionTickMS/1000 - active.ActivationTick)
+	currentTick := program.MissionTickMS / 1000
+	if currentTick < active.CreatedTick+interval && remaining > 30 {
+		return program, false
+	}
+	var spec surfaceTrafficSpec
+	found := false
+	for _, candidate := range surfaceTraffic {
+		if candidate.ID == plan.FollowContactID {
+			spec, found = candidate, true
+			break
+		}
+	}
+	if !found || spec.SpeedMPS <= 0 {
+		return program, false
+	}
+	activationTick := ((currentTick + 29) / 10) * 10
+	horizon := plan.PredictionHorizonS
+	if horizon < 120 {
+		horizon = 180
+	}
+	nextPlan := plan
+	nextPlan.Assignments = make([]domain.FleetAssignmentV2, 0, len(plan.Assignments))
+	for index, assignment := range plan.Assignments {
+		vessel, exists := m.vessels[assignment.VesselID]
+		if !exists || vessel.Telemetry.PNTIntegrity == "unsafe" || vessel.Telemetry.Reserve <= mission.Constraints.MinimumReserve || assignment.SpeedMPS > vessel.Class.MaxSpeedMPS || assignment.SpeedMPS > mission.Constraints.MaximumSpeedMPS {
+			return program, false
+		}
+		route := []domain.GeoPointV2{vessel.Telemetry.Position}
+		for seconds := 30; seconds <= horizon; seconds += 30 {
+			predictionSeconds := float64(activationTick - currentTick + int64(seconds))
+			contact := surfaceContactAt(spec, time.UnixMilli(m.simulationEpochMS+m.simTickMS).UTC(), predictionSeconds)
+			trailCenter := pointAtBearing(contact.Position, contact.HeadingDeg+180, math.Max(80, mission.Constraints.MinimumObjectSeparationM+30))
+			offset := formationOffset(plan.Formation, index, len(plan.Assignments), mission.Constraints.FormationSpacingM, trailCenter[1])
+			point := domain.GeoPointV2{trailCenter[0] + offset[0], trailCenter[1] + offset[1]}
+			if !withinMapBounds(point) {
+				return program, false
+			}
+			route = append(route, point)
+		}
+		next := assignment
+		next.Route = route
+		next.DistanceKM = routeDistance(route)
+		if next.DistanceKM > mission.Constraints.MaximumRouteDistanceKM {
+			return program, false
+		}
+		nextPlan.Assignments = append(nextPlan.Assignments, next)
+	}
+	revision := trajectory.BuildRevision(mission, nextPlan, domain.FleetLeaseV2{ID: active.LeaseID}, program.ActiveRevision+1, currentTick, activationTick, m.secret)
+	if !trajectory.ValidateRevision(revision, m.secret) {
+		return program, false
+	}
+	trajectory.AddPending(&program, revision)
+	for _, assignment := range nextPlan.Assignments {
+		vessel := m.vessels[assignment.VesselID]
+		vessel.Telemetry.Route = clonePoints(assignment.Route)
+		vessel.Telemetry.Mode = "mission · tracking update armed"
+		m.vessels[assignment.VesselID] = vessel
+	}
+	m.persistProgramAsync(mission.ID, program)
+	return program, true
+}
+
+func pointAtBearing(start domain.GeoPointV2, bearingDeg, distanceM float64) domain.GeoPointV2 {
+	bearing := bearingDeg * math.Pi / 180
+	latDelta := math.Cos(bearing) * distanceM / 111_000
+	lonDelta := math.Sin(bearing) * distanceM / (111_000 * math.Max(.2, math.Cos(start[1]*math.Pi/180)))
+	return domain.GeoPointV2{start[0] + lonDelta, start[1] + latDelta}
+}
+
+// releaseMissionVesselsLocked holds released assets around their actual current
+// operating area. It deliberately replaces stale pre-mission assembly points,
+// so completion or deletion can never pull a group back to its launch position.
+func (m *Manager) releaseMissionVesselsLocked(missionID, source string) {
+	touchedGroups := map[string][]domain.GeoPointV2{}
+	for vesselID, vessel := range m.vessels {
+		if vessel.Telemetry.MissionID != missionID {
+			continue
+		}
+		if vessel.GroupID != "" {
+			touchedGroups[vessel.GroupID] = append(touchedGroups[vessel.GroupID], vessel.Telemetry.Position)
+		}
+		vessel.Telemetry.MissionID = ""
+		vessel.Telemetry.Route = nil
+		vessel.Telemetry.Mode = "station_keep · regrouping"
+		vessel.Telemetry.SpeedMPS = 0
+		vessel.Telemetry.TapeDepthSeconds = 0
+		m.vessels[vesselID] = vessel
+	}
+	for groupID, positions := range touchedGroups {
+		group, exists := m.groups[groupID]
+		if !exists || len(positions) == 0 {
+			continue
+		}
+		center := domain.GeoPointV2{}
+		for _, position := range positions {
+			center[0] += position[0]
+			center[1] += position[1]
+		}
+		center[0] /= float64(len(positions))
+		center[1] /= float64(len(positions))
+		group.AssemblyPoint = &center
+		group.AssemblySource = source + ":" + missionID
+		group.RouteMode = "hold"
+		group.RouteWaypoints = nil
+		group.RouteIndex = 0
+		group.RouteRevision++
+		group.Revision++
+		m.groups[groupID] = group
+	}
 }
 
 // restartMissionLoopLocked creates another signed execution revision from the

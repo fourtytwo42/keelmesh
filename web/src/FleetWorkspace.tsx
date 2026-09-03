@@ -2777,8 +2777,8 @@ function SurfaceContactInspector({ contact }: { contact: SurfaceContactV2 }) {
         />
         <Metric
           k="SPEED"
-          v={`${contact.speed_knots.toFixed(1)} kn`}
-          sub={`${contact.speed_mps.toFixed(1)} m/s`}
+          v={`${contact.speed_mps.toFixed(1)} m/s`}
+          sub={`${contact.speed_knots.toFixed(1)} kn · ${contact.navigation_state}`}
         />
         <Metric
           k="DIMENSIONS"

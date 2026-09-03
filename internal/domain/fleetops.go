@@ -172,6 +172,7 @@ type MissionWorkspaceV2 struct {
 	Constraints        ConstraintSetV2             `json:"constraints"`
 	Formation          string                      `json:"formation"`
 	Loop               bool                        `json:"loop"`
+	FollowContactID    string                      `json:"follow_contact_id,omitempty"`
 	PlanIDs            []string                    `json:"plan_ids"`
 	AuthorizedPlanID   string                      `json:"authorized_plan_id,omitempty"`
 	Conversation       []MissionChatMessageV2      `json:"conversation"`
@@ -371,6 +372,10 @@ type FleetPlanV2 struct {
 	AdvisorSource        string              `json:"advisor_source"`
 	AdvisorModel         string              `json:"advisor_model,omitempty"`
 	Maneuvers            []string            `json:"maneuvers"`
+	FollowContactID      string              `json:"follow_contact_id,omitempty"`
+	ContinuousTracking   bool                `json:"continuous_tracking,omitempty"`
+	ReplanIntervalS      int                 `json:"replan_interval_seconds,omitempty"`
+	PredictionHorizonS   int                 `json:"prediction_horizon_seconds,omitempty"`
 	Assignments          []FleetAssignmentV2 `json:"assignments"`
 	CoveragePercent      float64             `json:"coverage_percent"`
 	MinimumReserve       float64             `json:"minimum_reserve"`

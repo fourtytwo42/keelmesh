@@ -438,11 +438,29 @@ func TestPreviewDoesNotMoveAndExactHashStarts(t *testing.T) {
 	if err != nil || mission.Status != "executing" {
 		t.Fatalf("resume failed: status=%s err=%v", mission.Status, err)
 	}
+	positionsAtDelete := make([]domain.GeoPointV2, 0, len(target))
+	for _, vesselID := range target {
+		positionsAtDelete = append(positionsAtDelete, m.vessels[vesselID].Telemetry.Position)
+	}
 	if err = m.DeleteMission(mission.ID, Mutation{RequestID: "delete", IdempotencyKey: "delete", ExpectedVersion: mission.Version}); err != nil {
 		t.Fatal(err)
 	}
 	if _, exists := m.missions[mission.ID]; exists || m.vessels[target[0]].Telemetry.MissionID != "" || len(m.vessels[target[0]].Telemetry.Route) != 0 {
 		t.Fatal("deleted mission retained mission state or vessel authority")
+	}
+	group := m.groups[s.Groups[0].ID]
+	if group.AssemblyPoint == nil || group.RouteMode != "hold" {
+		t.Fatalf("deleted mission did not establish a local regroup hold: %#v", group)
+	}
+	wantCenter := domain.GeoPointV2{}
+	for _, position := range positionsAtDelete {
+		wantCenter[0] += position[0]
+		wantCenter[1] += position[1]
+	}
+	wantCenter[0] /= float64(len(positionsAtDelete))
+	wantCenter[1] /= float64(len(positionsAtDelete))
+	if geoDistanceM(*group.AssemblyPoint, wantCenter) > 1 {
+		t.Fatalf("deleted mission regrouped at %v instead of current operating center %v", *group.AssemblyPoint, wantCenter)
 	}
 }
 
@@ -1245,21 +1263,38 @@ func TestMoveGroupMemberFailsClosedDuringMission(t *testing.T) {
 	}
 }
 
-func TestSurfaceTrafficHasStableIdentityAndMovingTracks(t *testing.T) {
+func TestSurfaceTrafficHasStableIdentityAndProgrammedTracks(t *testing.T) {
 	first := surfaceContactsAt(time.Unix(1_800_000_000, 0))
 	second := surfaceContactsAt(time.Unix(1_800_000_030, 0))
-	if len(first) != 12 || len(second) != 12 {
-		t.Fatalf("expected twelve surface contacts, got %d and %d", len(first), len(second))
+	if len(first) != 16 || len(second) != 16 {
+		t.Fatalf("expected sixteen surface contacts, got %d and %d", len(first), len(second))
 	}
 	seen := map[string]bool{}
+	moving, anchored := 0, 0
 	for i := range first {
 		if first[i].ID != second[i].ID || first[i].BoatID != second[i].BoatID || seen[first[i].BoatID] {
 			t.Fatalf("surface contact identity is not stable/unique: %#v", first[i])
 		}
 		seen[first[i].BoatID] = true
-		if first[i].Position == second[i].Position || len(first[i].Route) < 2 || !first[i].Looping {
-			t.Fatalf("surface contact is not moving on a looped track: %#v", first[i])
+		if first[i].SpeedMPS == 0 {
+			anchored++
+			if first[i].Position != second[i].Position || first[i].Looping || first[i].NavigationState != "at anchor" {
+				t.Fatalf("anchored contact moved or reported underway: %#v", first[i])
+			}
+			continue
 		}
+		moving++
+		if first[i].SpeedMPS > 2.8 || first[i].Position == second[i].Position || len(first[i].Route) < 2 || !first[i].Looping {
+			t.Fatalf("moving contact exceeded its speed envelope or stopped looping: %#v", first[i])
+		}
+		for _, point := range first[i].Route {
+			if !withinMapBounds(point) {
+				t.Fatalf("surface contact route leaves the operating picture: %s at %v", first[i].BoatID, point)
+			}
+		}
+	}
+	if moving != 12 || anchored != 4 {
+		t.Fatalf("expected 12 underway and 4 anchored contacts, got %d and %d", moving, anchored)
 	}
 }
 
@@ -1288,7 +1323,7 @@ func TestFollowSurfaceContactCompilesPredictedTrack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planning.FollowContact == nil || planning.FollowContact.BoatID != "NPC-4101" || len(planning.SurfaceContacts) != 12 {
+	if planning.FollowContact == nil || planning.FollowContact.BoatID != "NPC-4101" || len(planning.SurfaceContacts) != 16 {
 		t.Fatalf("advisor context is missing bounded traffic state: %#v", planning)
 	}
 }
@@ -1343,6 +1378,9 @@ func TestControlledFleetCanOvertakeAndPlanAgainstFastestSurfaceContact(t *testin
 		t.Fatalf("expected multiple follow strategies, got %d", len(plans))
 	}
 	for _, plan := range plans {
+		if !plan.ContinuousTracking || plan.FollowContactID != fastestID || plan.ReplanIntervalS != 60 || plan.PredictionHorizonS < 120 {
+			t.Fatalf("follow plan is not bound to rolling contact tracking: %#v", plan)
+		}
 		for _, assignment := range plan.Assignments {
 			vessel := m.vessels[assignment.VesselID]
 			if assignment.SpeedMPS <= fastestContact {
@@ -1352,6 +1390,72 @@ func TestControlledFleetCanOvertakeAndPlanAgainstFastestSurfaceContact(t *testin
 				t.Fatalf("plan %s exceeds %s hardware limit: %.2f > %.2f", plan.Name, vessel.Class.Name, assignment.SpeedMPS, vessel.Class.MaxSpeedMPS)
 			}
 		}
+	}
+
+}
+
+func TestContinuousFollowArmsRollingFutureRevision(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation:  Mutation{RequestID: "rolling-create", IdempotencyKey: "rolling-create", ExpectedVersion: snapshot.FleetVersion},
+		Name:      "Rolling Blue Finch Watch",
+		TargetIDs: snapshot.Groups[0].MemberIDs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation:        Mutation{RequestID: "rolling-compile", IdempotencyKey: "rolling-compile", ExpectedVersion: mission.Version},
+		Text:            "Follow Blue Finch continuously",
+		PlanningMode:    "manual",
+		GuidanceKind:    "follow_contact",
+		FollowContactID: "surface-12",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mission = m.missions[mission.ID]
+	plans, err := m.GeneratePlans(mission.ID, PlansRequest{
+		Mutation: Mutation{RequestID: "rolling-plans", IdempotencyKey: "rolling-plans", ExpectedVersion: mission.Version},
+		DraftID:  draft.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected domain.FleetPlanV2
+	for _, candidate := range plans {
+		if candidate.PolicyStatus != "prohibited" {
+			selected = candidate
+			break
+		}
+	}
+	if selected.ID == "" {
+		t.Fatalf("expected an authorizable rolling follow plan: %#v", plans)
+	}
+	mission = m.missions[mission.ID]
+	lease, err := m.Authorize(mission.ID, selected.ID, PlanActionRequest{
+		Mutation:   Mutation{RequestID: "rolling-auth", IdempotencyKey: "rolling-auth", ExpectedVersion: mission.Version},
+		PlanHash:   selected.ContentHash,
+		OperatorID: "demo-operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mission = m.missions[mission.ID]
+	if _, err = m.Start(mission.ID, selected.ID, PlanActionRequest{
+		Mutation: Mutation{RequestID: "rolling-start", IdempotencyKey: "rolling-start", ExpectedVersion: mission.Version},
+		PlanHash: selected.ContentHash,
+		LeaseID:  lease.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for range 17 {
+		m.tick()
+	}
+	program := m.programs[mission.ID]
+	if program.PendingRevision <= program.ActiveRevision || m.missions[mission.ID].Status != "executing" {
+		t.Fatalf("continuous follow did not arm a future rolling update: active=%d pending=%d status=%s", program.ActiveRevision, program.PendingRevision, m.missions[mission.ID].Status)
 	}
 }
 

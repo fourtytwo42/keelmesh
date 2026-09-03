@@ -726,6 +726,7 @@ export type MissionWorkspaceV2 = {
   constraints: ConstraintSetV2;
   formation: string;
   loop: boolean;
+  follow_contact_id?: string;
   plan_ids: string[];
   authorized_plan_id?: string;
   conversation: MissionChatMessageV2[];
@@ -867,6 +868,10 @@ export type FleetPlanV2 = {
   advisor_source: string;
   advisor_model?: string;
   maneuvers: string[];
+  follow_contact_id?: string;
+  continuous_tracking?: boolean;
+  replan_interval_seconds?: number;
+  prediction_horizon_seconds?: number;
   assignments: FleetAssignmentV2[];
   coverage_percent: number;
   minimum_reserve: number;
