@@ -362,6 +362,7 @@ func (m *Manager) RecordExchange(ctx context.Context, turnID, actor, session, mi
 	for _, v := range values {
 		m.persistJSON(ctx, "INSERT INTO memory_conversation_turns(id,actor_id,session_id,mission_id,role,content,source_id,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO NOTHING", v.ID, v.ActorID, v.SessionID, v.MissionID, v.Role, v.Content, v.SourceID, v.CreatedAt)
 	}
+	m.persistState(ctx)
 	m.mu.RLock()
 	local := m.local
 	m.mu.RUnlock()
@@ -514,6 +515,7 @@ func (m *Manager) Forget(ctx context.Context, id string, req Mutation) (domain.M
 	m.mu.Unlock()
 	m.persistJSON(ctx, "UPDATE memory_items SET tombstoned=true,updated_at=$2 WHERE id=$1", id, v.UpdatedAt)
 	m.persistJSON(ctx, "INSERT INTO memory_tombstones(item_id,actor_id,reason,created_at) VALUES($1,$2,$3,$4) ON CONFLICT(item_id) DO NOTHING", id, req.ActorID, "operator_forget", v.UpdatedAt)
+	m.persistState(ctx)
 	m.publish("memory.current.v1", id, v)
 	m.publish("memory.invalidations.v1", id, map[string]any{"item_id": id, "tombstoned": true, "created_at": v.UpdatedAt})
 	m.mu.RLock()
@@ -566,6 +568,7 @@ func (m *Manager) DecideCandidate(ctx context.Context, id, decision string, req 
 		m.snapshot.StateVersion++
 		m.mu.Unlock()
 		m.persistJSON(ctx, "UPDATE memory_candidates SET state='rejected',decided_by=$2,decided_at=now() WHERE id=$1", id, req.ActorID)
+		m.persistState(ctx)
 	}
 	m.mu.RLock()
 	out := m.candidates[id]
@@ -731,6 +734,7 @@ func (m *Manager) Reset(ctx context.Context, req Mutation) (domain.MemorySnapsho
 	if m.pool != nil {
 		_, _ = m.pool.Exec(ctx, "TRUNCATE memory_scene_history,memory_context_assemblies,memory_retrieval_receipts,memory_conversation_turns,memory_tombstones,memory_revisions,memory_candidates,memory_items,memory_replays")
 	}
+	m.persistState(ctx)
 	return out, nil
 }
 
@@ -761,6 +765,7 @@ func (m *Manager) newCandidate(scope domain.MemoryScopeV1, kind, content, trust 
 	}
 	m.mu.Unlock()
 	m.persistJSON(context.Background(), "INSERT INTO memory_candidates(id,scope_kind,scope_id,kind,content,candidate_hash,state,requires_human,source,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(id) DO NOTHING", c.ID, scope.Kind, scope.ID, kind, content, c.CandidateHash, c.State, c.RequiresHuman, c.Source, c.CreatedAt)
+	m.persistState(context.Background())
 	m.publish("memory.candidates.v1", c.ID, c)
 	return c
 }
@@ -786,6 +791,7 @@ func (m *Manager) commitCandidate(ctx context.Context, c domain.MemoryCandidateV
 	m.persistJSON(ctx, "INSERT INTO memory_items(id,scope_kind,scope_id,kind,content,revision,source,embedding,embedding_version,outcome_quality,inferred,tombstoned,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8::vector,$9,$10,$11,false,$12,$13) ON CONFLICT(id) DO UPDATE SET content=excluded.content,revision=excluded.revision,source=excluded.source,embedding=excluded.embedding,updated_at=excluded.updated_at,tombstoned=false", item.ID, item.Scope.Kind, item.Scope.ID, item.Kind, item.Content, item.Revision, item.Source, vectorText(vector), item.EmbeddingVersion, item.OutcomeQuality, item.Inferred, item.CreatedAt, item.UpdatedAt)
 	m.persistJSON(ctx, "INSERT INTO memory_revisions(item_id,revision,content,content_hash,created_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING", item.ID, item.Revision, item.Content, checksum(item.Content), now)
 	m.persistJSON(ctx, "UPDATE memory_candidates SET state='committed',decided_by=$2,decided_at=$3 WHERE id=$1", c.ID, actor, now)
+	m.persistState(ctx)
 	m.publish("memory.current.v1", item.ID, item)
 	m.publish("memory.events.v1", item.ID, map[string]any{"kind": "memory_committed", "item": item})
 	m.mu.RLock()
@@ -837,6 +843,8 @@ func (m *Manager) load(ctx context.Context) {
 	if pool == nil {
 		return
 	}
+	var durableVersion int64
+	_ = pool.QueryRow(ctx, "SELECT state_version FROM memory_state WHERE singleton=true").Scan(&durableVersion)
 	rows, err := pool.Query(ctx, "SELECT id,scope_kind,scope_id,kind,content,revision,source,embedding_version,outcome_quality,inferred,tombstoned,created_at,updated_at FROM memory_items ORDER BY updated_at")
 	if err == nil {
 		defer rows.Close()
@@ -918,6 +926,26 @@ func (m *Manager) load(ctx context.Context) {
 			}
 		}
 		m.mu.Unlock()
+	}
+	m.mu.Lock()
+	derivedVersion := int64(1 + len(m.turns) + len(m.items) + len(m.candidates))
+	if durableVersion < derivedVersion {
+		durableVersion = derivedVersion
+	}
+	if durableVersion > m.snapshot.StateVersion {
+		m.snapshot.StateVersion = durableVersion
+	}
+	m.mu.Unlock()
+	m.persistState(ctx)
+}
+
+func (m *Manager) persistState(ctx context.Context) {
+	m.mu.RLock()
+	pool := m.pool
+	version := m.snapshot.StateVersion
+	m.mu.RUnlock()
+	if pool != nil {
+		_, _ = pool.Exec(ctx, "UPDATE memory_state SET state_version=GREATEST(state_version,$1),updated_at=now() WHERE singleton=true", version)
 	}
 }
 func (m *Manager) searchDB(ctx context.Context, req SearchRequest, vector []float32, embedOK bool) []domain.RetrievalHitV2 {
