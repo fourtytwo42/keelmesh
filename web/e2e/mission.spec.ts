@@ -219,7 +219,12 @@ test("mission planner owns map authoring and manual route generation bypasses AI
   await createSelectedMission(page);
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await expect(planner).toBeVisible();
-  await expect(planner.getByTitle("Snap right")).toBeVisible();
+  const snapRight = planner.getByTitle("Snap right");
+  await expect(snapRight).toBeVisible();
+  await expect(snapRight.locator("svg")).toHaveClass(/lucide-panel-right-close/);
+  await snapRight.click();
+  await expect(planner.getByTitle("Return to floating").locator("svg")).toHaveClass(/lucide-panel-right-open/);
+  await planner.getByTitle("Return to floating").click();
   await expect(planner.getByText("MAP AUTHORING", { exact: true })).toBeVisible();
   await planner.getByLabel("MISSION TYPE").selectOption("transit");
   await planner.getByRole("button", { name: "Waypoint", exact: true }).click();

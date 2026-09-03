@@ -3050,7 +3050,7 @@ function Planner({
             <span>Validating bounded options</span>
           </div>
         )}
-        {activePlan && <PlanMiniMap plan={activePlan} />}
+        {activePlan && <PlanMiniMap plan={activePlan} compact />}
         <div ref={chatEnd} />
       </div>
       <div className="chat-composer">
@@ -3514,27 +3514,38 @@ function PlanMiniMap({ plan, compact = false }: { plan: FleetPlanV2; compact?: b
     maxX = Math.max(...points.map((point) => point[0])),
     minY = Math.min(...points.map((point) => point[1])),
     maxY = Math.max(...points.map((point) => point[1])),
-    width = Math.max(maxX - minX, 0.0001),
-    height = Math.max(maxY - minY, 0.0001),
+    width = Math.max(maxX - minX, 0.000001),
+    height = Math.max(maxY - minY, 0.000001),
+    scale = Math.min(164 / width, 34 / height),
+    drawnWidth = width * scale,
+    drawnHeight = height * scale,
+    offsetX = 18 + (164 - drawnWidth) / 2,
+    offsetY = 7 + (34 - drawnHeight) / 2,
     colors = ["#e6a63b", "#62c58e", "#59bdd1", "#b895d8", "#e36e62", "#ece8dc"];
-  const mapPoint = (point: Point) =>
-    `${8 + ((point[0] - minX) / width) * 184},${72 - ((point[1] - minY) / height) * 64}`;
+  const mapCoordinates = (point: Point): [number, number] => [
+    offsetX + (point[0] - minX) * scale,
+    offsetY + drawnHeight - (point[1] - minY) * scale,
+  ];
+  const mapPoint = (point: Point) => mapCoordinates(point).join(",");
   return (
-    <figure className={`chat-map-card ${compact ? "compact" : ""}`}>
+    <figure className={`route-summary ${compact ? "compact" : ""}`}>
       <header>
-        <span>STATE-BACKED ROUTE PREVIEW</span>
-        <b>{plan.assignments.length} assets · {plan.duration_minutes.toFixed(1)} min</b>
+        <span>ROUTE SCHEMATIC</span>
+        <b>{plan.assignments.length} tracks · {plan.duration_minutes.toFixed(1)} min</b>
       </header>
-      <svg viewBox="0 0 200 80" role="img" aria-label={`Route preview for ${plan.name}`}>
-        <rect x="1" y="1" width="198" height="78" rx="2" />
-        {plan.assignments.map((assignment, index) => (
-          <polyline
-            key={assignment.vessel_id}
-            points={assignment.route.map(mapPoint).join(" ")}
-            style={{ stroke: colors[index % colors.length] }}
-          />
-        ))}
+      <svg viewBox="0 0 200 48" role="img" aria-label={`Route schematic for ${plan.name}`} preserveAspectRatio="xMidYMid meet">
+        <rect className="route-background" x="1" y="1" width="198" height="46" rx="2" />
+        <path className="route-grid" d="M50 2v44M100 2v44M150 2v44M2 24h196" />
+        {plan.assignments.map((assignment, index) => {
+          const color = colors[index % colors.length], start = assignment.route[0], end = assignment.route.at(-1), startXY = start ? mapCoordinates(start) : null, endXY = end ? mapCoordinates(end) : null;
+          return <g key={assignment.vessel_id}>
+            <polyline points={assignment.route.map(mapPoint).join(" ")} style={{ stroke: color }} />
+            {startXY && <circle cx={startXY[0]} cy={startXY[1]} r="1.8" style={{ fill: color }} />}
+            {endXY && <rect x={endXY[0]-1.8} y={endXY[1]-1.8} width="3.6" height="3.6" style={{ fill: color }} />}
+          </g>;
+        })}
       </svg>
+      <figcaption><i className="start-marker" /> START <i className="end-marker" /> END · colored lines are vessel tracks</figcaption>
     </figure>
   );
 }
