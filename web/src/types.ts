@@ -809,6 +809,7 @@ export type CommandDraftV2 = {
   formation_preference: string;
   guidance_kind: string;
   follow_contact_id?: string;
+  planning_mode: "manual" | "ai_assisted";
   waypoints: Point[];
   geometry_source?: string;
   resolution_notes?: string[];

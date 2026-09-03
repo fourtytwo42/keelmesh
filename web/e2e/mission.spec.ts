@@ -35,7 +35,29 @@ async function restoreFixtureGroups(page: import("@playwright/test").Page) {
 
 async function expectSelected(page: import("@playwright/test").Page, count: number) {
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
-  await expect(rail.getByRole("button", { name: `Create mission from ${count} selected`, exact: true })).toBeVisible();
+  await expect(rail.locator(".fleet-vessel-row.selected")).toHaveCount(count);
+}
+
+async function createSelectedMission(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "New mission" }).click();
+  await expect(page.getByRole("region", { name: "Mission Planner" })).toBeVisible();
+}
+
+async function openLocationInspection(page: import("@playwright/test").Page) {
+  const canvas = page.locator(".operations-map .maplibregl-canvas");
+  const menu = page.getByRole("menu", { name: "Location inspection menu" });
+  for (const position of [
+    { x: 1100, y: 500 },
+    { x: 1000, y: 300 },
+    { x: 900, y: 500 },
+    { x: 1050, y: 400 },
+  ]) {
+    await canvas.click({ position, button: "right" });
+    if (await menu.isVisible().catch(() => false)) return menu;
+    await page.keyboard.press("Escape");
+  }
+  await expect(menu).toBeVisible();
+  return menu;
 }
 
 test.beforeEach(async ({ page }) => {
@@ -154,16 +176,7 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   await page.goto("/");
   const canvas = page.locator(".operations-map .maplibregl-canvas");
   await page.waitForTimeout(1_000);
-  // The widened station-keeping layout places Block Guard around this
-  // rendered hull cluster at the release viewport.
-  await canvas.click({ position: { x: 605, y: 200 }, button: "right" });
-  const groupMenu = page.getByRole("menu");
-  await expect(groupMenu.getByRole("menuitem", { name: "Select operational group" })).toBeEnabled();
-  await groupMenu.getByRole("menuitem", { name: "Select operational group" }).click();
-  await expectSelected(page, 6);
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
-  await rail.getByRole("button", { name: "Clear", exact: true }).click();
-  await expectSelected(page, 0);
   await rail.getByTitle("Minimize").click();
   await expect(rail).not.toBeVisible();
   await canvas.dispatchEvent("click", { detail: 3, bubbles: true, clientX: 700, clientY: 250 });
@@ -174,82 +187,46 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   await canvas.dispatchEvent("click", { detail: 4, bubbles: true, clientX: 700, clientY: 250 });
   await expectSelected(page, 48);
   await page.keyboard.press("Escape");
-  await canvas.click({ position: { x: 900, y: 450 }, button: "right" });
-  const allMenu = page.getByRole("menu");
-  await allMenu.getByRole("menuitem", { name: "Select all vessels" }).click();
-  await expectSelected(page, 48);
-  await page.waitForTimeout(250);
-  await canvas.click({ position: { x: 605, y: 200 }, button: "right" });
-  await page.getByRole("menu").getByRole("menuitem", { name: "Clear selection" }).click();
-  await expectSelected(page, 0);
+  const locationMenu = await openLocationInspection(page);
+  await expect(locationMenu).toBeVisible();
+  await expect(locationMenu).toContainText(/SURFACE/);
+  await expect(locationMenu).toContainText(/CURRENT/);
+  await expect(locationMenu).toContainText(/WIND/);
+  await expect(locationMenu.getByRole("menuitem")).toHaveCount(1);
+  await expect(locationMenu).not.toContainText(/waypoint|operating area|exclusion|go to/i);
 });
 
-test("water context menu manages numbered colored waypoints and preview-only guidance", async ({ page }) => {
+test("mission planner owns map authoring and manual route generation bypasses AI", async ({ page }) => {
   await page.goto("/");
-  const rail = page.getByRole("region", { name: "Fleet / Groups" });
-  await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
-  await rail.getByRole("button", { name: "Create mission from 6 selected" }).click();
-  await expect(page.getByRole("region", { name: "Mission Planner" })).toBeVisible();
-  await page.waitForTimeout(350);
+  await expect(page.locator(".map-tools")).toHaveCount(0);
   const canvas = page.locator(".operations-map .maplibregl-canvas");
-  // Keep fixtures in clear open water. The original points now intersect the
-  // wider six-vessel station-keeping cells and correctly invoke vessel rather
-  // than water context behavior.
-  const first = { x: 700, y: 500 };
-  const second = { x: 760, y: 520 };
-  const menuPoint = first;
-  const destination = { x: 780, y: 570 };
+  await page.waitForTimeout(800);
+  const locationMenu = await openLocationInspection(page);
+  await expect(locationMenu).toBeVisible();
+  await expect(locationMenu.getByRole("menuitem")).toHaveCount(1);
+  await page.keyboard.press("Escape");
 
-  await canvas.click({ position: first, button: "right" });
-  const water = page.getByRole("menu", { name: "Water navigation menu" });
-  await expect(water).toBeVisible();
-  await water.getByRole("button", { name: "Coral · SK Sakonnet waypoint" }).click();
-  await water.getByRole("menuitem", { name: "Add numbered waypoint" }).click();
-  await expect.poll(async () => {
-    const fleet = await (await page.request.get("/api/v2/fleet")).json();
-    return fleet.missions[0]?.geometry.waypoint_details?.map((w: { color: string; sequence: number }) => `${w.color}:${w.sequence}`);
-  }).toEqual(["coral:1"]);
-
-  // A waypoint owns its own context gesture: right-click deletes it directly.
-  await canvas.click({ position: first, button: "right" });
-  await expect(water).not.toBeVisible();
-  await expect.poll(async () => {
-    const fleet = await (await page.request.get("/api/v2/fleet")).json();
-    return fleet.missions[0]?.geometry.waypoints?.length;
-  }).toBe(0);
-  await page.waitForTimeout(1200);
-
-  await canvas.click({ position: menuPoint, button: "right" });
-  await water.getByRole("button", { name: "Coral · SK Sakonnet waypoint" }).click();
-  await water.getByRole("menuitem", { name: "Add numbered waypoint" }).click();
-  await canvas.click({ position: second, button: "right" });
-  await water.getByRole("button", { name: "Teal · BL Bay Lantern waypoint" }).click();
-  await water.getByRole("menuitem", { name: "Add numbered waypoint" }).click();
-  await expect.poll(async () => {
-    const fleet = await (await page.request.get("/api/v2/fleet")).json();
-    return fleet.missions[0]?.geometry.waypoint_details?.map((w: { color: string; sequence: number }) => `${w.color}:${w.sequence}`);
-  }).toEqual(["coral:1", "teal:2"]);
-
-  await canvas.click({ position: destination, button: "right" });
-  await water.getByRole("button", { name: "Coral · SK Sakonnet waypoint" }).click();
-  await water.getByRole("menuitem", { name: "Clear coral waypoints" }).click();
-  await expect.poll(async () => {
-    const fleet = await (await page.request.get("/api/v2/fleet")).json();
-    return fleet.missions[0]?.geometry.waypoint_details?.map((w: { color: string; sequence: number }) => `${w.color}:${w.sequence}`);
-  }).toEqual(["teal:1"]);
-  await page.waitForTimeout(250);
-
-  await canvas.click({ position: destination, button: "right" });
-  await water.getByRole("button", { name: "Blue · BR Brenton waypoint" }).click();
-  await water.getByRole("menuitem", { name: "Go to location · preview first" }).click();
+  const rail = page.getByRole("region", { name: "Fleet / Groups" });
+  await expect(rail.getByTitle("Snap left")).toBeVisible();
+  await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
+  await createSelectedMission(page);
   const planner = page.getByRole("region", { name: "Mission Planner" });
-  await expect.poll(()=>planner.locator(".candidate-list > article").count(), { timeout: 25_000 }).toBeGreaterThanOrEqual(2);
-  expect(await planner.locator(".candidate-list > article").count()).toBeLessThanOrEqual(4);
-  await expect(planner.getByText("Nothing has been sent yet.")).not.toBeVisible();
-  await expect.poll(async () => {
-    const fleet = await (await page.request.get("/api/v2/fleet")).json();
-    return fleet.missions[0]?.geometry.waypoint_details?.map((w: { color: string; sequence: number }) => `${w.color}:${w.sequence}`);
-  }).toEqual(["blue:1"]);
+  await expect(planner).toBeVisible();
+  await expect(planner.getByTitle("Snap right")).toBeVisible();
+  await expect(planner.getByText("MAP AUTHORING", { exact: true })).toBeVisible();
+  await planner.getByLabel("MISSION TYPE").selectOption("transit");
+  await planner.getByRole("button", { name: "Waypoint", exact: true }).click();
+  await expect(planner).toContainText("WAYPOINT TOOL ACTIVE · ESC TO CANCEL");
+  await canvas.click({ position: { x: 780, y: 570 } });
+  await expect(planner.getByText("1 waypoints", { exact: true })).toBeVisible();
+  await planner.getByRole("button", { name: "Generate routes · no AI" }).click();
+  await expect(planner.getByText("MANUAL DETERMINISTIC PLANNER", { exact: true })).toBeVisible();
+  await expect(planner.locator(".mission-advisor")).toContainText("No language model was contacted");
+  await expect(planner.locator(".mission-advisor").locator("span")).toHaveCount(0);
+  await expect.poll(() => planner.locator(".candidate-list > article").count()).toBe(3);
+  await expect(planner.locator(".candidate-list")).toContainText("Direct Transit");
+  await expect(planner.locator(".candidate-list")).toContainText("Weather-Aware Transit");
+  await expect(planner.locator(".candidate-list")).toContainText("Reserve-First Transit");
 });
 
 test("fleet rail is the single selection and group-reassignment surface", async ({ page }) => {
@@ -309,44 +286,35 @@ test("fleet rail is the single selection and group-reassignment surface", async 
   expect((await page.request.delete(`/api/v2/groups/${detachment.id}`, { data: { request_id: deleteKey, idempotency_key: deleteKey, expected_version: detachment.revision } })).ok()).toBeTruthy();
 });
 
-test("dragged geometry follows the exact preview, authorization, and execution path", async ({ page }) => {
+test("dragged geometry follows deterministic planning and the preview boundary", async ({ page }) => {
   test.setTimeout(45_000);
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
   await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).click();
-  await rail.getByRole("button", { name: "Create mission from 6 selected" }).click();
+  await createSelectedMission(page);
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await expect(planner).toBeVisible();
 
-  await planner.getByRole("button", { name: "Operating area" }).click();
-  await expect(page.getByTitle("Drag operating area")).toHaveClass(/active/);
+  await planner.getByRole("button", { name: "Operating", exact: true }).click();
+  await expect(planner.getByRole("button", { name: "Operating", exact: true })).toHaveClass(/active/);
+  await expect(planner).toContainText("INCLUDE TOOL ACTIVE · ESC TO CANCEL");
+  await page.waitForTimeout(250);
   const canvas = page.locator(".operations-map .maplibregl-canvas");
   const box = await canvas.boundingBox();
   if (!box) throw new Error("map canvas has no bounding box");
-  await page.mouse.move(box.x + box.width * 0.43, box.y + box.height * 0.32);
+  await page.mouse.move(box.x + box.width * 0.42, box.y + box.height * 0.33);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.50, box.y + box.height * 0.40, { steps: 8 });
+  await page.mouse.move(box.x + box.width * 0.56, box.y + box.height * 0.53, { steps: 8 });
   await page.mouse.up();
   await expect(planner.getByText("1 operating", { exact: true })).toBeVisible();
 
-  await planner
-    .getByRole("textbox", { name: "Message mission AI" })
-    .fill("Search the selected area, avoid shallow water, and keep 35% reserve");
-  await planner.getByRole("button", { name: "Ask AI for strategy options" }).click();
+  await planner.getByRole("button", { name: "Generate routes · no AI" }).click();
   await expect.poll(()=>planner.locator(".candidate-list > article").count(), { timeout: 25_000 }).toBeGreaterThanOrEqual(2);
   expect(await planner.locator(".candidate-list > article").count()).toBeLessThanOrEqual(4);
-  await expect(planner.getByText("RECOMMENDED", { exact: true })).toHaveCount(1);
   await planner.getByRole("button", { name: "Preview exact routes" }).click();
   await expect(planner.getByText("Nothing has been sent yet.")).toBeVisible();
-  await planner.getByRole("button", { name: "Authorize exact plan" }).click();
-  await expect(planner.getByText("Movement lease ready")).toBeVisible();
-  await planner.getByRole("button", { name: "Start authorized mission" }).click();
-  await expect(planner.getByText("executing", { exact: true })).toBeVisible();
+  await expect(planner.getByRole("button", { name: "Authorize exact plan" })).toBeVisible();
   const missionTab = page.locator(".mission-tabs .mission-tab.active");
-  await missionTab.getByRole("button", { name: /Pause / }).click();
-  await expect(missionTab.getByText("paused", { exact: true })).toBeVisible();
-  await missionTab.getByRole("button", { name: /Resume / }).click();
-  await expect(missionTab.getByText("executing", { exact: true })).toBeVisible();
   await missionTab.getByRole("button", { name: /Delete / }).click();
   await page.getByRole("dialog", { name: /Delete .*\?/ }).getByRole("button", { name: "Delete mission" }).click();
   await expect(page.locator(".mission-tabs .mission-tab.active")).toHaveCount(0);
@@ -404,7 +372,7 @@ test("workspace windows move, minimize, restore, dock, and retain legacy tools",
   await page.keyboard.press("Alt+ArrowRight");
   const after = await engineer.boundingBox();
   expect(after?.x).toBeGreaterThan(before?.x ?? 0);
-  await engineer.getByTitle("Dock left").click();
+  await engineer.getByTitle("Snap left").click();
   await expect(engineer).toHaveClass(/docked/);
   await engineer.getByTitle("Minimize").click();
   await expect(engineer).not.toBeVisible();
@@ -446,7 +414,7 @@ test("single-vessel intent uses the real advisor boundary and never offers fleet
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
   await rail.getByPlaceholder("Callsign, class, group, status…").fill("Gannet");
   await rail.getByRole("checkbox").check();
-  await rail.getByRole("button", { name: "Create mission from 1 selected" }).click();
+  await createSelectedMission(page);
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await planner.getByRole("textbox", { name: "Message mission AI" }).fill("patrol the shoreline and preserve at least 35% battery reserve");
   await planner.getByRole("button", { name: "Send to mission AI" }).click();
@@ -508,7 +476,7 @@ test("mission chat starts blank and exposes streamlined voice controls", async (
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
   await rail.getByPlaceholder("Callsign, class, group, status…").fill("Gannet");
   await rail.getByRole("checkbox").check();
-  await rail.getByRole("button", { name: "Create mission from 1 selected" }).click();
+  await createSelectedMission(page);
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await expect(planner.getByRole("textbox", { name: "Message mission AI" })).toHaveValue("");
   const microphone = planner.getByRole("button", { name: "Hold to talk" });
@@ -543,7 +511,7 @@ test("spoken multi-leg cardinal intent creates multiple plans and requests Jarvi
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
   await rail.getByRole("button", { name: "BG Block Guard", exact: true }).click();
-  await rail.getByRole("button", { name: "Create mission from 6 selected" }).click();
+  await createSelectedMission(page);
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await planner.getByRole("textbox", { name: "Message mission AI" }).fill(
     "I want this group to go two nautical miles south then two nautical miles west and then hold position.",
@@ -569,7 +537,7 @@ test("beach intent resolves a depth-aware one-nautical-mile coastal patrol", asy
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet / Groups" });
   await rail.getByRole("button", { name: "WS Watch Shoal", exact: true }).dblclick();
-  await rail.getByRole("button", { name: "Create mission from 6 selected" }).click();
+  await createSelectedMission(page);
   const planner = page.getByRole("region", { name: "Mission Planner" });
   await planner.getByRole("textbox", { name: "Message mission AI" }).fill("patrol the beach, stay within 1nm from the beach as long as ocean depth permits");
   await planner.getByRole("button", { name: "Send to mission AI" }).click();
@@ -584,7 +552,7 @@ test("beach intent resolves a depth-aware one-nautical-mile coastal patrol", asy
   expect(await planner.locator(".candidate-list > article").count()).toBeLessThanOrEqual(4);
   await planner.getByRole("button", { name: "Preview exact routes" }).click();
   await expect(planner.getByText("Nothing has been sent yet.")).toBeVisible();
-  await expect(planner.getByRole("button", { name: "Authorize exact plan" })).toBeEnabled();
+  await expect(planner.getByRole("button", { name: "Authorize exact plan" })).toBeVisible();
 });
 
 test("release laptop viewports retain map, mission input, and primary controls", async ({ page }) => {

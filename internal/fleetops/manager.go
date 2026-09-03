@@ -105,11 +105,13 @@ type GeometryRequest struct {
 }
 type CompileRequest struct {
 	Mutation
-	Text         string              `json:"text"`
-	TargetIDs    []string            `json:"target_ids"`
-	GuidanceKind string              `json:"guidance_kind"`
-	Waypoints    []domain.GeoPointV2 `json:"waypoints"`
-	Formation    string              `json:"formation"`
+	Text            string              `json:"text"`
+	TargetIDs       []string            `json:"target_ids"`
+	GuidanceKind    string              `json:"guidance_kind"`
+	FollowContactID string              `json:"follow_contact_id"`
+	PlanningMode    string              `json:"planning_mode"`
+	Waypoints       []domain.GeoPointV2 `json:"waypoints"`
+	Formation       string              `json:"formation"`
 }
 type PlansRequest struct {
 	Mutation
@@ -1272,11 +1274,38 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	}
 	geometrySource := ""
 	notes := []string{}
+	if (kind == "hold" || kind == "orbit") && len(req.Waypoints) == 0 {
+		for i := len(mission.Geometry.POIs) - 1; i >= 0; i-- {
+			poi := mission.Geometry.POIs[i]
+			if poi.Kind == kind {
+				wps = []domain.GeoPointV2{poi.Position}
+				geometrySource = "mission:poi:" + poi.ID
+				notes = append(notes, fmt.Sprintf("Using %s as the deterministic %s objective.", poi.Name, kind))
+				break
+			}
+		}
+	}
 	followContactID := ""
-	if spec, contact, ok := resolveSurfaceContact(req.Text, time.Now().UTC()); ok {
+	contactSpec, contact, contactFound := surfaceTrafficSpec{}, domain.SurfaceContactV2{}, false
+	if req.FollowContactID != "" {
+		for _, spec := range surfaceTraffic {
+			if spec.ID == req.FollowContactID || strings.EqualFold(spec.BoatID, req.FollowContactID) {
+				contactSpec = spec
+				contact = surfaceContactAt(spec, time.UnixMilli(m.simulationEpochMS+m.simTickMS).UTC(), 0)
+				contactFound = true
+				break
+			}
+		}
+		if !contactFound {
+			return domain.CommandDraftV2{}, &Error{"SURFACE_CONTACT_NOT_FOUND", "The selected surface contact is no longer available."}
+		}
+	} else {
+		contactSpec, contact, contactFound = resolveSurfaceContact(req.Text, time.UnixMilli(m.simulationEpochMS+m.simTickMS).UTC())
+	}
+	if contactFound {
 		wps = make([]domain.GeoPointV2, 0, 12)
 		for seconds := 60.0; seconds <= 720; seconds += 60 {
-			wps = append(wps, surfaceContactAt(spec, contact.UpdatedAt, seconds).Position)
+			wps = append(wps, surfaceContactAt(contactSpec, contact.UpdatedAt, seconds).Position)
 		}
 		kind = "follow_contact"
 		followContactID = contact.ID
@@ -1351,11 +1380,18 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	if len(wps) == 0 && len(mission.Geometry.IncludedAreas) == 0 {
 		amb = append(amb, "Choose an area or waypoint before route generation.")
 	}
-	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, FollowContactID: followContactID, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, Ambiguities: amb}
+	planningMode := req.PlanningMode
+	if planningMode == "" {
+		planningMode = "ai_assisted"
+	}
+	if planningMode != "manual" && planningMode != "ai_assisted" {
+		return domain.CommandDraftV2{}, &Error{"INVALID_PLANNING_MODE", "Planning mode must be manual or ai_assisted."}
+	}
+	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, FollowContactID: followContactID, PlanningMode: planningMode, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, Ambiguities: amb}
 	draft.ContentHash = hashWithout(draft)
 	m.drafts[draft.ID] = draft
 	messageID := "message-" + shortHash(req.IdempotencyKey)
-	if !hasChatMessage(mission.Conversation, messageID) {
+	if planningMode != "manual" && !hasChatMessage(mission.Conversation, messageID) {
 		mission.Conversation = append(mission.Conversation, domain.MissionChatMessageV2{ID: messageID, Role: "operator", Markdown: req.Text, State: "complete", CreatedAt: time.Now().UTC()})
 	}
 	mission.UpdatedAt = time.Now().UTC()
@@ -1490,7 +1526,8 @@ func (m *Manager) ApplyAdvisor(draftID string, advisor domain.MissionAdvisorV2) 
 		FleetVersion int64
 		Constraints  domain.ConstraintSetV2
 		Strategies   []domain.MissionStrategyV2
-	}{draft.ID, draft.MissionID, draft.SourceText, draft.TargetIDs, draft.GeometryRevision, draft.FleetVersion, draft.Constraints, advisor.Strategies})
+		PlanningMode string
+	}{draft.ID, draft.MissionID, draft.SourceText, draft.TargetIDs, draft.GeometryRevision, draft.FleetVersion, draft.Constraints, advisor.Strategies, draft.PlanningMode})
 	m.drafts[draftID] = draft
 	return draft, nil
 }
@@ -2224,6 +2261,29 @@ func deterministicAdvisor(targetCount int, guidance, reason string) domain.Missi
 			{ID: "close-trail", Name: "Close Trail", Description: "Intercept the predicted track and maintain a compact stern-quarter trail with conservative collision margins.", Formation: formation, GuidanceKind: guidance, SpeedFactor: .78, ReserveBias: .4, Maneuvers: []string{"intercept predicted contact track", "settle astern at safe separation", "match course and speed", "replan on track change"}},
 			{ID: "wide-shadow", Name: "Wide Shadow", Description: "Observe from a wider lateral offset to reduce maneuvering and preserve separation from unrelated traffic.", Formation: formation, GuidanceKind: guidance, SpeedFactor: .62, ReserveBias: .62, Maneuvers: []string{"approach outside contact corridor", "establish lateral stand-off", "parallel predicted track", "hold if confidence degrades"}},
 			{ID: "reserve-watch", Name: "Reserve-First Watch", Description: "Use an economical intercept and accept a larger following distance to protect the configured reserve floor.", Formation: formation, GuidanceKind: guidance, SpeedFactor: .46, ReserveBias: .84, Maneuvers: []string{"intercept at economy speed", "maintain long trail", "monitor reserve and separation", "disengage to safe hold"}},
+		}}
+	}
+	formation := "column"
+	if targetCount == 1 {
+		formation = "independent"
+	}
+	if guidance == "transit" || guidance == "custom_route" {
+		return domain.MissionAdvisorV2{State: "fallback", Provider: "deterministic", Model: "keelmesh-target-aware-v2", Summary: "Route alternatives are computed from the operator-authored waypoint sequence: " + reason, MissionName: "Operation Safe Passage", Strategies: []domain.MissionStrategyV2{
+			{ID: "direct-transit", Name: "Direct Transit", Description: "Follow the authored route at the highest policy-valid cruise speed.", Formation: formation, GuidanceKind: guidance, SpeedFactor: .9, ReserveBias: .25, Maneuvers: []string{"join authored route", "transit at bounded cruise", "hold at final waypoint"}},
+			{ID: "weather-transit", Name: "Weather-Aware Transit", Description: "Reduce speed and favor smoother turns under the simulated current and wind field.", Formation: formation, GuidanceKind: guidance, SpeedFactor: .68, ReserveBias: .5, Maneuvers: []string{"join authored route", "counter simulated drift", "hold at final waypoint"}},
+			{ID: "economy-transit", Name: "Reserve-First Transit", Description: "Use an economical speed profile to maximize projected reserve at arrival.", Formation: formation, GuidanceKind: guidance, SpeedFactor: .48, ReserveBias: .85, Maneuvers: []string{"join authored route", "transit at economy speed", "reserve check at each waypoint", "hold at final waypoint"}},
+		}}
+	}
+	if guidance == "hold" || guidance == "orbit" {
+		label := "Hold"
+		maneuver := "establish bounded position hold"
+		if guidance == "orbit" {
+			label, maneuver = "Orbit", "establish bounded orbit"
+		}
+		return domain.MissionAdvisorV2{State: "fallback", Provider: "deterministic", Model: "keelmesh-target-aware-v2", Summary: label + " alternatives are computed from the operator-authored point: " + reason, MissionName: "Operation Station Watch", Strategies: []domain.MissionStrategyV2{
+			{ID: "precise-station", Name: "Precise " + label, Description: "Prioritize positional accuracy while remaining inside the configured energy and separation envelope.", Formation: formation, GuidanceKind: guidance, SpeedFactor: .72, ReserveBias: .3, Maneuvers: []string{"approach authored point", maneuver, "counter drift within guardrails"}},
+			{ID: "balanced-station", Name: "Balanced " + label, Description: "Balance station accuracy against propulsion demand and reserve.", Formation: formation, GuidanceKind: guidance, SpeedFactor: .55, ReserveBias: .55, Maneuvers: []string{"approach authored point", maneuver, "periodic reserve check"}},
+			{ID: "economy-station", Name: "Economy " + label, Description: "Permit the widest authorized station envelope to protect reserve.", Formation: formation, GuidanceKind: guidance, SpeedFactor: .38, ReserveBias: .85, Maneuvers: []string{"approach at economy speed", maneuver, "safe hold before reserve floor"}},
 		}}
 	}
 	if targetCount == 1 {

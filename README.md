@@ -110,9 +110,19 @@ M6 makes the default interface a compact map-first operating workspace for 48
 persistent named vessels in Narragansett Bay and Rhode Island Sound. Operators
 can select individuals or complete groups, inspect mesh reachability separately
 from authority, retain overlapping collections, manage operational-group
-identity, and run independent mission tabs. Area, exclusion, and waypoint
-geometry plus typed or spoken intent produce deterministic formation options;
-every option still follows preview → exact-hash authorization → execution.
+identity, and run independent mission tabs. Mission authoring is deliberately
+contained inside each floating Mission Planner: assigned assets, operating and
+exclusion areas, numbered routes, hold/orbit points, formation, constraints,
+and authorization stay scoped to the active draft. Fleet/Groups can snap left,
+Mission Planner can snap right, and both remain movable and floating by default.
+
+The structured builder has separate **Generate routes · no AI** and **Ask AI**
+paths. Manual planning never contacts a provider; AI-assisted planning records
+the accepted provider attempt. Both compile into the same deterministic Go
+planner and share preview → exact-hash authorization → execution. Empty-water
+and land right-click are read-only inspections, controlled-vessel right-click
+contains awareness plus bounded group hold, and contact planning opens an
+uncommitted planner seed before any mission is created.
 
 Idle operational groups also have a bounded map-navigation controller. Hold
 points and numbered waypoints are draggable; group-colored routes can run once,
@@ -131,7 +141,7 @@ VM-local runtime artifact outside Git. Browser capture requires HTTPS, so the
 temporary Cloudflare Quick Tunnel is used for microphone demos while the LAN URL
 continues to provide the rest of the workspace.
 
-The operating picture includes twelve fictional, non-commandable surface contacts on deterministic looped routes. Six original transparent traffic sprites cover container ship, tanker, ferry, fishing trawler, patrol ship, and sailing yacht classes and remain visually unchanged in Pirate mode. Names, simulated boat IDs, colors, motion, and predicted tracks are available to the bounded mission advisor for policy-checked intercept and follow plans. With one complete operational group selected, right-clicking a contact exposes `Follow with <group>` and sends the stable Boat ID through the AI-advisor and deterministic preview/authorization path.
+The operating picture includes twelve fictional, non-commandable surface contacts on deterministic looped routes. Six original transparent traffic sprites cover container ship, tanker, ferry, fishing trawler, patrol ship, and sailing yacht classes and remain visually unchanged in Pirate mode. Names, simulated boat IDs, colors, motion, and predicted tracks are available to the bounded mission advisor for policy-checked intercept and follow plans. Right-clicking a contact can inspect it or seed Mission Planner; using that seed remains an explicit current/new mission choice and never creates authority by itself.
 
 ```bash
 scripts/keelmesh status

@@ -69,6 +69,36 @@ func TestSimulationRateIsBoundedAndControlsAuthoritativeClock(t *testing.T) {
 	}
 }
 
+func TestManualCompileAndExplicitContactAreStructured(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	targets := snapshot.Groups[0].MemberIDs
+	mission, err := m.CreateMission(CreateMissionRequest{Mutation: Mutation{RequestID: "manual-mission", IdempotencyKey: "manual-mission", ExpectedVersion: snapshot.FleetVersion}, Name: "Manual Watch", TargetIDs: targets})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mission, err = m.SetGeometry(mission.ID, GeometryRequest{Mutation: Mutation{RequestID: "manual-geometry", IdempotencyKey: "manual-geometry", ExpectedVersion: mission.Version}, Waypoints: []domain.GeoPointV2{{-71.40, 41.36}, {-71.38, 41.34}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{Mutation: Mutation{RequestID: "manual-compile", IdempotencyKey: "manual-compile", ExpectedVersion: mission.Version}, Text: "Manual transit route", PlanningMode: "manual", GuidanceKind: "transit", Formation: "column"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.PlanningMode != "manual" || draft.GuidanceKind != "transit" || len(draft.Waypoints) != 2 {
+		t.Fatalf("unexpected manual draft: %#v", draft)
+	}
+
+	current := m.missions[mission.ID]
+	follow, err := m.Compile(mission.ID, CompileRequest{Mutation: Mutation{RequestID: "follow-compile", IdempotencyKey: "follow-compile", ExpectedVersion: current.Version}, Text: "Follow selected contact", PlanningMode: "manual", FollowContactID: "surface-01", GuidanceKind: "follow_contact"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if follow.FollowContactID != "surface-01" || len(follow.Waypoints) != 12 || follow.GeometrySource != "intent:surface-contact:surface-01" {
+		t.Fatalf("explicit contact was not resolved: %#v", follow)
+	}
+}
+
 func TestLocalAdjustmentStopsAndEscalatesOutsideGuardrails(t *testing.T) {
 	m := New("", slog.Default())
 	vessel := m.vessels[m.groups["group-01"].MemberIDs[1]]

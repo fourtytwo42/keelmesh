@@ -63,9 +63,13 @@ import {
   Volume2,
   Waves,
   X,
+  RotateCcw,
+  CircleDot,
+  Undo2,
 } from "lucide-react";
 
-type Tool = "select" | "box" | "waypoint" | "include" | "exclude";
+type Tool = "select" | "box" | "waypoint" | "include" | "exclude" | "hold" | "orbit";
+type GeometryFocus = { kind: "waypoint" | "include" | "exclude" | "poi"; index: number };
 const formations = [
   "column",
   "line_abreast",
@@ -103,6 +107,9 @@ export function FleetWorkspace() {
     [activeMissionID, setActiveMissionID] = useState<string>(""),
     [activeGroupID, setActiveGroupID] = useState<string>(""),
     [tool, setTool] = useState<Tool>("select"),
+    [plannerVisible, setPlannerVisible] = useState(false),
+    [plannerContactSeed, setPlannerContactSeed] = useState<SurfaceContactV2 | null>(null),
+    [geometryFocus, setGeometryFocus] = useState<GeometryFocus | null>(null),
     [search, setSearch] = useState(""),
     [command, setCommand] = useState(""),
     [draft, setDraft] = useState<CommandDraftV2 | null>(null),
@@ -129,7 +136,8 @@ export function FleetWorkspace() {
     recorder = useRef<MediaRecorder | null>(null),
     recordingStream = useRef<MediaStream | null>(null),
     recordingChunks = useRef<BlobPart[]>([]),
-    stopRequested = useRef(false);
+    stopRequested = useRef(false),
+    geometryHistory = useRef<Record<string, MissionWorkspaceV2["geometry"][]>>({});
   const [inspectVesselID, setInspectVesselID] = useState(""),
     [inspectContactID, setInspectContactID] = useState(""),
     [windowActivations, setWindowActivations] = useState<
@@ -265,12 +273,20 @@ export function FleetWorkspace() {
     return () => document.removeEventListener("dragend", mark, true);
   }, []);
   const open = useCallback((id: string) => {
+    if (id === "planner") setPlannerVisible(true);
     setWindows((current) => new Set(current).add(id));
     setWindowActivations((current) => ({
       ...current,
       [id]: (current[id] ?? 0) + 1,
     }));
   }, []);
+  useEffect(() => {
+    setTool("select");
+    setGeometryFocus(null);
+  }, [activeMissionID]);
+  useEffect(() => {
+    if (!plannerVisible) setTool("select");
+  }, [plannerVisible]);
   const revealFleet = useCallback(() => open("fleet"), [open]);
   const select = useCallback(
     (ids: string[], mode: "replace" | "toggle") => {
@@ -322,10 +338,6 @@ export function FleetWorkspace() {
       ) ?? []
     );
   }, [fleet, search]);
-  const selectionMatchesMission =
-    !!mission &&
-    selected.size === mission.target_ids.length &&
-    mission.target_ids.every((id) => selected.has(id));
   const inspectedVessel = inspectVesselID
     ? vesselsByID.get(inspectVesselID)
     : undefined;
@@ -411,17 +423,6 @@ export function FleetWorkspace() {
     return m;
   }
   async function createMission() {
-    const source = mission;
-    if (
-      source &&
-      source.status === "draft" &&
-      source.target_ids.length === selected.size &&
-      source.target_ids.every((id) => selected.has(id))
-    ) {
-      setActiveMissionID(source.id);
-      open("planner");
-      return;
-    }
     await createMissionFor([...selected]);
   }
   async function createGroupFor(memberIDs: string[], name?: string) {
@@ -651,6 +652,7 @@ export function FleetWorkspace() {
           next.delete("planner");
           return next;
         });
+      if (updated.missions.length === 0) setPlannerVisible(false);
     }
   }
   function waypointEntries(value: MissionWorkspaceV2) {
@@ -671,6 +673,45 @@ export function FleetWorkspace() {
       [...selected].every((id) => group.member_ids.includes(id)),
     );
   }
+  function rememberGeometry(value: MissionWorkspaceV2) {
+    const stack = geometryHistory.current[value.id] ?? [];
+    stack.push(structuredClone(value.geometry));
+    geometryHistory.current[value.id] = stack.slice(-20);
+  }
+  async function saveGeometry(
+    target: MissionWorkspaceV2,
+    geometry: MissionWorkspaceV2["geometry"],
+    remember = true,
+  ) {
+    const current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find(
+      (candidate) => candidate.id === target.id,
+    );
+    if (!current) return null;
+    if (remember) rememberGeometry(current);
+    const updated = await mutate(() =>
+      api<MissionWorkspaceV2>(`/api/v2/missions/${current.id}/geometry`, {
+        method: "POST",
+        body: JSON.stringify({
+          request_id: requestID("geometry"),
+          idempotency_key: requestID("geometry-key"),
+          expected_version: current.version,
+          included_areas: geometry.included_areas,
+          exclusion_areas: geometry.exclusion_areas,
+          waypoints: geometry.waypoints,
+          waypoint_details: geometry.waypoint_details,
+          pois: geometry.pois,
+        }),
+      }),
+    ).catch(() => null);
+    if (updated) {
+      setPlans([]);
+      setDraft(null);
+      setPreview(null);
+      setLease(null);
+      await refresh();
+    }
+    return updated;
+  }
   async function saveWaypoints(
     target: MissionWorkspaceV2,
     entries: MissionWaypointV2[],
@@ -684,43 +725,15 @@ export function FleetWorkspace() {
       position: entry.position,
       sequence: index + 1,
     }));
-    const updated = await mutate(() =>
-      api<MissionWorkspaceV2>(`/api/v2/missions/${current.id}/geometry`, {
-        method: "POST",
-        body: JSON.stringify({
-          request_id: requestID("geometry"),
-          idempotency_key: requestID("geometry-key"),
-          expected_version: current.version,
-          included_areas: current.geometry.included_areas,
-          exclusion_areas: current.geometry.exclusion_areas,
-          waypoints: normalized.map((entry) => entry.position),
-          waypoint_details: normalized,
-          pois: current.geometry.pois,
-        }),
-      }),
-    ).catch(() => null);
-    if (updated) {
-      setPlans([]);
-      setDraft(null);
-      setPreview(null);
-      setLease(null);
-      await refresh();
-    }
-    return updated;
-  }
-  async function missionForWaypoint() {
-    if (mission) return mission;
-    if (selected.size > 0) return createMissionFor([...selected]);
-    setError(
-      pirate
-        ? "Muster ships before dropping a bearing mark."
-        : "Select vessels or create a mission before adding a waypoint.",
-    );
-    return null;
+    return saveGeometry(current, {
+      ...current.geometry,
+      waypoints: normalized.map((entry) => entry.position),
+      waypoint_details: normalized,
+    });
   }
   async function addWaypoint(p: Point, color: WaypointColor) {
-    const target = await missionForWaypoint();
-    if (!target) return;
+    if (!mission || !plannerVisible) return;
+    const target = mission;
     const owner = selectedOperationalGroup();
     const entries = waypointEntries(target);
     entries.push({
@@ -764,6 +777,59 @@ export function FleetWorkspace() {
       : [];
     await saveWaypoints(mission, entries);
   }
+  async function addPOI(kind: "hold" | "orbit", position: Point) {
+    if (!mission || !plannerVisible) return;
+    const next = {
+      ...mission.geometry,
+      pois: [
+        ...mission.geometry.pois,
+        { id: requestID(kind), name: kind === "hold" ? "Hold point" : "Orbit point", kind, position, radius_m: kind === "orbit" ? 180 : 50 },
+      ],
+    };
+    await saveGeometry(mission, next);
+  }
+  async function movePOI(index: number, position: Point) {
+    if (!mission || !mission.geometry.pois[index]) return;
+    const next = structuredClone(mission.geometry);
+    next.pois[index] = { ...next.pois[index], position };
+    await saveGeometry(mission, next);
+  }
+  async function deleteGeometry(focus: GeometryFocus) {
+    if (!mission) return;
+    if (focus.kind === "waypoint") return deleteWaypoint(focus.index);
+    const next = structuredClone(mission.geometry);
+    if (focus.kind === "include") next.included_areas.splice(focus.index, 1);
+    if (focus.kind === "exclude") next.exclusion_areas.splice(focus.index, 1);
+    if (focus.kind === "poi") next.pois.splice(focus.index, 1);
+    setGeometryFocus(null);
+    await saveGeometry(mission, next);
+  }
+  async function clearGeometry(kind: "include" | "exclude" | "waypoint" | "poi") {
+    if (!mission) return;
+    if (kind === "waypoint") return clearWaypoints();
+    const next = structuredClone(mission.geometry);
+    if (kind === "include") next.included_areas = [];
+    if (kind === "exclude") next.exclusion_areas = [];
+    if (kind === "poi") next.pois = [];
+    setGeometryFocus(null);
+    await saveGeometry(mission, next);
+  }
+  async function reorderWaypoint(index: number, direction: -1 | 1) {
+    if (!mission) return;
+    const entries = waypointEntries(mission), destination = index + direction;
+    if (!entries[index] || destination < 0 || destination >= entries.length) return;
+    [entries[index], entries[destination]] = [entries[destination], entries[index]];
+    setGeometryFocus({ kind: "waypoint", index: destination });
+    await saveWaypoints(mission, entries);
+  }
+  async function undoGeometry() {
+    if (!mission) return;
+    const stack = geometryHistory.current[mission.id] ?? [], previous = stack.pop();
+    if (!previous) return;
+    geometryHistory.current[mission.id] = stack;
+    setGeometryFocus(null);
+    await saveGeometry(mission, previous, false);
+  }
   async function commandGroupRoute(
     groupID: string,
     action: "start_once" | "enable_loop" | "pause_after_leg" | "clear" | "hold_at_vessel",
@@ -805,88 +871,31 @@ export function FleetWorkspace() {
     if (group.route_mode === "pause_pending") return;
     return commandGroupRoute(groupID, "start_once");
   }
-  async function clearGroupWaypoints(groupID: string) {
-    const group = fleet?.groups.find((candidate) => candidate.id === groupID);
-    if (!group) return;
-    if (mission) {
-      const remaining = waypointEntries(mission).filter(
-        (entry) =>
-          entry.owner_group_id !== groupID &&
-          !(!entry.owner_group_id && entry.color === group.color_name),
-      );
-      await saveWaypoints(mission, remaining);
-    }
-    await commandGroupRoute(groupID, "clear", []);
-  }
   async function holdGroupAtVessel(groupID: string, vesselID: string) {
     await commandGroupRoute(groupID, "hold_at_vessel", [], vesselID);
   }
-  async function goToLocation(p: Point, color: WaypointColor) {
-    let target: MissionWorkspaceV2 | null = selectionMatchesMission
-      ? mission
-      : null;
-    if (!target && selected.size > 0)
-      target = await createMissionFor([...selected]);
+  function planSurfaceContact(contactID: string) {
+    const contact = fleet?.surface_contacts.find((item) => item.id === contactID);
+    if (!contact) return;
+    setPlannerContactSeed(contact);
+    setTool("select");
+    open("planner");
+  }
+  async function applyContactSeed(createNew: boolean) {
+    if (!plannerContactSeed) return;
+    let target = createNew ? await createMissionFor([...selected]) : mission;
     if (!target) {
-      setError(
-        pirate
-          ? "Muster ships before ordering a course."
-          : "Select one or more vessels before choosing Go to location.",
-      );
+      setError("Select one or more vessels before creating a contact-follow mission.");
       return;
     }
-    const entry: MissionWaypointV2 = {
-      id: requestID("waypoint"),
-      position: p,
-      color,
-      sequence: 1,
-      owner_group_id: selectedOperationalGroup()?.id,
-    };
-    const updated = await saveWaypoints(target, [entry]);
-    if (!updated) return;
-    const text = `Navigate the selected assets to the ${color} waypoint 1, then hold position.`;
-    setCommand(text);
-    await createPlans(updated, text);
-  }
-  async function useWaypointColor(color: WaypointColor) {
-    if (!mission) return;
-    const text = `Navigate the selected assets through the ${color} waypoints in numbered order.`;
-    setCommand(text);
-    await createPlans(mission, text);
-  }
-  async function followSurfaceContact(contactID: string, groupID: string) {
-    const current = await api<FleetSnapshotV2>("/api/v2/fleet");
-    const contact = current.surface_contacts.find((item) => item.id === contactID);
-    const group = current.groups.find((item) => item.id === groupID);
-    if (!contact || !group) {
-      setError("The selected group or surface contact is no longer available.");
-      return;
-    }
-    const exactGroupSelected =
-      selected.size === group.member_ids.length &&
-      group.member_ids.every((id) => selected.has(id));
-    if (!exactGroupSelected) {
-      setError("Select exactly one complete operational group before following a contact.");
-      return;
-    }
-    const intent = `Have ${group.code} ${group.name} follow ${contact.name} (${contact.boat_id}) at a safe stand-off distance.`;
-    setCommand(intent);
-    let target = current.missions.find(
-      (item) =>
-        item.status !== "completed" &&
-        item.status !== "ended" &&
-        item.target_ids.length === group.member_ids.length &&
-        item.target_ids.every((id) => group.member_ids.includes(id)),
-    );
-    if (!target) target = await createMissionFor(group.member_ids, "ai") ?? undefined;
-    if (!target) return;
+    const intent = `Follow ${plannerContactSeed.name} (${plannerContactSeed.boat_id}) at a safe stand-off distance.`;
     setActiveMissionID(target.id);
+    setCommand(intent);
     setPlans([]);
     setDraft(null);
     setPreview(null);
     setLease(null);
     open("planner");
-    await createPlans(target, intent);
   }
   async function setSimulationRate(rate: FleetSnapshotV2["simulation_rate"]) {
     const current = await api<FleetSnapshotV2>("/api/v2/fleet");
@@ -904,38 +913,19 @@ export function FleetWorkspace() {
     if (updated) setFleet(updated);
   }
   async function addPolygon(kind: "include" | "exclude", poly: Point[]) {
-    let target: MissionWorkspaceV2 | null = mission;
-    if (!target && selected.size > 0) target = await createMissionFor([...selected]);
-    if (!target) {
-      setError("Select one or more vessels before drawing mission geometry.");
-      return;
-    }
-    await mutate(() =>
-      api(`/api/v2/missions/${target.id}/geometry`, {
-        method: "POST",
-        body: JSON.stringify({
-          request_id: requestID("geometry"),
-          idempotency_key: requestID("geometry-key"),
-          expected_version: target.version,
-          included_areas:
-            kind === "include"
-              ? [...target.geometry.included_areas, poly]
-              : target.geometry.included_areas,
-          exclusion_areas:
-            kind === "exclude"
-              ? [...target.geometry.exclusion_areas, poly]
-              : target.geometry.exclusion_areas,
-          waypoints: target.geometry.waypoints,
-          waypoint_details: target.geometry.waypoint_details,
-          pois: target.geometry.pois,
-        }),
-      }),
-    );
-    await refresh();
+    if (!mission || !plannerVisible) return;
+    await saveGeometry(mission, {
+      ...mission.geometry,
+      included_areas: kind === "include" ? [...mission.geometry.included_areas, poly] : mission.geometry.included_areas,
+      exclusion_areas: kind === "exclude" ? [...mission.geometry.exclusion_areas, poly] : mission.geometry.exclusion_areas,
+    });
   }
   async function createPlans(
     targetMission: MissionWorkspaceV2 | null,
     intent = command,
+    planningMode: "manual" | "ai_assisted" = "ai_assisted",
+    guidanceKind = "",
+    followContactID = "",
   ) {
     if (!targetMission) return;
     const compiled = await mutate(() =>
@@ -950,6 +940,9 @@ export function FleetWorkspace() {
             text: intent,
             target_ids: targetMission.target_ids,
             formation: targetMission.formation,
+            planning_mode: planningMode,
+            guidance_kind: guidanceKind,
+            follow_contact_id: followContactID,
           }),
         },
       ),
@@ -957,7 +950,7 @@ export function FleetWorkspace() {
     if (!compiled) return;
     setDraft(compiled);
     setCommand("");
-    if (autoRead && compiled.advisor?.summary)
+    if (planningMode === "ai_assisted" && autoRead && compiled.advisor?.summary)
       void speak(compiled.advisor.summary);
     const current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find(
       (m) => m.id === targetMission.id,
@@ -1185,6 +1178,7 @@ export function FleetWorkspace() {
     defs.push({
       id: "fleet",
       kind: "primary",
+      preferredDock: "left",
       title: pirate ? "Flotilla / Crews" : "Fleet / Groups",
       icon: <Ship />,
       activation: windowActivations.fleet,
@@ -1211,10 +1205,8 @@ export function FleetWorkspace() {
           onCreateGroup={createGroup}
           onCreateGroupFromVessel={createGroupFromVessel}
           onDeleteGroup={deleteGroup}
-          onCreateMission={createMission}
           mission={mission}
           onCycleRoute={cycleGroupRoute}
-          onClearGroupWaypoints={clearGroupWaypoints}
           onHoldGroupAtVessel={holdGroupAtVessel}
         />
       ),
@@ -1271,6 +1263,8 @@ export function FleetWorkspace() {
       id: "planner",
       kind: "primary",
       maximizable: true,
+      preferredDock: "right",
+      onVisibilityChange: (visible) => setPlannerVisible(visible),
       activation: windowActivations.planner,
       title: pirate ? "Voyage Plotter" : "Mission Planner",
       icon: <Route />,
@@ -1296,12 +1290,16 @@ export function FleetWorkspace() {
             speechState === "requesting microphone" ||
             speechState.startsWith("listening")
           }
+          tool={tool}
+          contactSeed={plannerContactSeed}
+          geometryFocus={geometryFocus}
           onVoice={setVoice}
           onSpeak={(text) => void speak(text)}
           onAutoRead={setAutoRead}
           onTranscriptionStart={() => void beginTranscription()}
           onTranscriptionStop={endTranscription}
           onFormation={(f) => updateMission({ formation: f })}
+          onObjective={(objective) => updateMission({ objective })}
           onAssignGroup={(groupID) => {
             const group = fleet.groups.find((candidate) => candidate.id === groupID);
             if (group) {
@@ -1314,7 +1312,17 @@ export function FleetWorkspace() {
           }}
           onArea={(kind) => setTool(kind)}
           onTool={setTool}
-          onCreate={(intent) => createPlans(mission, intent)}
+          onCreate={(intent) => createPlans(mission, intent, "ai_assisted")}
+          onGenerateManual={(intent, guidance, followContactID) =>
+            createPlans(mission, intent, "manual", guidance, followContactID)
+          }
+          onApplyContactSeed={applyContactSeed}
+          onClearContactSeed={() => setPlannerContactSeed(null)}
+          onUndoGeometry={() => void undoGeometry()}
+          onClearGeometry={(kind) => void clearGeometry(kind)}
+          onDeleteGeometry={(focus) => void deleteGeometry(focus)}
+          onFocusGeometry={setGeometryFocus}
+          onReorderWaypoint={(index, direction) => void reorderWaypoint(index, direction)}
           onPlan={setPlanID}
           onPreview={previewPlan}
           onAuthorize={authorize}
@@ -1542,6 +1550,7 @@ export function FleetWorkspace() {
               className="mission-tab-main"
               onClick={() => {
                 setActiveMissionID(m.id);
+                setPlannerContactSeed(null);
                 setPlans([]);
                 setDraft(null);
                 setPreview(null);
@@ -1588,74 +1597,41 @@ export function FleetWorkspace() {
         selected={selected}
         activePlan={activePlan}
         tool={tool}
+        editingEnabled={plannerVisible && !!mission}
+        focusedGeometry={geometryFocus}
         onSelect={(ids, mode) => {
           select(ids, mode);
+          if (plannerVisible && tool === "box" && mission && mode === "replace" && ids.length > 0)
+            void updateMission({ target_ids: ids });
         }}
         onGroup={selectGroup}
+        onVessel={(id) => {
+          setInspectVesselID(id);
+          open("inspector");
+        }}
+        onOpenFleet={revealFleet}
         onContact={(id) => {
           setInspectContactID(id);
           open("contact-inspector");
         }}
-        onFollowContact={(contactID, groupID) =>
-          void followSurfaceContact(contactID, groupID)
-        }
+        onPlanContact={planSurfaceContact}
+        onGeometryFocus={(kind, index) => {
+          setGeometryFocus({ kind, index });
+          open("planner");
+        }}
         onWaypoint={addWaypoint}
+        onPOI={addPOI}
         onMoveWaypoint={moveWaypoint}
-        onDeleteWaypoint={deleteWaypoint}
-        onClearWaypoints={clearWaypoints}
-        onClearGroupAssembly={(groupID) =>
-          void patchGroup(groupID, { clear_assembly_point: true })
-        }
+        onMovePOI={movePOI}
         onMoveGroupAssembly={(groupID, point) =>
           void patchGroup(groupID, { assembly_point: point })
         }
-        onClearGroupWaypoints={(groupID) => void clearGroupWaypoints(groupID)}
         onHoldGroupAtVessel={(groupID, vesselID) =>
           void holdGroupAtVessel(groupID, vesselID)
         }
-        onGoTo={goToLocation}
-        onUseWaypointColor={useWaypointColor}
         onArea={addPolygon}
         onToolDone={() => setTool("select")}
       />
-      <div className="map-tools">
-        <button
-          className={tool === "select" ? "active" : ""}
-          onClick={() => setTool("select")}
-          title="Select"
-        >
-          <MousePointer2 />
-        </button>
-        <button
-          className={tool === "box" ? "active" : ""}
-          onClick={() => setTool("box")}
-          title="Rectangle select"
-        >
-          <BoxSelect />
-        </button>
-        <button
-          className={tool === "waypoint" ? "active" : ""}
-          onClick={() => setTool("waypoint")}
-          title="Add waypoint"
-        >
-          <MapPinned />
-        </button>
-        <button
-          className={tool === "include" ? "active" : ""}
-          onClick={() => setTool("include")}
-          title="Drag operating area"
-        >
-          <Plus />
-          <BoxSelect />
-        </button>
-        <button
-          className={tool === "exclude" ? "active" : ""}
-          onClick={() => setTool("exclude")}
-          title="Drag exclusion area"
-        >
-          <Ban />
-        </button>
-      </div>
       {pendingDeleteMission && (
         <div className="mission-delete-backdrop">
           <section
@@ -1761,7 +1737,6 @@ function VesselGroupContextMenu({
   groups,
   onMove,
   onCreate,
-  onClearWaypoints,
   onHold,
   onClose,
 }: {
@@ -1770,7 +1745,6 @@ function VesselGroupContextMenu({
   groups: FleetSnapshotV2["groups"];
   onMove: (vesselID: string, groupID: string) => void;
   onCreate: (vesselID: string, name: string) => void;
-  onClearWaypoints?: (groupID: string) => void;
   onHold?: (groupID: string, vesselID: string) => void;
   onClose: () => void;
 }) {
@@ -1809,7 +1783,7 @@ function VesselGroupContextMenu({
           </span>
         </header>
         <div className="group-menu-list">
-          {state.vessel.group_id && onClearWaypoints && onHold && (
+          {state.vessel.group_id && onHold && (
             <>
               <button
                 role="menuitem"
@@ -1820,17 +1794,6 @@ function VesselGroupContextMenu({
               >
                 <MapPinned />
                 <span>{pirate ? "Hold crew on this ship" : "Hold group at this vessel"}</span>
-              </button>
-              <button
-                className="menu-danger"
-                role="menuitem"
-                onClick={() => {
-                  onClearWaypoints(state.vessel.group_id);
-                  onClose();
-                }}
-              >
-                <Trash2 />
-                <span>{pirate ? "Clear crew bearings" : "Clear group waypoints"}</span>
               </button>
             </>
           )}
@@ -1926,10 +1889,8 @@ function FleetRail({
   onCreateGroup,
   onCreateGroupFromVessel,
   onDeleteGroup,
-  onCreateMission,
   mission,
   onCycleRoute,
-  onClearGroupWaypoints,
   onHoldGroupAtVessel,
 }: {
   pirate: boolean;
@@ -1946,10 +1907,8 @@ function FleetRail({
   onCreateGroup: () => void;
   onCreateGroupFromVessel: (vesselID: string, name: string) => void;
   onDeleteGroup: (groupID: string) => void;
-  onCreateMission: () => void;
   mission: MissionWorkspaceV2 | null;
   onCycleRoute: (groupID: string) => void;
-  onClearGroupWaypoints: (groupID: string) => void;
   onHoldGroupAtVessel: (groupID: string, vesselID: string) => void;
 }) {
   const [dropGroup, setDropGroup] = useState(""),
@@ -2196,17 +2155,6 @@ function FleetRail({
           </section>
         )}
       </div>
-      <button
-        className="wide amber"
-        onClick={onCreateMission}
-        disabled={selected.size === 0}
-        aria-label={`Create mission from ${selected.size} selected`}
-      >
-        <Save />
-        {pirate
-          ? `Save chart as voyage for ${selected.size} mustered`
-          : `Save map as mission for ${selected.size} selected`}
-      </button>
       {menu && (
         <VesselGroupContextMenu
           pirate={pirate}
@@ -2214,7 +2162,6 @@ function FleetRail({
           groups={fleet.groups}
           onMove={onMove}
           onCreate={onCreateGroupFromVessel}
-          onClearWaypoints={onClearGroupWaypoints}
           onHold={onHoldGroupAtVessel}
           onClose={() => setMenu(null)}
         />
@@ -2924,16 +2871,28 @@ function Planner({
   speechState,
   autoRead,
   recording,
+  tool,
+  contactSeed,
+  geometryFocus,
   onVoice,
   onSpeak,
   onAutoRead,
   onTranscriptionStart,
   onTranscriptionStop,
   onFormation,
+  onObjective,
   onAssignGroup,
   onArea,
   onTool,
   onCreate,
+  onGenerateManual,
+  onApplyContactSeed,
+  onClearContactSeed,
+  onUndoGeometry,
+  onClearGeometry,
+  onDeleteGeometry,
+  onFocusGeometry,
+  onReorderWaypoint,
   onPlan,
   onPreview,
   onAuthorize,
@@ -2958,16 +2917,28 @@ function Planner({
   speechState: string;
   autoRead: boolean;
   recording: boolean;
+  tool: Tool;
+  contactSeed: SurfaceContactV2 | null;
+  geometryFocus: GeometryFocus | null;
   onVoice: (v: string) => void;
   onSpeak: (text: string) => void;
   onAutoRead: (enabled: boolean) => void;
   onTranscriptionStart: () => void;
   onTranscriptionStop: () => void;
   onFormation: (v: string) => void;
+  onObjective: (v: string) => void;
   onAssignGroup: (groupID: string) => void;
   onArea: (k: "include" | "exclude") => void;
   onTool: (t: Tool) => void;
   onCreate: (intent: string) => void;
+  onGenerateManual: (intent: string, guidance: string, followContactID: string) => void;
+  onApplyContactSeed: (createNew: boolean) => void;
+  onClearContactSeed: () => void;
+  onUndoGeometry: () => void;
+  onClearGeometry: (kind: "include" | "exclude" | "waypoint" | "poi") => void;
+  onDeleteGeometry: (focus: GeometryFocus) => void;
+  onFocusGeometry: (focus: GeometryFocus) => void;
+  onReorderWaypoint: (index: number, direction: -1 | 1) => void;
   onPlan: (id: string) => void;
   onPreview: () => void;
   onAuthorize: () => void;
@@ -2978,17 +2949,36 @@ function Planner({
 }) {
   const chatEnd = useRef<HTMLDivElement | null>(null);
   const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set());
+  const [missionType, setMissionType] = useState("patrol");
+  const [manualObjective, setManualObjective] = useState(mission?.objective ?? "");
+  useEffect(() => {
+    if (contactSeed) setMissionType("follow_contact");
+  }, [contactSeed]);
+  useEffect(() => setManualObjective(mission?.objective ?? ""), [mission?.id, mission?.objective]);
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ block: "end", behavior: "smooth" });
   }, [mission?.conversation?.length, busy]);
   if (!mission)
     return (
-      <div className="window-empty">
-        {pirate
+      <div className="window-empty planner-seed-empty">
+        {contactSeed ? <>
+          <Ship />
+          <b>{contactSeed.name}</b>
+          <span>{contactSeed.boat_id} · {contactSeed.class} · uncommitted planning context</span>
+          <button className="wide amber" onClick={() => onApplyContactSeed(true)} disabled={busy}>
+            <Plus /> {pirate ? "Create shadowing voyage" : "Create follow mission"}
+          </button>
+          <button className="wide" onClick={onClearContactSeed}>Cancel</button>
+        </> : pirate
           ? "Muster ships and chart a voyage."
           : "Select assets and create a mission."}
       </div>
     );
+  const manualIntent = manualObjective.trim() || `${missionType.replaceAll("_", " ")} mission`,
+    followContactID = missionType === "follow_contact" ? contactSeed?.id ?? draft?.follow_contact_id ?? "" : "",
+    hasRouteGeometry = mission.geometry.waypoints.length > 0 || mission.geometry.included_areas.length > 0,
+    hasPointForBehavior = mission.geometry.pois.some((poi) => poi.kind === missionType),
+    manualReady = mission.target_ids.length > 0 && (missionType === "follow_contact" ? !!followContactID : missionType === "hold" || missionType === "orbit" ? hasPointForBehavior : hasRouteGeometry);
   return (
     <div className="planner">
       <div className="planner-layout">
@@ -3203,25 +3193,70 @@ function Planner({
           </span>
         </div>
       )}
-      <div className="geometry-actions">
-        <button onClick={() => onArea("include")}>
-          <Plus />
-          {pirate ? "Sailing waters" : "Operating area"}
-        </button>
-        <button onClick={() => onArea("exclude")}>
-          <Ban />
-          {pirate ? "Forbidden waters" : "Exclusion"}
-        </button>
-        <button onClick={() => onTool("waypoint")}>
-          <MapPinned />
-          {pirate ? "Bearing mark" : "Waypoint"}
-        </button>
-      </div>
-      <div className="geometry-summary">
-        <span>{mission.geometry.included_areas.length} operating</span>
-        <span>{mission.geometry.exclusion_areas.length} excluded</span>
-        <span>{mission.geometry.waypoints.length} waypoints</span>
-      </div>
+      {contactSeed && (
+        <div className="planner-contact-seed">
+          <i style={{ background: contactSeed.color }} />
+          <span><b>{contactSeed.name}</b><small>{contactSeed.boat_id} · uncommitted objective</small></span>
+          <button onClick={() => onApplyContactSeed(false)}>Use in this mission</button>
+          <button onClick={() => onApplyContactSeed(true)}>Create new mission</button>
+          <button aria-label="Dismiss contact planning context" onClick={onClearContactSeed}><X /></button>
+        </div>
+      )}
+      <details className="planner-section" open>
+        <summary>OBJECTIVE &amp; MISSION TYPE</summary>
+        <label>
+          MISSION TYPE
+          <select value={missionType} onChange={(event) => setMissionType(event.target.value)}>
+            <option value="transit">Transit</option>
+            <option value="patrol">Patrol</option>
+            <option value="search">Search</option>
+            <option value="follow_contact">Follow contact</option>
+            <option value="hold">Hold</option>
+            <option value="orbit">Orbit</option>
+            <option value="custom_route">Custom route</option>
+          </select>
+        </label>
+        <label>
+          OBJECTIVE
+          <textarea value={manualObjective} onChange={(event) => setManualObjective(event.target.value)} onBlur={() => { if (manualObjective.trim() && manualObjective.trim() !== mission.objective) onObjective(manualObjective.trim()); }} />
+        </label>
+      </details>
+      <details className="planner-section map-authoring" open>
+        <summary>MAP AUTHORING</summary>
+        <div className="authoring-status">
+          <b>{mission.name.toUpperCase()}</b>
+          <span>{tool === "select" ? "READY · SELECT OR EDIT" : `${tool.replaceAll("_", " ").toUpperCase()} TOOL ACTIVE · ESC TO CANCEL`}</span>
+        </div>
+        <div className="geometry-actions">
+          <button className={tool === "select" ? "active" : ""} onClick={() => onTool("select")} title="Select or drag existing geometry"><MousePointer2 />Edit</button>
+          <button className={tool === "box" ? "active" : ""} onClick={() => onTool("box")} title="Assign vessels inside a rectangle"><BoxSelect />Assign box</button>
+          <button className={tool === "include" ? "active" : ""} onClick={() => onArea("include")}><Plus /><BoxSelect />Operating</button>
+          <button className={tool === "exclude" ? "active" : ""} onClick={() => onArea("exclude")}><Ban />Exclusion</button>
+          <button className={tool === "waypoint" ? "active" : ""} onClick={() => onTool("waypoint")}><MapPinned />Waypoint</button>
+          <button className={tool === "hold" ? "active" : ""} onClick={() => onTool("hold")}><CircleDot />Hold point</button>
+          <button className={tool === "orbit" ? "active" : ""} onClick={() => onTool("orbit")}><RotateCcw />Orbit point</button>
+          <button onClick={onUndoGeometry} title="Undo the most recent geometry mutation"><Undo2 />Undo</button>
+        </div>
+        <div className="geometry-summary">
+          <span>{mission.geometry.included_areas.length} operating</span>
+          <span>{mission.geometry.exclusion_areas.length} excluded</span>
+          <span>{mission.geometry.waypoints.length} waypoints</span>
+          <span>{mission.geometry.pois.length} hold/orbit</span>
+        </div>
+        <div className="geometry-inventory">
+          {mission.geometry.included_areas.map((_, index) => <button className={geometryFocus?.kind === "include" && geometryFocus.index === index ? "selected" : ""} key={`include-${index}`} onClick={() => onFocusGeometry({ kind: "include", index })}><span>Operating area {index + 1}</span><Eye /></button>)}
+          {mission.geometry.exclusion_areas.map((_, index) => <button className={geometryFocus?.kind === "exclude" && geometryFocus.index === index ? "selected" : ""} key={`exclude-${index}`} onClick={() => onFocusGeometry({ kind: "exclude", index })}><span>Exclusion area {index + 1}</span><Eye /></button>)}
+          {mission.geometry.waypoints.map((_, index) => <div className={geometryFocus?.kind === "waypoint" && geometryFocus.index === index ? "selected" : ""} key={`waypoint-${index}`}><button onClick={() => onFocusGeometry({ kind: "waypoint", index })}><span>Waypoint {index + 1}</span><Eye /></button><button disabled={index === 0} onClick={() => onReorderWaypoint(index, -1)}><ChevronUp /></button><button disabled={index === mission.geometry.waypoints.length - 1} onClick={() => onReorderWaypoint(index, 1)}><ChevronDown /></button></div>)}
+          {mission.geometry.pois.map((poi, index) => <button className={geometryFocus?.kind === "poi" && geometryFocus.index === index ? "selected" : ""} key={poi.id} onClick={() => onFocusGeometry({ kind: "poi", index })}><span>{poi.kind === "orbit" ? "Orbit" : "Hold"} point {index + 1}</span><Eye /></button>)}
+          {geometryFocus && <button className="geometry-delete" onClick={() => onDeleteGeometry(geometryFocus)}><Trash2 />Delete selected</button>}
+          <div className="geometry-clear-actions">
+            <button onClick={() => onClearGeometry("include")}>Clear operating</button>
+            <button onClick={() => onClearGeometry("exclude")}>Clear exclusions</button>
+            <button onClick={() => onClearGeometry("waypoint")}>Clear waypoints</button>
+            <button onClick={() => onClearGeometry("poi")}>Clear hold/orbit</button>
+          </div>
+        </div>
+      </details>
       {draft?.geometry_source && (
         <div className="intent-resolution">
           <b>INTENT-DERIVED GEOMETRY</b>
@@ -3236,7 +3271,9 @@ function Planner({
           <header>
             <Sparkles />
             <b>
-              {draft.advisor.provider === "openai"
+              {draft.planning_mode === "manual"
+                ? "MANUAL DETERMINISTIC PLANNER"
+                : draft.advisor.provider === "openai"
                 ? "OPENAI MISSION ADVISOR"
                 : draft.advisor.provider === "openrouter"
                   ? "OPENROUTER MISSION ADVISOR"
@@ -3266,12 +3303,15 @@ function Planner({
         </div>
       )}
       {plans.length === 0 ? (
-        <button className="wide amber" disabled={busy || !command.trim()} onClick={() => onCreate(command.trim())}>
-          <Sparkles />
-          {pirate
-            ? "Ask the ship's AI for courses"
-            : "Ask AI for strategy options"}
-        </button>
+        <div className="planning-actions">
+          <button className="wide amber" disabled={busy || !manualReady} onClick={() => onGenerateManual(manualIntent, missionType, followContactID)}>
+            <Route /> {pirate ? "Plot deterministic courses" : "Generate routes · no AI"}
+          </button>
+          <button className="wide" disabled={busy || !command.trim()} onClick={() => onCreate(command.trim())}>
+            <Sparkles /> {pirate ? "Ask the ship's intelligence" : "Ask AI for strategy options"}
+          </button>
+          {!manualReady && <small className="manual-readiness">Assign assets and add the map geometry required by the selected mission type.</small>}
+        </div>
       ) : (
         <div className="candidate-list">
           {plans.map((p) => {

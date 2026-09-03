@@ -172,8 +172,22 @@ func (s *Server) compileV2(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := s.fleetops.Compile(r.PathValue("id"), req)
 	if err == nil {
-		advisor := fleetops.DeterministicAdvisor(len(v.TargetIDs), v.GuidanceKind, "AI service unavailable")
-		if context, contextErr := s.fleetops.PlanningContext(v.ID); contextErr == nil && s.agent != nil {
+		manual := v.PlanningMode == "manual"
+		reason := "AI service unavailable"
+		if manual {
+			reason = "manual structured builder; no model contacted"
+		}
+		advisor := fleetops.DeterministicAdvisor(len(v.TargetIDs), v.GuidanceKind, reason)
+		if manual {
+			advisor.State = "manual"
+			advisor.Summary = "Manual mission fields compiled into deterministic route strategies. No language model was contacted."
+			advisor.Attempts = []domain.ProviderAttemptV1{}
+			if len(v.TargetIDs) > 1 && v.FormationPreference != "" {
+				for index := range advisor.Strategies {
+					advisor.Strategies[index].Formation = v.FormationPreference
+				}
+			}
+		} else if context, contextErr := s.fleetops.PlanningContext(v.ID); contextErr == nil && s.agent != nil {
 			if proposed, advisorErr := s.agent.MissionOptions(r.Context(), context); advisorErr == nil {
 				advisor = proposed
 			} else {

@@ -197,6 +197,7 @@ type CommandDraftV2 struct {
 	FormationPreference string           `json:"formation_preference"`
 	GuidanceKind        string           `json:"guidance_kind"`
 	FollowContactID     string           `json:"follow_contact_id,omitempty"`
+	PlanningMode        string           `json:"planning_mode"`
 	Waypoints           []GeoPointV2     `json:"waypoints"`
 	GeometrySource      string           `json:"geometry_source,omitempty"`
 	ResolutionNotes     []string         `json:"resolution_notes,omitempty"`
