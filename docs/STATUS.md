@@ -1,0 +1,54 @@
+# Delivery status
+
+## Contents
+
+- [Implemented](#implemented)
+- [Deployment](#deployment)
+- [Limitations](#limitations)
+- [Next investments](#next-investments)
+
+## Implemented
+
+| Milestone | Capability |
+|---|---|
+| M1 | Deterministic planning, preview, hash authorization, execution |
+| M2 | Tape incident, relay/partition, PNT rejection, safe hold/rejoin |
+| M3 | Kafka/PostgreSQL scale path, workers, quarantine, replay, metrics |
+| M4 | MCP investigation, retrieval, replay, approval, provider regression |
+| M5 | Quiet Fleet rejection/quorum/arming/future commit; release commands |
+| M6 | Map-first Fleet/Mission workspace, groups, formations, voice, touch |
+| M7 | Arena vertical slice and twelve-VM node fabric |
+| M8 | Long signed trajectory programs and rolling hot buffers |
+| M9 | Read/draft-only external MCP control boundary |
+| M10 | Trusted A2UI scenes, live bindings, assistant tools, critical scenes |
+| M11 | Central/node memory, Kafka learning, replay, optional MLOps profile |
+
+## Deployment
+
+- VM 214 hosts the core appliance and LAN endpoint.
+- Twelve vessel VMs run the same healthy Go/API/UI node binary.
+- PostgreSQL/pgvector, Kafka, workers, AI, and speech remain private.
+- Builds and verification run on VM 214/nodes.
+- GitHub-hosted workflows remain disabled.
+- No snapshot is authorized by documentation or deployment operations.
+
+## Limitations
+
+- Radio behavior is simulated; no physical HaLow radios are attached.
+- Faction coordination is not completed production Raft.
+- Full node mTLS and radio-plane memory exchange need further work.
+- Separate GPU LLM/STT/TTS services do not run on every node.
+- Kafka is single-broker and does not demonstrate broker HA.
+- Map, environment, contacts, navigation, and effects are simulation-only.
+- Some legacy Playwright tests still target removed Mission chat.
+- Cloudflare Quick Tunnel URLs are ephemeral.
+
+## Next investments
+
+1. Migrate legacy browser tests to global Assistant plus manual Mission semantics.
+2. Implement real faction replication, quorum leases, forwarding, and split-brain tests.
+3. Complete node identity/mTLS and radio-plane memory synchronization.
+4. Finish browser/node STT benchmarks and trusted-peer routing.
+5. Replace remaining fixture retrieval with bundled ONNX indexing.
+6. Complete private OTLP ingestion and cross-process traces.
+7. Add stable named HTTPS ingress after domain/account selection.

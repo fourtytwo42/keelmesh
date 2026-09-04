@@ -1,186 +1,165 @@
-# KeelMesh Fleet Intent Control
+# KeelMesh
 
-KeelMesh is an interview demonstration of user-friendly mission programming,
-offline-first peer coordination, bounded edge autonomy, and observable AI/ML
-infrastructure for a simulated maritime fleet.
+**A resilient, AI-assisted mission operations platform for a simulated maritime fleet.**
 
-The core thesis is:
+KeelMesh demonstrates how one operator can plan, authorize, observe, and adapt missions across a distributed fleet while keeping deterministic safety and human authority independent of cloud connectivity and model availability.
 
-> Program the mission once. Coordinate locally. Adapt together. Degrade safely
-> when the uplink disappears.
+> Program the mission once. Coordinate locally. Adapt together. Degrade safely when the uplink disappears.
 
-`PRD.md` is the product source of truth. `MEMORY.md` holds durable project and
-handoff context for coding agents.
+![KeelMesh operations workspace](docs/assets/keelmesh-operations.png)
 
-## M1 golden mission loop
+> The screenshot shows simulation data in Narragansett Bay and Rhode Island Sound. KeelMesh is not a certified navigation or vessel-control product.
 
-The single offline appliance now serves the React/TypeScript/MapLibre operator
-interface and the Go mission authority. Select or draw a polygon, compile typed
-intent, compare two computed plans, preview without moving the fleet, authorize
-the exact SHA-256 plan hash, and watch six simulated vessels execute it.
+## On this page
+
+- [Documentation index](#documentation-index)
+- [What KeelMesh demonstrates](#what-keelmesh-demonstrates)
+- [System at a glance](#system-at-a-glance)
+- [Quick start](#quick-start)
+- [Core operating workflow](#core-operating-workflow)
+- [Runtime profiles](#runtime-profiles)
+- [Engineering principles](#engineering-principles)
+- [Repository map](#repository-map)
+- [Verification and release policy](#verification-and-release-policy)
+- [Scope and disclaimer](#scope-and-disclaimer)
+
+## Documentation index
+
+| Start here | Purpose |
+|---|---|
+| [Documentation portal](docs/README.md) | Role-based index for the complete documentation set |
+| [Operator guide](docs/OPERATOR_GUIDE.md) | Fleet selection, mission authoring, AI, voice, touch, and window behavior |
+| [Architecture](docs/ARCHITECTURE.md) | Runtime topology, data planes, authority boundaries, and degraded operation |
+| [AI and memory](docs/AI_AND_MEMORY.md) | Provider routing, MCP, A2UI, retrieval, memory, and human approval |
+| [Operations runbook](docs/OPERATIONS.md) | Installation, secrets, startup, verification, recovery, and evidence export |
+| [Security model](docs/SECURITY.md) | Threat model, trust boundaries, credentials, capabilities, and fail-closed rules |
+| [Verification strategy](docs/VERIFICATION.md) | Test layers, acceptance evidence, performance claims, and known coverage debt |
+| [API and repository reference](docs/REFERENCE.md) | Versioned APIs, service roles, important paths, and compatibility policy |
+| [Delivery status](docs/STATUS.md) | Implemented milestones, honest limitations, and next investments |
+
+Product and design records remain available in the [PRD](PRD.md), [implementation plan](IMPLEMENTATION_PLAN.md), and milestone design documents.
+
+## What KeelMesh demonstrates
+
+- A map-first command workspace with 48 persistent named simulated vessels, operational groups, neutral contacts, environmental fixtures, and concurrent missions.
+- Manual mission authoring that remains usable with every AI provider offline.
+- Optional AI refinement and a global voice/text assistant grounded in current fleet state and bounded memory.
+- Exact-plan preview, policy validation, hash-bound authorization, signed trajectory programs, and a rolling execution buffer.
+- Simulated Starlink and Wi-Fi HaLow failover, cached authority, PNT anomaly rejection, safe hold, and stale-safe rejoin.
+- Real Kafka, PostgreSQL/pgvector, worker processes, backpressure, quarantine, replay, and measured scale-lab telemetry.
+- A private MCP boundary, deterministic incident replay, human-approved evaluation promotion, and trusted A2UI operational scenes.
+- Central and node-local memory with scoped retrieval, immutable provenance, tombstones, and deterministic projection replay.
+- Twelve symmetric vessel-node VMs plus a neutral referee/ingress VM for distributed-system demonstrations.
+
+## System at a glance
+
+```mermaid
+flowchart LR
+    Operator[Operator browser<br/>voice · touch · keyboard] -->|HTTPS / LAN| Core[Go core<br/>UI · mission authority · API]
+    Core --> Planner[Deterministic planner<br/>policy · leases · tapes]
+    Core --> Kafka[Kafka KRaft]
+    Kafka --> Workers[Ingestion + memory workers]
+    Workers --> Postgres[(PostgreSQL + pgvector)]
+    Core -->|private token| AI[Python AI service]
+    AI -->|capability-scoped MCP| Core
+    Core --> Speech[VM-local STT/TTS]
+    Core --> Nodes[12 symmetric vessel nodes]
+    Nodes -. simulated Starlink / HaLow .-> Nodes
+```
+
+The LLM may interpret intent, retrieve evidence, organize the workspace, and propose changes. It cannot sign mission authority, bypass policy, approve its own effects, or replace deterministic navigation and safety checks. See [Architecture](docs/ARCHITECTURE.md) and [Security](docs/SECURITY.md).
+
+## Quick start
+
+### Requirements
+
+- Linux host or VM with Docker Engine and Docker Compose
+- Cached or pullable pinned images
+- Optional provider key files for connected AI operation
+- VM-local speech model assets for STT/TTS
+
+### Start the appliance
 
 ```bash
+git clone https://github.com/fourtytwo42/keelmesh.git
+cd keelmesh
 docker compose up -d --build
 curl --fail http://localhost:8080/healthz
-python3 scripts/verify_m1.py
 ```
 
-M1 needs no map tile service, Python runtime, model provider, Kafka, PostgreSQL,
-or internet connection. The multi-stage image pins frontend and Go dependencies
-and embeds the production UI in `keelmesh-core`.
+Only port `8080` is published. Kafka, PostgreSQL, AI, speech, workers, MCP, and optional memory-lab services remain private.
 
-The application is available on the LAN at `http://192.168.50.214:8080`.
-
-## M2 resilient autonomy
-
-After starting an authorized M1 mission, the Resilience Drill runs a deterministic
-Vessel 4 incident: direct Starlink failure, Vessel 3 HaLow relay, full partition,
-60-second signed mission-tape depletion, GNSS spoof exclusion, safe hold, and a
-policy-checked bridge to future work. Manual controls and auto-run use the same
-versioned fault API and state machine.
-
-```bash
-python3 scripts/verify_m2.py http://localhost:8080
-```
-
-The drill is simulation-only. Radio links and PNT evidence are modeled locally;
-it makes no physical range, anti-jam, or certified-navigation claim.
-
-## M3 infrastructure at scale
-
-Switch the live interface from **Operator** to **Cutaway** to inspect the measured
-pipeline: 1,000 deterministic background vessels, Kafka KRaft, three real
-consumer child processes, PostgreSQL projections, pgvector fixture retrieval,
-quarantine/redrive, cooperative rebalance, and Kafka-to-shadow replay.
-
-```bash
-docker compose up -d --build
-python3 scripts/verify_m3.py http://localhost:8080 \
-  --json evidence/m3.json --markdown evidence/m3.md
-```
-
-Only port 8080 is published. Kafka, PostgreSQL, workers, and control traffic stay
-on the private Compose network. M1/M2 continue in degraded mode if M3 services
-are unavailable. Measurements apply only to the recorded VM and workload.
-
-## M4 AI infrastructure and autonomy tooling
-
-Switch to **Engineer** to turn the deterministic Vessel 4 incident into a
-human-approved evaluation. A separate non-root Python service collects bounded
-evidence through the official MCP Streamable HTTP boundary, retrieves cited
-runbooks and historical fixtures, verifies an isolated replay, and drafts an
-immutable candidate. Only `demo-engineer` can approve the exact candidate hash.
-
-Cloud inference uses an adaptive OpenRouter free-model pool with per-model
-cooldowns, followed by an optional local OpenAI-compatible endpoint and the
-mandatory deterministic mock. Provider failure never affects mission authority.
-
-```bash
-sudo install -m 600 /dev/null /etc/keelmesh/secrets/openrouter_api_key
-# Put the runtime-only OpenRouter key in that file, then:
-docker compose up -d --build
-python3 scripts/verify_m4.py http://localhost:8080 \
-  --json evidence/m4.json --markdown evidence/m4.md
-```
-
-## M5 interview release
-
-M5 adds the Quiet Fleet authority demonstration: a four-vessel cell rejects an unsafe redistribution even though it has quorum, arms a safe revision on every affected node, then atomically activates the exact signed commit at a future mission-tape boundary.
-
-VM 214 is the only release-verification environment. GitHub Actions are intentionally disabled. From `/srv/keelmesh`:
+For the managed VM workflow:
 
 ```bash
 scripts/keelmesh start
+scripts/keelmesh status
+scripts/keelmesh verify
+```
+
+Read the [Operations runbook](docs/OPERATIONS.md) before configuring provider secrets, running offline/restart drills, or exporting evidence.
+
+## Core operating workflow
+
+1. Select vessels or operational groups in **Fleet**.
+2. Create or open a **Mission**.
+3. Define the task, geometry, formation, constraints, and completion behavior.
+4. Build a deterministic route, or explicitly ask AI to refine the existing mission.
+5. Select a route to preview it on the live map.
+6. Review and confirm the exact validated plan hash.
+7. Observe execution, energy, PNT, communications, tape depth, and adaptations.
+
+Mission execution never depends on AI availability. On touch devices, tapping water is inert, tapping a vessel opens its details, and long-pressing a vessel opens its contextual actions.
+
+## Runtime profiles
+
+| Profile | Services | Purpose |
+|---|---|---|
+| Default | Core, PostgreSQL, Kafka, workers, AI, speech | Complete interview appliance |
+| Offline | Cached images, isolated provider mode | Deterministic mission/resilience proof without outbound AI |
+| `memory-lab` | Adds MinIO, Dagster, and MLflow | Optional ingestion, experiment, and artifact showcase |
+| Vessel node | Symmetric Go/API/UI node with local stores | Per-vessel and coordinator-failover demonstrations |
+
+## Engineering principles
+
+- **Authority before autonomy:** all consequential effects pass deterministic validation and exact approval.
+- **Offline-first execution:** signed cached work and local safety continue when infrastructure disappears.
+- **Knowledge is scoped:** operator, mission, vessel, group, and faction memories are filtered before serialization.
+- **At-least-once, exactly-once logically:** Kafka retries are expected; database uniqueness and idempotency prevent duplicate effects.
+- **Observable truth:** UI animation and evidence reports come from measured state, receipts, and spans—not canned narratives.
+- **Honest boundaries:** simulations are labeled, performance claims are tied to measured hardware, and unfinished distributed features are documented as such.
+
+## Repository map
+
+```text
+cmd/                    Go entrypoints and role dispatch
+internal/               Mission, fleet, platform, AI, memory, and API domains
+web/                    React, TypeScript, MapLibre, A2UI, Vitest, Playwright
+ai/                     Python agent, providers, MCP client, retrieval, evaluations
+speech/                 VM-local STT and TTS service
+contracts/              Shared fixtures and compatibility contracts
+scripts/                Verification, release, evidence, and operator commands
+infrastructure/         VM/node provisioning and network safety tooling
+deploy/kubernetes/      Production-shape Kustomize manifests; no cloud provisioning
+memorylab/              Optional Dagster/MLflow/MinIO integration
+docs/                   Maintained documentation portal
+```
+
+## Verification and release policy
+
+Verification runs on VM 214 and the twelve vessel nodes. GitHub-hosted Actions are intentionally not used. A standard gate includes Go tests/vet, TypeScript/Vitest, Python checks, Compose validation, scenario verifiers, browser workflows, health checks, secret scanning, and evidence export.
+
+```bash
 scripts/keelmesh verify
 scripts/keelmesh offline-verify
 scripts/keelmesh restart-verify
 scripts/keelmesh export-evidence
-scripts/keelmesh rehearse --six-minute
 ```
 
-`start` and offline verification use cached images with `--pull never`. The connected OpenRouter exercise is supplementary; deterministic mock/offline AI is the release gate. No Proxmox snapshot is created by these commands.
+No Proxmox snapshot may be created without storage preflight and explicit authorization. See [Verification](docs/VERIFICATION.md) for current coverage and known test migration work.
 
-Only port 8080 remains published. The Python API, MCP server, generated
-capability tokens, provider credential, Kafka, and PostgreSQL stay private.
-CI uses an empty provider secret and proves the same workflow through mock.
+## Scope and disclaimer
 
-## M6 fleet operations workspace
+KeelMesh is a fictional simulation and infrastructure demonstration. It does not claim certified navigation, COLREG compliance, production command authority, physical radio performance, anti-jam capability, broker high availability, or access to another company’s private architecture.
 
-M6 makes the default interface a compact map-first operating workspace for 48
-persistent named vessels in Narragansett Bay and Rhode Island Sound. Operators
-can select individuals or complete groups, inspect mesh reachability separately
-from authority, retain overlapping collections, manage operational-group
-identity, and run independent mission tabs. Mission authoring is deliberately
-contained inside each floating Mission Planner: assigned assets, operating and
-exclusion areas, numbered routes, hold/orbit points, formation, constraints,
-and authorization stay scoped to the active draft. Fleet/Groups can snap left,
-Mission Planner can snap right, and both remain movable and floating by default.
-
-The structured builder has separate **Generate routes · no AI** and **Ask AI**
-paths. Manual planning never contacts a provider; AI-assisted planning records
-the accepted provider attempt. Both compile into the same deterministic Go
-planner and share preview → exact-hash authorization → execution. Empty-water
-and land right-click are read-only inspections, controlled-vessel right-click
-contains awareness plus bounded group hold, and contact planning opens an
-uncommitted planner seed before any mission is created.
-
-Idle operational groups also have a bounded map-navigation controller. Hold
-points and numbered waypoints are draggable; group-colored routes can run once,
-switch to a loop, or pause after completing the current leg. Clearing a route
-creates a deterministic hold around the group's lowest vessel ID, and changing
-the group hold point translates the full formation at the operator-selected
-simulation rate. The lower status bar provides pause, 1×, 5×, 20×, 100×, and
-500× controls; every rate advances the same bounded 200 ms simulation steps so
-fast-forward does not bypass trajectory, energy, collision, or waypoint logic.
-Right-click vessel controls use the same group route API.
-
-The chart is a packaged NOAA NCDS extract and all vessel/environment state is
-clearly labeled simulation data. Pocket TTS and faster-whisper run privately on
-VM 214; the user-authorized Jarvis clone is the Navy-mode default, Captain
-Barbossa is the Pirate-mode default, and both custom voice artifacts remain
-VM-local runtime artifacts outside Git. Browser capture requires HTTPS, so the
-temporary Cloudflare Quick Tunnel is used for microphone demos while the LAN URL
-continues to provide the rest of the workspace.
-
-The operating picture includes twelve fictional, non-commandable surface contacts on deterministic looped routes. Six original transparent traffic sprites cover container ship, tanker, ferry, fishing trawler, patrol ship, and sailing yacht classes and remain visually unchanged in Pirate mode. Names, simulated boat IDs, colors, motion, and predicted tracks are available to the bounded mission advisor for policy-checked intercept and follow plans. Right-clicking a contact can inspect it or seed Mission Planner; using that seed remains an explicit current/new mission choice and never creates authority by itself.
-
-```bash
-scripts/keelmesh status
-python3 scripts/verify_m6.py http://localhost:8080
-```
-
-The deterministic VM-local STT smoke measurement is recorded in the M6 plan.
-Browser WebGPU/WASM and trusted-peer speech routes remain measured follow-up
-work and are not represented as completed physical-node redundancy.
-
-## M7 symmetric fleet arena
-
-M7 adds a knowledge-limited two-faction Arena and a real twelve-VM node fabric.
-Each faction has six symmetric vessel nodes, a quorum-backed coordinator view,
-protected management/inference and simulated-radio planes, semantic workspace
-actions, deterministic energy progression, and exact-hash authorization for
-fictional engagement effects. VM 214 remains the neutral authority and Player B
-ingress router.
-
-The current physical allocation is five nodes on `fourtyfour`, four on `mini42`,
-and three on `mini43`. Each linked clone has 2 vCPU, 2 GiB RAM, a 12 GiB disk,
-`eth0` management at `192.168.50.<VMID>`, and `eth1` simulated radio at
-`10.77.0.<VMID>`. The tracked radio-fault helper rejects every interface except
-`eth1` and arms a 60-second automatic rollback before applying impairment.
-
-```bash
-python3 scripts/verify_m7.py --base-url http://localhost:8080
-# Player B's Quick Tunnel opens directly into Arena:
-# https://<ephemeral-host>.trycloudflare.com/?arena=1
-```
-
-The Quick Tunnel hostname is deliberately ephemeral. The current release proves
-the public faction boundary, coordinator-aware ingress, deterministic Arena
-authority, physical dual-plane VMs, and radio-only failure safety. It does not
-claim that the current central deterministic coordinator model is production
-Raft, that physical HaLow radios are attached, or that twelve independent GPU
-inference services are running.
-
-See `infrastructure/README.md` for the reproducible VM and host setup. Never
-commit passwords, private keys, provider tokens, GitHub credentials, Cloudflare
-credentials, or model secrets.
+Secrets, cloned voice artifacts, model weights, runtime tokens, evidence containing sensitive values, and VM credentials must never be committed.
