@@ -4,10 +4,19 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: the STT-tolerant `C. Robin` entity-resolution fix is complete, deployed, and browser-verified.
-- Last meaningful change: informational questions and mission contact targeting now apply narrow punctuation/homophone normalization, require a unique visible match, and answer generic contact questions from verified fleet state before contacting a language provider.
-- Next step: preserve the verified guided-demo, AI-chat mission path, entity-resolution regression, and `simulated|shadow|raft` rollback/comparison modes.
+- Current task: the guided-demo scene cleanup and critical-alert focus fix is complete, deployed, and browser-verified.
+- Last meaningful change: background critical-scene refreshes retain stable lifecycle order but no longer open windows or move the map; stopping the guided demo cancels narration, clears demo presentation state, and reliably restores the 20× baseline.
+- Next step: preserve the verified guided-demo, stable critical-scene history, AI-chat mission path, entity-resolution regression, and `simulated|shadow|raft` rollback/comparison modes.
 - Blockers: none for M12. Thin-pool auto-extension remains disabled and aggregate virtual allocation remains overcommitted, so snapshots and storage changes still require a fresh reviewed preflight.
+
+### 2026-09-04 - Guided-demo presentation cleanup and stable critical scenes
+
+- Context: after Start Demo completed or was stopped, active low-reserve scenes repeatedly reopened critical-transmission windows and alternated map focus between Tern and Petrel. Stopping during the reset beat could also leave a stale-state banner while speed recovered from 1×.
+- Decision: treat a critical alert's existence separately from permission to present it. Background scene polling refreshes status/history only; explicit user/demo presentation, pinning, or pending approval may open a surface. Preserve lifecycle timestamps during live-binding refresh, cancel and resolve in-flight narration on Stop, remove demo scene windows/camera requests, and retry simulation-rate optimistic-concurrency races against a fresh fleet version.
+- Files: `internal/agent/scenes.go`, `internal/agent/scenes_test.go`, `web/src/FleetWorkspace.tsx`, and `web/src/FleetWorkspace.test.ts`.
+- Commands/tests: strict TypeScript, 15 Vitest assertions, production Vite/Docker build, full Go tests/vet on VM 214, five-sample critical-history ordering check, live in-app-browser Start/Stop plus post-stop polling, all twelve node health/hash checks, and live `verify_m12.py`.
+- Result: commit `2c8c855` runs on VM 214 as `keelmesh/core:main-2c8c855`; all twelve nodes are healthy on binary SHA-256 `22e7a15bc7cebe7f705420ea10f169d616e70d5cc193d092b702d7071cd18b34`. Stop Demo returns to 20× without an alert, no critical window reopens, and no vessel/map focus oscillates. Cell A is healthy at term 18/epoch 16/index 798 and Cell B at term 17/epoch 15/index 338. No GitHub-hosted workflow, Proxmox migration, or snapshot ran.
+- Follow-up: keep critical records inspectable in history/status and require an explicit user or demo action to present them as windows.
 
 ### 2026-09-04 - STT-tolerant Sea Robin resolution
 
@@ -236,6 +245,12 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+### 2026-09-04 - Guided-demo stop and critical-scene regression
+
+- Context: verify that demo presentation state cannot outlive Stop Demo and that persistent critical records do not repeatedly open windows or drive map focus.
+- Commands/tests: live in-app-browser Start/Stop at the reset/narration boundary, 5.5-second post-stop polling observation, repeated `/api/v4/assistant/history` ordering samples, strict TypeScript, 15 Vitest assertions, VM 214 production build and Go tests/vet, twelve sequential node restarts, hash/health checks, and `verify_m12.py`.
+- Result: no stale-state banner, critical window, demo banner, or focus oscillation remained; simulation returned to 20×. VM 214 runs `main-2c8c855`, every node matches SHA-256 `22e7a15bc7cebe7f705420ea10f169d616e70d5cc193d092b702d7071cd18b34`, and both Raft cells verify healthy.
 
 ### 2026-09-04 - AI-only five-tier mission and memory verification
 
@@ -1040,8 +1055,6 @@ When sources conflict, use this order:
 - Result: VM 214 and all twelve vessel nodes are healthy on binary SHA-256 `2bc7b150e3030e37e51023ebd23a561e12bc391304f843064a8225568179ca72`. Scenario reset restores 20x pacing and asynchronous persistence coalesces stale bursts so durable group deletion is responsive. No GitHub-hosted workflow or Proxmox snapshot ran.
 
 ## Open Follow-ups
-
-- 2026-09-04 critical-scene focus oscillation: live `/api/v4/scenes` sampling proved that Tern (KM-222, 4.6% reserve) and Petrel (KM-223, 19.4% reserve) alternate as the first active critical scene. `internal/agent/scenes.go:RefreshScenes` iterates the scene map, assigns each scene a fresh `UpdatedAt`, and `Scenes` sorts by that timestamp; nondeterministic map iteration therefore changes the first critical result. `web/src/FleetWorkspace.tsx` polls every second and sets `activeSceneID` to `value.scenes.find(...)`, so the visible callout/highlight oscillates even though no command or window is active. Fix should preserve a stable active critical scene, avoid rewriting ordering timestamps for live-binding refreshes, and never move or retarget map focus without a new scene or explicit operator action.
 
 - Complete M8D automatic node-agent interruption escalation. The deployed controller already performs bounded deterministic collision/energy correction and an operator can request a live AI replan that becomes a future exact revision, but a complex out-of-envelope encounter does not yet autonomously invoke the node OpenAI route. Add a typed asynchronous proposal queue, bounded context, deterministic corridor/path validation, provider timeout/fallback, and approval only when authority expands.
 - Extend M9 from the deployed election/MCP vertical slice to signed group proposals, all-affected arming, synchronized future activation, simulated decision-node loss/re-election, and executable pre-authorized signal-seek/return-home corridors. Add expiring observer/operator-assistant/diagnostic MCP identities, rotation, per-tool budgets, and security fuzzing before exposing `/mcp/control` through an authenticated management ingress.
