@@ -67,6 +67,11 @@ a second directory with old/new trust overlap and preserved application-signing
 identities; deploy the combined trust/manifests to all peers before switching
 leaf certificates, then invoke `systemctl reload keelmesh-node`.
 
+VM 214 keeps the offline authority root private and exposes only a runtime copy
+of the referee leaf identity and signed cell manifests to the unprivileged core
+container. Start the gateway with `compose.m12.yaml`; the override defaults to
+`shadow` and can be switched explicitly to `raft` after shadow receipts match.
+
 Run the software-only two-cell proof before deployment:
 
 ```bash

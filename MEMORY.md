@@ -5,9 +5,9 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M12 real node consensus, quorum failover, and mTLS implementation.
-- Last meaningful change: completed the M12 local software gate: a real twelve-process/two-cell harness now proves follower forwarding, leader replacement, 4/2 whole-host survival, 3/3 rejection, recovery, four-signature receipts, and cross-cell future activation. SIGHUP credential reload, staged trust-overlap rotation, public verification, and Engineer/System observability are implemented.
-- Next step: commit the completed software gate, perform fresh read-only Proxmox host/storage/network preflight, and only then begin the guarded one-VM-at-a-time rebalance and shadow rollout if every destination is safe.
-- Blockers: Proxmox VM migration remains gated on fresh host/storage preflight. No snapshot is authorized.
+- Last meaningful change: generated production M12 PKI on VM 214 and deployed the identical M12 node binary plus node-specific credentials to all twelve vessel VMs in `shadow` mode. Both real six-voter cells elected leaders over the radio plane; production follower forwarding returned six signed acknowledgements per cell and a cross-cell prepare/certificate operation reached `armed`.
+- Next step: finish central VM 214 gateway integration without overwriting its newer dirty live UI tree, verify all twelve node identities/checksums, securely remove temporary deployment bundles, and complete remaining Proxmox snapshot/storage checks before deciding whether the requested VM rebalance is safe.
+- Blockers: mini43 has only about 5.34 GiB host RAM free and its thin-pool detail did not populate in the UI; target-VM snapshot inventories are also incomplete. No migration or snapshot is authorized until those checks are resolved.
 
 ### 2026-09-03 - Non-destructive repository cleanup
 
@@ -32,6 +32,15 @@ Durable project context lives here. Update this file whenever information should
 - Commands/tests: Go 1.27 full `go test ./...` and `go vet ./...` on VM 214; strict TypeScript, 13 Vitest assertions, production Vite build; two six-process cells with follower forwarding, leader kill, 4/2 host loss, intentional 3/3 failure, restart convergence, and matching cross-cell certification.
 - Result: all local software gates pass. No production PKI was generated, no production mode changed, no VM migrated, no hosted workflow ran, and no snapshot was created.
 - Follow-up: fresh Proxmox preflight, sequential stopped migration only if safe, then Cell A shadow/Raft and Cell B shadow/Raft rollout with live proofs.
+
+### 2026-09-04 - M12 production shadow deployment
+
+- Context: local M12 acceptance passed, so rollout advanced to non-authoritative shadow deployment before any VM migration.
+- Decision: generate one offline Ed25519 PKI hierarchy on VM 214, install only each node's own cell bundle, deploy one identical node binary to all twelve VMs, and preserve the prior binary as `/usr/local/bin/keelmesh-node.pre-m12`.
+- Files: production authority at `/etc/keelmesh/coordination-m12-v1` on VM 214; node credentials at `/etc/keelmesh/coordination`; systemd shadow drop-in; repo `compose.m12.yaml` and `infrastructure/systemd/keelmesh-node-m12-shadow.conf`.
+- Commands/tests: all twelve services active; Cell A elected `node-a-01` and Cell B elected `node-b-01`, both at term 2/epoch 1; a real VM 214 gateway check proposed through a follower in each cell, collected six valid signatures per cell, and armed one matching cross-cell future activation certificate.
+- Result: real production radio-plane Raft and mTLS are healthy in `shadow`; the central application remains on its existing authoritative path. Node binary SHA-256 is `ef7fc7590471cc2260d6e7b82154d274a8e26285c47b42ed48d8e7720ae615e4`. No VM migration, GitHub-hosted workflow, or Proxmox snapshot ran.
+- Follow-up: integrate the VM 214 gateway, perform shadow receipt/state comparison, complete migration safety checks, then run the guarded host rebalance and Raft authority tests if safe.
 
 ## Current State
 
