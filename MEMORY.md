@@ -4,10 +4,10 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: unsaved mission-draft reuse is complete.
-- Last meaningful change: Mission and `+` now reopen the active or newest unsaved draft instead of creating duplicates; an explicit Save draft action releases the creator, and a started mission also no longer blocks new creation.
-- Next step: none for this change; continue normal product iteration.
-- Blockers: none. No snapshot is authorized.
+- Current task: M12 real node consensus, quorum failover, and mTLS implementation.
+- Last meaningful change: added the initial M12 domain contracts, deterministic Raft FSM/snapshot logic, custom TLS stream-layer validation, and pinned Hashicorp Raft dependencies on branch `m11-memory`.
+- Next step: complete the node coordination manager, private management API, PKI generator, quorum-proof gateway, tests, and only then begin shadow deployment.
+- Blockers: Proxmox VM migration remains gated on fresh host/storage preflight. No snapshot is authorized.
 
 ## Current State
 
