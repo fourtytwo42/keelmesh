@@ -4,10 +4,19 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: the guided-demo scene cleanup and critical-alert focus fix is complete, deployed, and browser-verified.
-- Last meaningful change: background critical-scene refreshes retain stable lifecycle order but no longer open windows or move the map; stopping the guided demo cancels narration, clears demo presentation state, and reliably restores the 20× baseline.
-- Next step: preserve the verified guided-demo, stable critical-scene history, AI-chat mission path, entity-resolution regression, and `simulated|shadow|raft` rollback/comparison modes.
+- Current task: unassigned-vessel charging and stale mission-state reconciliation are complete, deployed, and live-verified.
+- Last meaningful change: all idle vessels now advance the day/night energy model even when they have no operational group; startup clears vessel mission bindings whose mission no longer exists.
+- Next step: preserve the verified fleet-wide energy progression, guided-demo cleanup, stable critical-scene history, and `simulated|shadow|raft` rollback/comparison modes.
 - Blockers: none for M12. Thin-pool auto-extension remains disabled and aggregate virtual allocation remains overcommitted, so snapshots and storage changes still require a fresh reviewed preflight.
+
+### 2026-09-04 - Unassigned fleet charging and demo reserve recovery
+
+- Context: Tern remained at 4.63% despite positive daytime solar and accelerated simulation. Live sampling proved the clock advanced while all twelve unassigned vessels' reserve values remained frozen; two additional persisted profiles carried orphaned mission bindings after their mission disappeared.
+- Decision: advance energy/environment state for every vessel that belongs to neither a mission nor a group, without double-processing grouped or executing vessels. On startup, clear mission ID, route, speed, tape, and projected reserve for a vessel whose mission is absent. Apply a one-time persisted 82% reserve floor and 78% projected-reserve floor for the requested demo recovery without resetting identities, positions, groups, or missions.
+- Files: `internal/fleetops/manager.go` and `internal/fleetops/manager_test.go`; live PostgreSQL `fleet_vessels.profile` received the bounded one-time reserve-floor update.
+- Commands/tests: focused accelerated-charge/orphan-reconciliation tests, full Go tests and vet on VM 214, production Docker build, live 500× before/after reserve sampling, all twelve node health/hash checks, and `verify_m12.py`.
+- Result: commit `5121a72` runs on VM 214 as `keelmesh/core:main-5121a72`; all twelve nodes are healthy on binary SHA-256 `49ddcaba47965e38427b6522aacdb8286787feb7a6e8eea18c9f798faaa14131`. During a two-real-second 500× check, every idle vessel gained about 3.2–3.3 percentage points while the three underway vessels correctly consumed power. All vessels remained above 89%, simulation returned to 20×, and no critical reserve scene remained active. Cell A verified at term 20/epoch 18/index 838 and Cell B at term 18/epoch 16/index 341.
+- Follow-up: retain the unassigned-vessel accelerated-energy regression whenever fleet baseline/group behavior changes.
 
 ### 2026-09-04 - Guided-demo presentation cleanup and stable critical scenes
 
@@ -245,6 +254,12 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+### 2026-09-04 - Fleet-wide accelerated energy verification
+
+- Context: distinguish a slow visual refresh from a stalled energy model and restore a clean battery baseline for recording.
+- Commands/tests: direct four-second 20× sample before the fix; focused Go tests; full Go tests/vet; bounded persisted reserve-floor update; two-second 500× live sample; sequential twelve-node deployment; node hashes/health and M12 verification.
+- Result: the pre-fix clock advanced 84 simulated seconds while unassigned reserves changed 0%; post-fix idle reserves visibly advanced 3.2–3.3 points in two real seconds at 500×. Underway vessels continued to discharge. All twelve reserves are above 89% and normal speed is restored to 20×.
 
 ### 2026-09-04 - Guided-demo stop and critical-scene regression
 
