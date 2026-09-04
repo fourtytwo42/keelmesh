@@ -5,8 +5,8 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M12 real node consensus, quorum failover, and mTLS implementation.
-- Last meaningful change: generated production M12 PKI on VM 214 and deployed the identical M12 node binary plus node-specific credentials to all twelve vessel VMs in `shadow` mode. Both real six-voter cells elected leaders over the radio plane; production follower forwarding returned six signed acknowledgements per cell and a cross-cell prepare/certificate operation reached `armed`.
-- Next step: finish central VM 214 gateway integration without overwriting its newer dirty live UI tree, verify all twelve node identities/checksums, securely remove temporary deployment bundles, and complete remaining Proxmox snapshot/storage checks before deciding whether the requested VM rebalance is safe.
+- Last meaningful change: integrated the M12 gateway into VM 214's newer live application tree, rejected malformed requests before Raft append, and switched Player B discovery to signed authority-ready leader advertisements. A live B-cell leader stop moved both API and ingress to `node-b-04` in about 2.5 seconds; all six voters then converged at term 6, epoch 5, index 23, and one state hash.
+- Next step: finish repository integration, complete frontend/full compatibility verification, securely remove temporary deployment bundles, and resolve mini43 storage/snapshot preflight before deciding whether the requested VM rebalance is safe.
 - Blockers: mini43 has only about 5.34 GiB host RAM free and its thin-pool detail did not populate in the UI; target-VM snapshot inventories are also incomplete. No migration or snapshot is authorized until those checks are resolved.
 
 ### 2026-09-03 - Non-destructive repository cleanup
@@ -41,6 +41,15 @@ Durable project context lives here. Update this file whenever information should
 - Commands/tests: all twelve services active; Cell A elected `node-a-01` and Cell B elected `node-b-01`, both at term 2/epoch 1; a real VM 214 gateway check proposed through a follower in each cell, collected six valid signatures per cell, and armed one matching cross-cell future activation certificate.
 - Result: real production radio-plane Raft and mTLS are healthy in `shadow`; the central application remains on its existing authoritative path. Node binary SHA-256 is `ef7fc7590471cc2260d6e7b82154d274a8e26285c47b42ed48d8e7720ae615e4`. No VM migration, GitHub-hosted workflow, or Proxmox snapshot ran.
 - Follow-up: integrate the VM 214 gateway, perform shadow receipt/state comparison, complete migration safety checks, then run the guarded host rebalance and Raft authority tests if safe.
+
+### 2026-09-04 - M12 gateway validation and signed ingress
+
+- Context: live shadow testing found that the generic coordination middleware appended a canonical command before endpoint-specific strict JSON decoding rejected an unknown field.
+- Decision: perform route-specific strict decoding before canonicalization/append, accept the v2 `actor_identity` and existing v3 `actor_id` contracts, and drive v3 faction ingress from verified, unexpired, authority-ready signed Raft leader advertisements.
+- Files: `internal/api/coordination_gateway.go`, `internal/api/coordination_gateway_test.go`, `internal/api/arena.go`, `internal/fleetops/manager.go`, and `compose.m12.yaml`.
+- Commands/tests: integrated full Go test/vet passed on VM 214; a malformed group create returned `400 INVALID_REQUEST` while Cell A remained at index 31; a B-cell leader stop elected `node-b-04` and changed both discovery API and Player B ingress in about 2.5 seconds.
+- Result: all six B voters converged at term 6, epoch 5, applied index 23, and state hash `fb401c5e90c2c35fb5b62a9c093c0cd9973de37401ae30ef3ede4f96f6b73e86`. VM 214 is healthy on `keelmesh/core:m12-shadow-2`. No VM migration, hosted workflow, or Proxmox snapshot ran.
+- Follow-up: merge the tested VM 214 integration tree into `m11-memory`, run remaining compatibility/UI gates, and resolve mini43 migration safety checks before any host move.
 
 ## Current State
 
