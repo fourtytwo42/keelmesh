@@ -7,40 +7,15 @@ Durable project context lives here. Update this file whenever information should
 - Current task: M12 real node consensus, quorum failover, and mTLS implementation.
 - Last meaningful change: integrated the M12 gateway into VM 214's newer live application tree, rejected malformed requests before Raft append, and switched Player B discovery to signed authority-ready leader advertisements. A live B-cell leader stop moved both API and ingress to `node-b-04` in about 2.5 seconds; all six voters then converged at term 6, epoch 5, index 23, and one state hash.
 - Next step: finish repository integration, complete frontend/full compatibility verification, securely remove temporary deployment bundles, and resolve mini43 storage/snapshot preflight before deciding whether the requested VM rebalance is safe.
-- Blockers: mini43 has only about 5.34 GiB host RAM free and its thin-pool detail did not populate in the UI; target-VM snapshot inventories are also incomplete. No migration or snapshot is authorized until those checks are resolved.
+- Blockers: mini43 has only about 5.34 GiB host RAM free and its thin-pool detail and target-VM snapshot inventories are incomplete. No migration or snapshot is authorized until those checks are resolved.
 
-### 2026-09-03 - Non-destructive repository cleanup
+### 2026-09-04 - M12 local consensus and production shadow deployment
 
-- Context: the root checkout was 47 commits behind `origin/main`, contained 1,194 tracked changes (mostly missing generated map/UI assets), and retained large deployment/test artifacts; the M12 worktree also had intentional uncommitted foundation code.
-- Decision: committed the M12 foundation on `m11-memory`, preserved every tracked root-checkout change on `codex/repository-recovery-20260903` at `f991826`, then fast-forwarded the root `main` checkout to `origin/main`. Local binaries, bundles, screenshots, test output, and the nested worktree remain physically intact but are hidden from status through `.git/info/exclude`.
-- Result: both registered worktrees are clean after dedicated commits; no files, snapshots, branches, or hosted workflows were deleted or run.
-
-### 2026-09-03 - M12 coordination software checkpoint
-
-- Context: M12 replaces the centralized coordinator simulation with two fixed six-voter Hashicorp Raft cells and four-vote effect proofs.
-- Decision: keep `simulated|shadow|raft`; use separate Ed25519 radio and management certificates, root-signed fixed manifests, independent application signatures, durable BoltDB FSM state, and VM 214 proof/cross-cell deduplication state. Cross-cell mutations prepare in both cells, commit one referee-signed future-activation certificate in both, and wait for the activation tick before the compatibility effect runs.
-- Files: `internal/coordination/`, `internal/domain/coordination.go`, `internal/api/coordination*.go`, `cmd/keelmesh-pki/`, `cmd/keelmesh-core/main.go`, `contracts/fixtures/coordination-v1.json`, and `web/src/types.ts`.
-- Commands/tests: VM-local cached Go 1.27 container tests for coordination/API/domain/PKI; strict TypeScript; six-voter majority-election and 3/3 rejection tests; canonical hashing/idempotency/snapshot tests; same-cell, wrong-cell, revoked, expired, and plaintext TLS tests.
-- Result: checkpoint tests pass. No production PKI was generated, no node was switched from simulated mode, no VM was migrated, and no GitHub-hosted workflow or Proxmox snapshot ran.
-- Follow-up: process-level two-cell test, SIGHUP certificate rotation, follower forwarding, complete build/full-suite verification, then guarded Proxmox preflight and shadow rollout.
-
-### 2026-09-04 - M12 local two-cell acceptance gate
-
-- Context: The initial M12 package tests did not prove real process-to-process forwarding, host-shaped loss, or credential rotation.
-- Decision: add a twelve-process loopback harness, same-cell follower forwarding over management mTLS, four-signer proof collection from any node entrypoint, staged PKI rotation with old/new trust overlap, SIGHUP reload, and read-only `/api/v6` UI/CLI evidence.
-- Files: `cmd/keelmesh-coordination-{node,check}/`, `internal/coordination/`, `internal/api/coordination_gateway.go`, `scripts/verify_m12{,_local}.py`, `scripts/keelmesh`, `web/src/{EngineerView,PlatformCutaway,FleetWorkspace}.tsx`, and M12 infrastructure/docs files.
-- Commands/tests: Go 1.27 full `go test ./...` and `go vet ./...` on VM 214; strict TypeScript, 13 Vitest assertions, production Vite build; two six-process cells with follower forwarding, leader kill, 4/2 host loss, intentional 3/3 failure, restart convergence, and matching cross-cell certification.
-- Result: all local software gates pass. No production PKI was generated, no production mode changed, no VM migrated, no hosted workflow ran, and no snapshot was created.
-- Follow-up: fresh Proxmox preflight, sequential stopped migration only if safe, then Cell A shadow/Raft and Cell B shadow/Raft rollout with live proofs.
-
-### 2026-09-04 - M12 production shadow deployment
-
-- Context: local M12 acceptance passed, so rollout advanced to non-authoritative shadow deployment before any VM migration.
-- Decision: generate one offline Ed25519 PKI hierarchy on VM 214, install only each node's own cell bundle, deploy one identical node binary to all twelve VMs, and preserve the prior binary as `/usr/local/bin/keelmesh-node.pre-m12`.
-- Files: production authority at `/etc/keelmesh/coordination-m12-v1` on VM 214; node credentials at `/etc/keelmesh/coordination`; systemd shadow drop-in; repo `compose.m12.yaml` and `infrastructure/systemd/keelmesh-node-m12-shadow.conf`.
-- Commands/tests: all twelve services active; Cell A elected `node-a-01` and Cell B elected `node-b-01`, both at term 2/epoch 1; a real VM 214 gateway check proposed through a follower in each cell, collected six valid signatures per cell, and armed one matching cross-cell future activation certificate.
-- Result: real production radio-plane Raft and mTLS are healthy in `shadow`; the central application remains on its existing authoritative path. Node binary SHA-256 is `ef7fc7590471cc2260d6e7b82154d274a8e26285c47b42ed48d8e7720ae615e4`. No VM migration, GitHub-hosted workflow, or Proxmox snapshot ran.
-- Follow-up: integrate the VM 214 gateway, perform shadow receipt/state comparison, complete migration safety checks, then run the guarded host rebalance and Raft authority tests if safe.
+- Context: M12 replaces the central coordinator simulation with two fixed six-voter Hashicorp Raft cells and four-vote effect proofs while preserving `simulated|shadow|raft` rollback modes.
+- Decision: use separate Ed25519 radio and management certificates, root-signed fixed manifests, independent application signatures, durable BoltDB FSM state, follower forwarding, leader epoch advancement, and VM 214 proof/cross-cell deduplication state. Cross-cell mutations prepare in both cells and commit one referee-signed future-activation certificate in both.
+- Files: `internal/coordination/`, `internal/domain/coordination.go`, `internal/api/coordination*.go`, `cmd/keelmesh-{pki,coordination-node,coordination-check}/`, `scripts/verify_m12{,_local}.py`, `compose.m12.yaml`, and M12 infrastructure/docs files.
+- Commands/tests: full Go tests/vet, strict TypeScript/Vitest/Vite build, twelve-process two-cell election/restart/4-2/3-3/cross-cell/TLS tests, then production shadow deployment to all twelve vessel VMs.
+- Result: both real production cells elect and replicate over the radio plane; same-cell management mTLS succeeds, cross-cell and plaintext fail, follower forwarding returns signed proofs, and a cross-cell operation reached armed. Node binary SHA-256 is `ef7fc7590471cc2260d6e7b82154d274a8e26285c47b42ed48d8e7720ae615e4`. No VM migration, hosted workflow, or Proxmox snapshot ran.
 
 ### 2026-09-04 - M12 gateway validation and signed ingress
 
