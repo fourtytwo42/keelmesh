@@ -38,7 +38,7 @@ KeelMesh demonstrates how one operator can plan, authorize, observe, and adapt m
 | [API and repository reference](docs/REFERENCE.md) | Versioned APIs, service roles, important paths, and compatibility policy |
 | [Delivery status](docs/STATUS.md) | Implemented milestones, honest limitations, and next investments |
 
-Product and design records remain available in the [PRD](PRD.md), [implementation plan](IMPLEMENTATION_PLAN.md), and milestone design documents.
+The current product contract is the [PRD](PRD.md). Superseded milestone plans remain recoverable through Git history rather than appearing as active documentation.
 
 ## What KeelMesh demonstrates
 

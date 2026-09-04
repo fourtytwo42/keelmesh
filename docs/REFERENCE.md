@@ -80,15 +80,12 @@ Mutations require request ID, idempotency key, actor identity where applicable, 
 | `infrastructure` | VM/node and network safeguards |
 | `deploy/kubernetes` | Production-shape manifests only |
 
-## Design records
+## Product records
 
 - [Product requirements](../PRD.md)
-- [Implementation plan](../IMPLEMENTATION_PLAN.md)
-- [M2 resilient autonomy](../M2_IMPLEMENTATION_PLAN.md)
-- [M3 infrastructure at scale](../M3_IMPLEMENTATION_PLAN.md)
-- [M6 fleet operations](../M6_FLEET_OPERATIONS_PLAN.md)
-- [M8 adaptive execution](../M8_ADAPTIVE_MISSION_EXECUTION_PLAN.md)
-- [M9 group autonomy and MCP](../M9_GROUP_AUTONOMY_AND_EXTERNAL_MCP.md)
-- [M10 AI command surface](../M10_AI_COMMAND_SURFACE.md)
-- [Role alignment audit](../ROLE_ALIGNMENT_AUDIT.md)
+- [Delivery status](STATUS.md)
+- [Architecture](ARCHITECTURE.md)
+- [Verification strategy](VERIFICATION.md)
+
+Superseded implementation plans remain available through Git history. They are not current requirements or active operator documentation.
 

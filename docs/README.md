@@ -28,9 +28,9 @@ This is the maintained documentation portal for operators, engineers, reviewers,
 1. Current source code and contracts.
 2. Fresh verification output and evidence.
 3. This documentation set.
-4. Historical plans and milestone notes.
+4. Superseded plans retained in Git history.
 
-The [PRD](../PRD.md) records product intent. [MEMORY.md](../MEMORY.md) is an internal engineering handoff log, not end-user documentation.
+The [PRD](../PRD.md) records product intent. Local agent handoff memory is intentionally excluded from version control; shared state belongs in this maintained documentation set.
 
 ## Documentation standards
 

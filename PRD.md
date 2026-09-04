@@ -543,7 +543,7 @@ As last verified on 2026-09-04:
 - Guided-demo cleanup no longer leaves scene windows reopening or map focus oscillating.
 - `simulated|shadow|raft` modes remain; deployed authority uses `raft`.
 
-Exact commits, binary digests, terms/indexes, and verification history live in [MEMORY.md](MEMORY.md) and [Delivery status](docs/STATUS.md), not frozen into this requirements document.
+Current shared delivery state lives in [Delivery status](docs/STATUS.md) and [Verification](docs/VERIFICATION.md). Exact local handoff details and transient infrastructure measurements are intentionally not published in this requirements document.
 
 ## 16. Acceptance criteria
 

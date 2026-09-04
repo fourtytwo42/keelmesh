@@ -2,19 +2,20 @@
 
 This file is the repository-local agent guide. Use the uppercase filename `AGENTS.md` so coding agents can find it by convention.
 
-`MEMORY.md` is the durable context store for this repository. Chat context may be compressed or lost, so anything that future agents need to retain must be written there.
+`MEMORY.md` is the local durable context store for this working copy. It is intentionally ignored by Git so operational history, local infrastructure details, and agent handoffs do not become public repository documentation. Chat context may be compressed or lost, so anything future local agents need to retain must be written there.
 
 ## Startup Checklist
 
 - Read this `AGENTS.md` file at the start of work in this repository.
-- Read `MEMORY.md` before planning or making changes.
+- If `MEMORY.md` exists, read it before planning or making changes.
+- If `MEMORY.md` is absent, create it locally with `Active Handoff`, `Current State`, `Verification Ledger`, `Open Follow-ups`, and `Do Not Forget` sections. Bootstrap facts from current source, `docs/STATUS.md`, and fresh verification; do not reconstruct private history from guesses.
 - Start with these `MEMORY.md` sections: `Active Handoff`, `Current State`, `Open Follow-ups`, and `Do Not Forget`.
 - If context was compressed, the session was resumed, or prior work is unclear, follow the `Compression Recovery` workflow below.
 - When in doubt, check `MEMORY.md` before assuming project history, user preferences, architecture, setup steps, or unresolved work.
 
 ## Memory-First Rule
 
-Use `MEMORY.md` as the source of retained project context. If chat history conflicts with `MEMORY.md`, verify the current repo state before acting and update `MEMORY.md` with any correction.
+Use the local `MEMORY.md` as retained working-copy context when present. Never stage or commit it. If chat history conflicts with it, verify current repository state before acting and update the local file with any correction.
 
 ## Source Of Truth
 
@@ -22,8 +23,9 @@ When sources conflict, prefer them in this order:
 
 1. Current files in the workspace.
 2. Latest command output or freshly verified tool output.
-3. `MEMORY.md`.
-4. Chat history.
+3. Local `MEMORY.md` when present.
+4. Maintained `docs/` status and architecture records.
+5. Chat history.
 
 Treat browser state, email state, authentication state, and external service results as stale unless verified in the current session. Treat documented repo structure, user preferences, and decisions as durable unless current files or fresh verification contradict them.
 
@@ -91,7 +93,7 @@ Use this format when adding a meaningful dated entry:
 When context is missing, stale, compressed, or ambiguous:
 
 1. Read this `AGENTS.md`.
-2. Read `MEMORY.md`, especially `Active Handoff`, `Current State`, `Open Follow-ups`, and `Do Not Forget`.
+2. Read local `MEMORY.md` when present, especially `Active Handoff`, `Current State`, `Open Follow-ups`, and `Do Not Forget`; otherwise initialize it from current source and maintained documentation.
 3. Inspect the files related to the current task.
 4. Re-run or inspect relevant verification only when needed.
 5. Update `MEMORY.md` with the recovered state before making broad changes.
@@ -106,4 +108,4 @@ Before finishing substantial work:
 
 ## Default Operating Rule
 
-If there is any uncertainty about retained context, read `MEMORY.md` first.
+If there is any uncertainty about retained context, read local `MEMORY.md` first when it exists, then verify against current source and maintained documentation.

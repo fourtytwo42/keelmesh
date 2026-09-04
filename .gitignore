@@ -38,6 +38,8 @@ secrets/
 .keelmesh-models/
 
 # Local worktrees and one-off deployment/test artifacts belong outside the repo.
+/MEMORY.md
+/.private-notes/
 /.m11-worktree/
 /test-results/
 /*.bundle
