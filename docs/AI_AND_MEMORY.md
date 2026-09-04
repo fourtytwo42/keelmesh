@@ -46,12 +46,14 @@ Retrieved documents are evidence, not instructions. Prompt-injection fixtures ca
 
 Each global voice/text turn receives:
 
-- Latest 12 authorized conversation turns.
+- The latest 12 exact turns from the same operator/browser session, sent to the Responses API as ordered `user` and `assistant` messages.
 - Current fleet, workspace, mission, contact, and environment state.
 - Up to six semantic memories.
 - Up to four approved procedural chunks.
 - Up to three operational episodes.
 - At most 8,000 estimated memory-context tokens.
+
+The final user message also carries the current trusted fleet/workspace context. Go resolves recent visible entity references independently, so follow-ups such as “open its info window” can open the correct controlled-vessel, group, or surface-contact inspector even when the provider is unavailable or returns an invalid classification. Conversation history supplies context but never grants command authority.
 
 Scopes are `operator`, `mission`, `vessel`, `group`, `faction`, and `approved_global`. Items retain provenance, trust, confidence, timestamps, checksums, embedding version, and classification.
 

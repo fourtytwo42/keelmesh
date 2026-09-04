@@ -524,6 +524,11 @@ func (m *Manager) snapshotLocked() domain.FleetSnapshotV2 {
 	now := time.Now().UTC()
 	vs := make([]domain.VesselProfileV2, 0, len(m.vessels))
 	for _, v := range m.vessels {
+		solarKW, loadKW, netKW := energyFlow(v, v.Telemetry.SpeedMPS, m.simTickMS/1000)
+		v.Telemetry.SolarInputKW = solarKW
+		v.Telemetry.PowerDrawKW = loadKW
+		v.Telemetry.NetPowerKW = netKW
+		v.Telemetry.EnergyState = energyState(v.Telemetry.Reserve, netKW)
 		vs = append(vs, v)
 	}
 	sort.Slice(vs, func(i, j int) bool { return vs[i].Designation < vs[j].Designation })
@@ -3404,8 +3409,16 @@ func solarFactor(missionTick int64) float64 {
 
 func (m *Manager) advanceEnergy(vessel domain.VesselProfileV2, speed float64, missionTick int64, seconds float64) float64 {
 	profile := energyProfile(vessel)
+	solarKW, loadKW, _ := energyFlow(vessel, speed, missionTick)
+	solar, load := solarKW*1000, loadKW*1000
+	delta := (solar - load) * seconds / 3_600_000 / profile.batteryKWH
+	return math.Max(0, math.Min(1, vessel.Telemetry.Reserve+delta))
+}
+
+func energyFlow(vessel domain.VesselProfileV2, speed float64, missionTick int64) (solarKW, loadKW, netKW float64) {
+	profile := energyProfile(vessel)
 	solar := profile.solarPeakKW * 1000 * solarFactor(missionTick)
-	load := profile.baseW + profile.propulsionWPerMPS3*math.Pow(speed, 3)
+	load := profile.baseW + profile.propulsionWPerMPS3*math.Pow(math.Max(0, speed), 3)
 	// Solar extends underway range, but propulsion always consumes stored
 	// energy. Without this bound the deliberately generous demo solar arrays
 	// can exceed cruise load and pin every moving vessel at 100% all day. A
@@ -3413,8 +3426,20 @@ func (m *Manager) advanceEnergy(vessel domain.VesselProfileV2, speed float64, mi
 	if speed > .05 {
 		solar = math.Min(solar, load*.65)
 	}
-	delta := (solar - load) * seconds / 3_600_000 / profile.batteryKWH
-	return math.Max(0, math.Min(1, vessel.Telemetry.Reserve+delta))
+	return solar / 1000, load / 1000, (solar - load) / 1000
+}
+
+func energyState(reserve, netKW float64) string {
+	if netKW > .0005 && reserve < .9995 {
+		return "charging"
+	}
+	if netKW < -.0005 {
+		return "discharging"
+	}
+	if reserve >= .9995 && netKW > 0 {
+		return "full"
+	}
+	return "balanced"
 }
 
 func (m *Manager) tickIdleGroupsLocked() bool {

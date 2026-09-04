@@ -25,12 +25,15 @@ Use Fleet to:
 - Search by callsign, designation, class, group, mission, or status.
 - Select individuals, complete groups, filtered results, or mixed targets.
 - Inspect vessel and group status through the eye action.
+- Read battery direction directly in Fleet: a green percentage means net charging, red means net discharge, and neutral means full/balanced.
 - Create, rename, recolor, or delete operational groups.
 - The release baseline starts with twelve dispersed, unassigned vessels. Each is bound to one physical vessel VM; groups are created explicitly for a mission or operating concept.
 - Drag vessels between groups; deleting a group leaves vessels unassigned.
 - Create a mission from the current selection.
 
 Group color is a visual identity and language alias understood by the assistant. Reachability and command authority remain separate.
+
+Each vessel inspector reports battery flow as charging, discharging, full, or balanced, together with current net power and accepted solar input. These values come from the same deterministic day/night, hotel-load, propulsion-load, battery-capacity, and solar-array model used for mission energy accounting.
 
 ## Mission workflow
 
@@ -87,7 +90,7 @@ The map displays a packaged coastal base, depth bands, simulated currents/wind, 
 
 ## Voice and text assistant
 
-Hold the lower-right microphone to speak and release to submit. The adjacent chat icon opens the same session for typed, text-only interaction.
+Hold the lower-right microphone to speak and release to submit. The adjacent chat icon opens the same browser-session conversation for typed, text-only interaction. Up to twelve preceding exact turns are supplied as ordered conversation messages, allowing follow-ups such as “open its info window” after discussing a vessel or surface contact.
 
 The assistant can answer state-backed questions, select/frame entities, manage windows, modify reversible drafts, and propose missions. Consequential effects still require deterministic validation and the configured approval class. Navy mode speaks with Jarvis; Pirate mode uses Captain Barbossa.
 

@@ -167,6 +167,9 @@ func (m *Manager) WorkspaceCommand(ctx context.Context, request domain.Workspace
 			Model:         "keelmesh-exact-plan-selector-v1",
 		}, nil
 	}
+	if inspection, ok := deterministicWorkspaceInspection(request, fleet); ok {
+		return inspection, nil
+	}
 	key := readSecret(m.cfg.OpenAIKeyFile)
 	if key == "" {
 		return deterministicWorkspaceCommand(request, fleet), nil
@@ -176,7 +179,7 @@ func (m *Manager) WorkspaceCommand(ctx context.Context, request domain.Workspace
 	payload := map[string]any{
 		"model":             m.cfg.OpenAIModel,
 		"instructions":      workspaceCommandInstructions(request.Persona),
-		"input":             string(contextJSON),
+		"input":             workspaceResponseInput(request, string(contextJSON)),
 		"reasoning":         map[string]any{"effort": "none"},
 		"text":              map[string]any{"verbosity": "low", "format": map[string]any{"type": "json_schema", "name": "keelmesh_workspace_command", "strict": true, "schema": workspaceCommandSchema()}},
 		"max_output_tokens": 900,
@@ -227,6 +230,23 @@ func (m *Manager) WorkspaceCommand(ctx context.Context, request domain.Workspace
 		result.Actions = []domain.WorkspaceAssistantActionV1{}
 	}
 	return result, nil
+}
+
+func workspaceResponseInput(request domain.WorkspaceAssistantRequestV1, currentContext string) []map[string]any {
+	input := make([]map[string]any, 0, 13)
+	if request.MemoryContext != nil {
+		turns := request.MemoryContext.RecentTurns
+		if len(turns) > 12 {
+			turns = turns[len(turns)-12:]
+		}
+		for _, turn := range turns {
+			role := strings.ToLower(strings.TrimSpace(turn.Role))
+			if (role == "user" || role == "assistant") && strings.TrimSpace(turn.Content) != "" {
+				input = append(input, map[string]any{"type": "message", "role": role, "content": turn.Content})
+			}
+		}
+	}
+	return append(input, map[string]any{"type": "message", "role": "user", "content": currentContext})
 }
 
 type workspaceEntityReference struct {
@@ -333,6 +353,31 @@ func resolveWorkspaceReference(request domain.WorkspaceAssistantRequestV1, fleet
 	return workspaceEntityReference{}, false
 }
 
+func deterministicWorkspaceInspection(request domain.WorkspaceAssistantRequestV1, fleet domain.FleetSnapshotV2) (domain.WorkspaceAssistantResponseV1, bool) {
+	lower := strings.ToLower(request.Text)
+	action := strings.Contains(lower, "open") || strings.Contains(lower, "show") || strings.Contains(lower, "view") || strings.Contains(lower, "inspect")
+	detail := strings.Contains(lower, "info") || strings.Contains(lower, "information") || strings.Contains(lower, "detail") || strings.Contains(lower, "status") || strings.Contains(lower, "window")
+	if !action || !detail {
+		return domain.WorkspaceAssistantResponseV1{}, false
+	}
+	reference, ok := resolveWorkspaceReference(request, fleet)
+	if !ok {
+		return domain.WorkspaceAssistantResponseV1{}, false
+	}
+	kind := map[string]string{"contact": "inspect_contact", "vessel": "inspect_vessel", "group": "inspect_group"}[reference.Kind]
+	if kind == "" {
+		return domain.WorkspaceAssistantResponseV1{}, false
+	}
+	return domain.WorkspaceAssistantResponseV1{
+		SchemaVersion: 1,
+		Mode:          "workspace",
+		Speech:        "Opening the information window for " + reference.Name + ".",
+		Actions:       []domain.WorkspaceAssistantActionV1{{Kind: kind, Target: reference.ID}},
+		Provider:      "deterministic",
+		Model:         "keelmesh-reference-resolver-v1",
+	}, true
+}
+
 func verifiedOperationalAnswer(request domain.WorkspaceAssistantRequestV1, fleet domain.FleetSnapshotV2) (string, bool) {
 	lower := strings.ToLower(request.Text)
 	reference, found := resolveWorkspaceReference(request, fleet)
@@ -389,9 +434,9 @@ func longitudeHemisphere(value float64) string {
 
 func workspaceContext(request domain.WorkspaceAssistantRequestV1, fleet domain.FleetSnapshotV2) map[string]any {
 	type vessel struct {
-		ID, Name, Designation, Class, Group, Mode string
-		Position                                  domain.GeoPointV2
-		Heading, Speed, Reserve                   float64
+		ID, Name, Designation, Class, Group, Mode, EnergyState         string
+		Position                                                       domain.GeoPointV2
+		Heading, Speed, Reserve, SolarInputKW, PowerDrawKW, NetPowerKW float64
 	}
 	type group struct {
 		ID, Code, Name, Color, Formation string
@@ -408,7 +453,13 @@ func workspaceContext(request domain.WorkspaceAssistantRequestV1, fleet domain.F
 	}
 	vessels := make([]vessel, 0, len(fleet.Vessels))
 	for _, value := range fleet.Vessels {
-		vessels = append(vessels, vessel{value.ID, value.Callsign, value.Designation, value.Class.Name, value.GroupCode, value.Telemetry.Mode, value.Telemetry.Position, value.Telemetry.HeadingDeg, value.Telemetry.SpeedMPS, value.Telemetry.Reserve})
+		vessels = append(vessels, vessel{
+			ID: value.ID, Name: value.Callsign, Designation: value.Designation, Class: value.Class.Name,
+			Group: value.GroupCode, Mode: value.Telemetry.Mode, EnergyState: value.Telemetry.EnergyState,
+			Position: value.Telemetry.Position, Heading: value.Telemetry.HeadingDeg, Speed: value.Telemetry.SpeedMPS,
+			Reserve: value.Telemetry.Reserve, SolarInputKW: value.Telemetry.SolarInputKW,
+			PowerDrawKW: value.Telemetry.PowerDrawKW, NetPowerKW: value.Telemetry.NetPowerKW,
+		})
 	}
 	groups := make([]group, 0, len(fleet.Groups))
 	for _, value := range fleet.Groups {

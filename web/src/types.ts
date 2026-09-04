@@ -614,6 +614,10 @@ export type VesselProfileV2 = {
     speed_mps: number;
     reserve: number;
     projected_reserve: number;
+    solar_input_kw: number;
+    power_draw_kw: number;
+    net_power_kw: number;
+    energy_state: "charging" | "discharging" | "full" | "balanced";
     mode: string;
     health: string;
     pnt_integrity: string;

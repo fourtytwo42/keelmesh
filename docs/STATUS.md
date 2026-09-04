@@ -23,6 +23,8 @@
 | M10 | Trusted A2UI scenes, live bindings, assistant tools, critical scenes |
 | M11 | Central/node memory, Kafka learning, replay, optional MLOps profile |
 
+Recent product hardening adds first-class multi-turn provider input for the shared voice/text assistant, deterministic follow-up resolution across controlled vessels, groups, and neutral contacts, and live battery-flow telemetry. Fleet reserve percentages now distinguish net charging from discharge, while each vessel inspector exposes solar input and net power.
+
 ## Deployment
 
 - VM 214 hosts the core appliance and LAN endpoint.

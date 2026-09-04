@@ -43,7 +43,7 @@ Product and design records remain available in the [PRD](PRD.md), [implementatio
 
 - A map-first command workspace with twelve persistent named vessels mapped one-to-one to the twelve provisioned VM nodes, optional operator-created groups, neutral contacts, environmental fixtures, and concurrent missions.
 - Manual mission authoring that remains usable with every AI provider offline.
-- Optional AI refinement and a global voice/text assistant grounded in current fleet state and bounded memory.
+- Optional AI refinement and a global voice/text assistant grounded in current fleet state plus the latest twelve exact session turns, with deterministic follow-up entity resolution.
 - Exact-plan preview, policy validation, hash-bound authorization, signed trajectory programs, and a rolling execution buffer.
 - Simulated Starlink and Wi-Fi HaLow failover, cached authority, PNT anomaly rejection, safe hold, and stale-safe rejoin.
 - Real Kafka, PostgreSQL/pgvector, worker processes, backpressure, quarantine, replay, and measured scale-lab telemetry.
@@ -107,7 +107,7 @@ Read the [Operations runbook](docs/OPERATIONS.md) before configuring provider se
 4. Build a deterministic route, or explicitly ask AI to refine the existing mission.
 5. Select a route to preview it on the live map.
 6. Review and confirm the exact validated plan hash.
-7. Observe execution, energy, PNT, communications, tape depth, and adaptations.
+7. Observe execution, live solar/load battery flow, PNT, communications, tape depth, and adaptations.
 
 Mission execution never depends on AI availability. On touch devices, tapping water is inert, tapping a vessel opens its details, and long-pressing a vessel opens its contextual actions.
 

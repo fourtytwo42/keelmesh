@@ -35,6 +35,10 @@ type VesselTelemetryV2 struct {
 	SpeedMPS         float64       `json:"speed_mps"`
 	Reserve          float64       `json:"reserve"`
 	ProjectedReserve float64       `json:"projected_reserve"`
+	SolarInputKW     float64       `json:"solar_input_kw"`
+	PowerDrawKW      float64       `json:"power_draw_kw"`
+	NetPowerKW       float64       `json:"net_power_kw"`
+	EnergyState      string        `json:"energy_state"`
 	Mode             string        `json:"mode"`
 	Health           string        `json:"health"`
 	PNTIntegrity     string        `json:"pnt_integrity"`

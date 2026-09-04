@@ -142,16 +142,17 @@ func TestWorkspaceCommandUsesModelForBoundedPresentationAction(t *testing.T) {
 		if request["model"] != "gpt-5.6-luna" || request["store"] != false {
 			t.Fatalf("unexpected workspace request: %#v", request)
 		}
-		input, _ := request["input"].(string)
-		if !strings.Contains(input, "Atlantic Beacon") || !strings.Contains(input, "conversation_history") || !strings.Contains(input, "recent_entity_references") || !strings.Contains(input, "verified_spatial_facts") || !strings.Contains(input, "Position") {
-			t.Fatalf("workspace context omitted conversation or chart facts: %s", input)
+		input, _ := request["input"].([]any)
+		inputJSON, _ := json.Marshal(input)
+		if len(input) < 2 || !strings.Contains(string(inputJSON), `"role":"assistant"`) || !strings.Contains(string(inputJSON), "Atlantic Beacon") || !strings.Contains(string(inputJSON), "conversation_history") || !strings.Contains(string(inputJSON), "recent_entity_references") || !strings.Contains(string(inputJSON), "verified_spatial_facts") || !strings.Contains(string(inputJSON), "Position") {
+			t.Fatalf("workspace context omitted first-class history or chart facts: %s", inputJSON)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"mode\":\"workspace\",\"speech\":\"Opening Gannet's vessel status.\",\"mission_intent\":\"\",\"actions\":[{\"kind\":\"inspect_vessel\",\"target\":\"Gannet\",\"value\":0}]}"}]}]}`))
 	}))
 	defer provider.Close()
 	manager := NewManager(Config{OpenAIKeyFile: keyFile, OpenAIModel: "gpt-5.6-luna", OpenAIURL: provider.URL}, slog.Default())
-	result, err := manager.WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{Text: "Show me Gannet's status.", Persona: "navy", MemoryContext: &domain.ContextAssemblyV1{RecentTurns: []domain.ConversationTurnV1{{Role: "user", Content: "Tell me about Atlantic Beacon."}}}}, domain.FleetSnapshotV2{
+	result, err := manager.WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{Text: "Select Gannet on the map.", Persona: "navy", MemoryContext: &domain.ContextAssemblyV1{RecentTurns: []domain.ConversationTurnV1{{Role: "user", Content: "Tell me about Atlantic Beacon."}, {Role: "assistant", Content: "Atlantic Beacon is a visible contact."}}}}, domain.FleetSnapshotV2{
 		Vessels:         []domain.VesselProfileV2{{ID: "vessel-1", Callsign: "Gannet", Designation: "KM-214", DisplayName: "Gannet (KM-214)", Available: true, Telemetry: domain.VesselTelemetryV2{Position: domain.GeoPointV2{-71.2, 41.5}}}},
 		SurfaceContacts: []domain.SurfaceContactV2{{ID: "surface-1", Name: "MV Atlantic Beacon", Position: domain.GeoPointV2{-71.1, 41.4}}},
 	})
@@ -160,6 +161,24 @@ func TestWorkspaceCommandUsesModelForBoundedPresentationAction(t *testing.T) {
 	}
 	if result.Provider != "openai" || result.Mode != "workspace" || len(result.Actions) != 1 || result.Actions[0].Kind != "inspect_vessel" {
 		t.Fatalf("unexpected workspace command: %#v", result)
+	}
+}
+
+func TestWorkspaceCommandOpensReferencedContactFromConversationHistory(t *testing.T) {
+	fleet := domain.FleetSnapshotV2{SurfaceContacts: []domain.SurfaceContactV2{{ID: "surface-sea-robin", Name: "FV Sea Robin", Callsign: "SEA ROBIN", BoatID: "NPC-4108"}}}
+	request := domain.WorkspaceAssistantRequestV1{
+		Text: "open its info window pls",
+		MemoryContext: &domain.ContextAssemblyV1{RecentTurns: []domain.ConversationTurnV1{
+			{Role: "user", Content: "can you tell me about the sea robin?"},
+			{Role: "assistant", Content: "FV Sea Robin is a blue commercial trawler, Boat ID NPC-4108."},
+		}},
+	}
+	result, err := NewManager(Config{}, slog.Default()).WorkspaceCommand(context.Background(), request, fleet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Provider != "deterministic" || result.Mode != "workspace" || len(result.Actions) != 1 || result.Actions[0].Kind != "inspect_contact" || result.Actions[0].Target != "surface-sea-robin" {
+		t.Fatalf("conversation reference did not resolve to contact inspector: %#v", result)
 	}
 }
 

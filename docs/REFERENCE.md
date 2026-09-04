@@ -26,6 +26,8 @@ KeelMesh preserves `/api/v1` through `/api/v5`. Public contracts are versioned, 
 
 Prometheus metrics are at `/metrics`. WebSocket/SSE extensions preserve earlier fields.
 
+`VesselTelemetryV2` includes reserve/projected reserve plus `solar_input_kw`, `power_draw_kw`, `net_power_kw`, and `energy_state`. `/api/v4/assistant/turns` assembles the latest twelve exact actor/session turns as ordered provider messages and retains a deterministic entity-reference fallback for inspector actions.
+
 ## Service roles
 
 | Role | Runtime | Responsibility |

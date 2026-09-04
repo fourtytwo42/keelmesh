@@ -126,6 +126,9 @@ const reservePercent = (reserve: number) => {
   if (percent === 100) return "100";
   return percent >= 99 ? percent.toFixed(2) : percent.toFixed(1);
 };
+const energyTone = (state?: VesselProfileV2["telemetry"]["energy_state"]) =>
+  state === "charging" ? "energy-charging" : state === "discharging" ? "energy-discharging" : "energy-neutral";
+const signedPower = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)} kW`;
 const formatSimulationTime = (tickMS: number) => {
   const totalSeconds = 8 * 60 * 60 + Math.max(0, Math.floor(tickMS / 1000));
   const day = Math.floor(totalSeconds / 86400) + 1;
@@ -2759,7 +2762,7 @@ function FleetRail({
                       {v.designation} · {v.class.name}
                     </small>
                   </span>
-                  <em>{reservePercent(v.telemetry.reserve)}%</em>
+                  <em className={energyTone(v.telemetry.energy_state)} title={`Battery ${v.telemetry.energy_state}`}>{reservePercent(v.telemetry.reserve)}%</em>
                   <button
                     className="vessel-view"
                     aria-label={`View status of ${v.callsign}`}
@@ -2835,7 +2838,7 @@ function FleetRail({
                     <b>{v.callsign}</b>
                     <small>{v.designation} · {v.class.name}</small>
                   </span>
-                  <em>{reservePercent(v.telemetry.reserve)}%</em>
+                  <em className={energyTone(v.telemetry.energy_state)} title={`Battery ${v.telemetry.energy_state}`}>{reservePercent(v.telemetry.reserve)}%</em>
                   <button
                     className="vessel-view"
                     aria-label={`View status of ${v.callsign}`}
@@ -2975,7 +2978,7 @@ function SelectionDrawer({
                       {v.designation} · {v.class.name}
                     </small>
                   </span>
-                  <em>{reservePercent(v.telemetry.reserve)}%</em>
+                  <em className={energyTone(v.telemetry.energy_state)} title={`Battery ${v.telemetry.energy_state}`}>{reservePercent(v.telemetry.reserve)}%</em>
                   <button
                     title={`Inspect ${v.callsign}`}
                     onClick={() => onInspectVessel(v.id)}
@@ -3072,7 +3075,7 @@ function SelectionInspector({
                     {v.designation} · {v.telemetry.mode}
                   </small>
                 </span>
-                <em>{reservePercent(v.telemetry.reserve)}%</em>
+                <em className={energyTone(v.telemetry.energy_state)} title={`Battery ${v.telemetry.energy_state}`}>{reservePercent(v.telemetry.reserve)}%</em>
                 <Eye />
               </button>
             ))}
@@ -3266,6 +3269,7 @@ function VesselInspector({
   onRename: (name: string) => void;
 }) {
   const t = vessel.telemetry;
+  const currentEnergyState = t.energy_state || "balanced";
   const reserveValue = Math.max(0, Math.min(100, t.reserve * 100));
   const projectedValue = Math.max(0, Math.min(100, t.projected_reserve * 100));
   const bufferPercent = Math.min(100, Math.round((t.tape_depth_seconds / 60) * 100));
@@ -3304,6 +3308,7 @@ function VesselInspector({
         <Route /><span><b>FULL MISSION PROGRAM</b><small>The route may be arbitrarily long. This vessel keeps the next 60 seconds validated and armed as a rolling resilient buffer.</small></span>
       </div>
       <div className="vessel-nav-grid">
+        <Insight icon={<BatteryCharging />} label="BATTERY FLOW" value={`${currentEnergyState.replaceAll("_", " ")} · ${signedPower(t.net_power_kw ?? 0)}`} detail={`${(t.solar_input_kw ?? 0).toFixed(2)} kW solar · ${(t.power_draw_kw ?? 0).toFixed(2)} kW load`} tone={currentEnergyState === "charging" ? "good" : currentEnergyState === "discharging" ? "bad" : ""} />
         <Insight icon={<Gauge />} label="SPEED" value={`${t.speed_mps.toFixed(1)} m/s`} detail={`${vessel.class.max_speed_mps.toFixed(1)} max`} />
         <Insight icon={<Compass />} label="HEADING" value={`${Math.round(t.heading_deg)}°`} detail="true" />
         <Insight icon={<Satellite />} label="PNT" value={t.pnt_integrity} detail={`${vessel.gnss_state || "GNSS"} · ±${t.uncertainty_m.toFixed(0)} m`} tone={t.pnt_integrity === "trusted" ? "good" : "warn"} />

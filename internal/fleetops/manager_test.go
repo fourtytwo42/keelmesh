@@ -1660,9 +1660,17 @@ func TestNominalRangeAndDaylightSolarRecharge(t *testing.T) {
 	if charged < .70 {
 		t.Fatalf("full-sun stationary recharge too slow: %.3f", charged)
 	}
+	solarKW, loadKW, netKW := energyFlow(kestrel, 0, noonTick)
+	if solarKW <= loadKW || netKW <= 0 || energyState(kestrel.Telemetry.Reserve, netKW) != "charging" {
+		t.Fatalf("stationary daylight flow must report charging: solar %.3f load %.3f net %.3f", solarKW, loadKW, netKW)
+	}
 	cruising := m.advanceEnergy(kestrel, nominalCruiseMPS, noonTick, 3600)
 	if cruising >= kestrel.Telemetry.Reserve {
 		t.Fatalf("full-sun cruise must consume stored energy, reserve %.3f", cruising)
+	}
+	_, _, cruiseNetKW := energyFlow(kestrel, nominalCruiseMPS, noonTick)
+	if cruiseNetKW >= 0 || energyState(kestrel.Telemetry.Reserve, cruiseNetKW) != "discharging" {
+		t.Fatalf("underway flow must report discharge, net %.3f", cruiseNetKW)
 	}
 	nightCruising := m.advanceEnergy(kestrel, nominalCruiseMPS, int64(16*60*60), 3600)
 	if cruising <= nightCruising {

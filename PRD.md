@@ -170,7 +170,7 @@ The primary interface is a full-screen map with a compact command dock.
 
 The map displays:
 
-- Current vessel positions, headings, position-integrity state, uncertainty envelope, per-link health, active route, and battery reserve.
+- Current vessel positions, headings, position-integrity state, uncertainty envelope, per-link health, active route, battery reserve, and live charging/discharging state derived from solar input and load.
 - Approved mission area and exclusion zones.
 - Solid routes for active plans.
 - Dashed routes for proposed plans.
