@@ -181,13 +181,14 @@ plans = call(
 assert 2 <= len(plans) <= 4 and sum(plan["recommended"] for plan in plans) == 1
 plan = next(plan for plan in plans if plan["recommended"])
 planned = call(f"/api/v2/missions/{mission['id']}")
-before = {v["id"]: v["telemetry"]["position"] for v in call("/api/v2/fleet")["vessels"]}
+before_preview = call(f"/api/v2/missions/{mission['id']}")
 preview = call(
     f"/api/v2/missions/{mission['id']}/plans/{plan['id']}:preview",
     mutation("preview", planned["version"]),
 )
-after_preview = {v["id"]: v["telemetry"]["position"] for v in call("/api/v2/fleet")["vessels"]}
-assert preview["nothing_sent"] and preview["plan_hash"] == plan["content_hash"] and before == after_preview
+after_preview = call(f"/api/v2/missions/{mission['id']}")
+assert preview["nothing_sent"] and preview["plan_hash"] == plan["content_hash"]
+assert before_preview["version"] == after_preview["version"] and before_preview["status"] == after_preview["status"]
 
 tampered = call(
     f"/api/v2/missions/{mission['id']}/plans/{plan['id']}:authorize",

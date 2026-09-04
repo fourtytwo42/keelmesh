@@ -15,6 +15,7 @@ verify_scenarios() {
   for milestone in 1 2 3 4 5 6; do python3 "$ROOT/scripts/verify_m${milestone}.py" "$BASE_URL"; done
   python3 "$ROOT/scripts/verify_m7.py" --base-url "$BASE_URL"
   python3 "$ROOT/scripts/verify_m11.py" "$BASE_URL"
+  python3 "$ROOT/scripts/verify_m12.py" "$BASE_URL"
 }
 case "${1:-status}" in
   start)
@@ -49,6 +50,12 @@ arena=json.load(urllib.request.urlopen(base+'/api/v3/infrastructure'))
 print(f"  M7 Fleet Arena: {len(arena['nodes'])} vessel VMs, phase {arena['phase']}, coordinators " + ', '.join(c['node_id'] for c in arena['coordinators']))
 memory=json.load(urllib.request.urlopen(base+'/api/v5/memory'))
 print(f"  M11 Memory: {memory['phase']} ({memory['retrieval_mode']}, {memory['embedding_state']} embeddings, {memory['committed_items']} items)")
+coordination=json.load(urllib.request.urlopen(base+'/api/v6/coordination/cells'))
+leaders=[]
+for cell,nodes in coordination.get('cells',{}).items():
+    leader=next((node for node in nodes if node.get('state')=='leader'),None)
+    if leader: leaders.append(f"{cell}:{leader.get('leader_node_id')} t{leader.get('term')} e{leader.get('authority_epoch')}")
+print("  M12 Coordination: " + (", ".join(leaders) if leaders else "simulated rollback mode"))
 PY
     docker system df
     ;;
@@ -171,6 +178,12 @@ PY
     test "$(du -sm "$out" | cut -f1)" -le 256
     echo "$out"
     ;;
+  m12-local-verify)
+    bash "$ROOT/scripts/verify_m12_local.sh"
+    ;;
+  coordination-verify)
+    KEELMESH_REQUIRE_RAFT="${KEELMESH_REQUIRE_RAFT:-1}" python3 "$ROOT/scripts/verify_m12.py" "$BASE_URL"
+    ;;
   stop) "${OFFLINE_COMPOSE[@]}" stop ;;
-  *) echo "usage: scripts/keelmesh {start|status|reset-demo|verify|offline-verify|restart-verify|export-evidence|rehearse|memory-status|memory-verify|memory-export|stop}" >&2; exit 2 ;;
+  *) echo "usage: scripts/keelmesh {start|status|reset-demo|verify|offline-verify|restart-verify|export-evidence|rehearse|memory-status|memory-verify|memory-export|m12-local-verify|coordination-verify|stop}" >&2; exit 2 ;;
 esac

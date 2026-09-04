@@ -140,7 +140,6 @@ func (m *Manager) probeNodes(ctx context.Context) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	changed := false
 	for range specs {
 		probe := <-results
 		node := m.nodes[probe.id]
@@ -148,16 +147,15 @@ func (m *Manager) probeNodes(ctx context.Context) {
 		if probe.healthy {
 			status = "healthy"
 		}
-		if node.ManagementConnected != probe.healthy || node.Status != status {
-			changed = true
-		}
 		node.ManagementConnected = probe.healthy
 		node.Status = status
 		m.nodes[probe.id] = node
 	}
-	if changed {
-		m.version++
-	}
+	// Health probes are observational telemetry, not authoritative Arena state.
+	// Advancing the optimistic-concurrency version here makes an otherwise valid
+	// operator command stale merely because a background probe completed between
+	// the read and mutation. Raft also deliberately excludes raw telemetry from
+	// its replicated command log, so keep the authority version stable.
 }
 
 func (m *Manager) Snapshot(faction string) domain.ArenaSnapshotV1 {

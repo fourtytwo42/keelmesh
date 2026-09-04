@@ -89,3 +89,27 @@ func TestMemorySnapshotV1Fixture(t *testing.T) {
 		t.Fatalf("fixture does not satisfy MemorySnapshotV1: %+v", snapshot)
 	}
 }
+
+func TestCoordinationV1Fixture(t *testing.T) {
+	data, err := os.ReadFile("../../contracts/fixtures/coordination-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Manifest      CoordinationCellManifestV1 `json:"manifest"`
+		Identity      NodeIdentityV2             `json:"identity"`
+		Command       ReplicatedCommandV1        `json:"command"`
+		Receipt       AppliedCommandReceiptV1    `json:"receipt"`
+		Proof         QuorumCommitProofV1        `json:"proof"`
+		Advertisement CoordinatorAdvertisementV1 `json:"advertisement"`
+		Snapshot      CoordinationCellSnapshotV1 `json:"snapshot"`
+		CrossCell     CrossCellOperationV1       `json:"cross_cell"`
+		PeerTLS       PeerTLSStateV1             `json:"peer_tls"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.Manifest.Quorum != 4 || fixture.Identity.VMID != 220 || fixture.Command.Kind != "mission.start" || fixture.Receipt.LogIndex != 42 || fixture.Proof.Required != 4 || fixture.Advertisement.State != "ready" || fixture.Snapshot.LeaderNodeID != "node-a-01" || fixture.CrossCell.State != "preparing" || !fixture.PeerTLS.Trusted {
+		t.Fatalf("fixture does not satisfy M12 coordination contracts: %+v", fixture)
+	}
+}

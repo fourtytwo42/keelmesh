@@ -24,6 +24,7 @@ import type {
   WorkspaceAssistantResponseV1,
   AssistantTurnV2,
   CommandSceneV1,
+  CoordinationOverviewV1,
   ConversationTurnV1,
   MemorySnapshotV1,
 } from "./types";
@@ -156,6 +157,7 @@ export function FleetWorkspace() {
     [agent, setAgent] = useState<AgentSnapshot | null>(null),
     [arena, setArena] = useState<ArenaSnapshotV1 | null>(null),
     [memory, setMemory] = useState<MemorySnapshotV1 | null>(null),
+    [coordination, setCoordination] = useState<CoordinationOverviewV1 | null>(null),
     [speechState, setSpeechState] = useState("ready"),
     [globalVoicePhase, setGlobalVoicePhase] = useState<GlobalVoicePhase>("idle"),
     [globalVoiceProgress, setGlobalVoiceProgress] = useState(0),
@@ -293,6 +295,7 @@ export function FleetWorkspace() {
       api<AgentSnapshot>("/api/v1/ai").then(setAgent),
       api<ArenaSnapshotV1>("/api/v3/arena?faction=A").then(setArena),
       api<MemorySnapshotV1>("/api/v5/memory").then(setMemory),
+      api<CoordinationOverviewV1>("/api/v6/coordination/cells").then(setCoordination),
       api<{ scenes: CommandSceneV1[]; turns?: ConversationTurnV1[] }>(`/api/v4/assistant/history?actor_identity=demo-operator&session_id=${encodeURIComponent(sceneSessionID)}`).then((value) => {
         const visible = value.scenes.filter((scene) => scene.state === "active" || scene.pinned);
         setCommandScenes(value.scenes);
@@ -325,6 +328,11 @@ export function FleetWorkspace() {
     }, 1000);
     return () => window.clearInterval(t);
   }, [refresh, sceneSessionID]);
+  useEffect(() => {
+    const poll = () => api<CoordinationOverviewV1>("/api/v6/coordination/cells").then(setCoordination).catch(() => setCoordination(null));
+    const timer = window.setInterval(poll, 3000);
+    return () => window.clearInterval(timer);
+  }, []);
   const rawMission =
     fleet?.missions.find((m) => m.id === activeMissionID) ??
     fleet?.missions[0] ??
@@ -1946,7 +1954,7 @@ export function FleetWorkspace() {
         height: Math.min(740, window.innerHeight - 146),
       },
       content: (
-        <EngineerView value={agent} memory={memory} onChange={setAgent} onOpenSystem={()=>open("cutaway")} onError={setError} />
+        <EngineerView value={agent} memory={memory} coordination={coordination} onChange={setAgent} onOpenSystem={()=>open("cutaway")} onError={setError} />
       ),
     });
   if (windows.has("cutaway") && platform && legacy)
@@ -1975,6 +1983,7 @@ export function FleetWorkspace() {
           arena={arena}
           agent={agent}
           memory={memory}
+          coordination={coordination}
           onChange={setPlatform}
           onOpenAILab={()=>open("engineer")}
           onError={setError}
