@@ -609,12 +609,12 @@ test("workspace windows move, minimize, restore, dock, and top navigation toggle
   await expect(fleetWindow).toHaveClass(/docked left/);
   expect((await fleetWindow.boundingBox())?.width).toBeCloseTo(245, 0);
   await expect(fleetWindow.getByRole("button", { name: "Return to floating" })).toBeVisible();
-  await page.getByRole("button", { name: "Engineer" }).click();
-  const engineer = page.getByRole("region", { name: "Autonomy Engineer", exact: true });
+  await page.getByRole("button", { name: "AI Lab" }).click();
+  const engineer = page.getByRole("region", { name: "AI Lab · Investigations & Evaluations", exact: true });
   await expect(engineer).toBeVisible();
-  await page.getByRole("button", { name: "Engineer" }).click();
+  await page.getByRole("button", { name: "AI Lab" }).click();
   await expect(engineer).toBeHidden();
-  await page.getByRole("button", { name: "Engineer" }).click();
+  await page.getByRole("button", { name: "AI Lab" }).click();
   await expect(engineer).toBeVisible();
   await engineer.focus();
   const before = await engineer.boundingBox();
@@ -624,8 +624,8 @@ test("workspace windows move, minimize, restore, dock, and top navigation toggle
   await expect(engineer.getByRole("button", { name: /Snap (left|right)/ })).toHaveCount(0);
   await engineer.getByRole("button", { name: "Minimize" }).click();
   await expect(engineer).not.toBeVisible();
-  await expect(page.locator(".window-shelf")).not.toContainText("Autonomy Engineer");
-  await page.getByRole("button", { name: "Engineer" }).click();
+  await expect(page.locator(".window-shelf")).not.toContainText("AI Lab");
+  await page.getByRole("button", { name: "AI Lab" }).click();
   await expect(engineer).toBeVisible();
   await expect(engineer.getByRole("button", { name: "Close" })).toHaveCount(0);
   await engineer.getByRole("button", { name: "Minimize" }).click();
@@ -648,14 +648,20 @@ test("workspace windows move, minimize, restore, dock, and top navigation toggle
   await expect(vessel).toBeVisible();
   await vessel.getByRole("button", { name: "Close" }).click();
   await expect(vessel).not.toBeVisible();
-  await page.getByRole("button", { name: "Cutaway" }).click();
-  const cutaway = page.getByRole("region", { name: "Live Infrastructure Cutaway", exact: true });
+  await page.getByRole("button", { name: "System" }).click();
+  const cutaway = page.locator(".window-cutaway");
   await expect(cutaway).toBeVisible();
-  await page.getByRole("button", { name: "Cutaway" }).click();
+  await page.getByRole("button", { name: "System" }).click();
   await expect(cutaway).toBeHidden();
-  await page.getByRole("button", { name: "Cutaway" }).click();
+  await page.getByRole("button", { name: "System" }).click();
   await expect(cutaway).toBeVisible();
   await expect(cutaway.getByRole("button", { name: /Snap (left|right)/ })).toHaveCount(0);
+  await expect(cutaway.locator('[aria-label="System health summary"]')).toContainText("12/12");
+  await expect(cutaway).toContainText("MISSION AUTHORITY");
+  await expect(cutaway).toContainText("NODE + NETWORK FABRIC");
+  await expect(cutaway).toContainText("REAL DATA PIPELINE");
+  await cutaway.getByRole("button", { name: "Open AI Lab evidence →" }).click();
+  await expect(page.getByRole("region", { name: "AI Lab workspace" })).toBeVisible();
   const cutawayBounds = await cutaway.boundingBox();
   const cutawayBody = await cutaway.locator(".cutaway").evaluate((element) => ({
     clientHeight: element.clientHeight,
@@ -822,7 +828,7 @@ test("release laptop viewports retain map, mission input, and primary controls",
     await expect(page.getByRole("button", { name: "New mission" })).toBeVisible();
     await expect(page.locator(".intent-dock")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Fleet", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Engineer" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Cutaway" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "AI Lab" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "System" })).toBeVisible();
   }
 });

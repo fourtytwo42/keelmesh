@@ -12,8 +12,8 @@ test.describe("touch-first responsive workspace", () => {
     await expect(page.locator(".operations-map .maplibregl-canvas")).toBeVisible();
     await expect(page.getByRole("button", { name: "Fleet", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Mission", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Engineer", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Cutaway", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "AI Lab", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "System", exact: true })).toBeVisible();
     const fleetWindow = page.getByRole("region", { name: "Fleet" });
     await expect(fleetWindow).toBeVisible();
     const bounds = await fleetWindow.boundingBox();

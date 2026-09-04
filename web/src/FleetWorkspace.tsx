@@ -248,8 +248,8 @@ export function FleetWorkspace() {
         arena: "Fleet Arena",
         resilience: "Resilience",
         quiet: "Quiet Fleet",
-        engineer: "Engineer",
-        cutaway: "Cutaway",
+        engineer: "AI Lab",
+        cutaway: "System",
         selected: "SELECTED",
         newMission: "New mission",
         commandMission: "Command mission",
@@ -1858,7 +1858,7 @@ export function FleetWorkspace() {
       maximizable: true,
       minWidth: 760,
       minHeight: 540,
-      title: pirate ? "Fleet Shipwright" : "Autonomy Engineer",
+      title: pirate ? "Fleet Shipwright" : "AI Lab · Investigations & Evaluations",
       icon: <Bot />,
       initial: {
         x: 70,
@@ -1867,7 +1867,7 @@ export function FleetWorkspace() {
         height: Math.min(740, window.innerHeight - 146),
       },
       content: (
-        <EngineerView value={agent} memory={memory} onChange={setAgent} onError={setError} />
+        <EngineerView value={agent} memory={memory} onChange={setAgent} onOpenSystem={()=>open("cutaway")} onError={setError} />
       ),
     });
   if (windows.has("cutaway") && platform && legacy)
@@ -1880,7 +1880,7 @@ export function FleetWorkspace() {
       maximizable: true,
       minWidth: 900,
       minHeight: 520,
-      title: pirate ? "Below Deck Systems" : "Live Infrastructure Cutaway",
+      title: pirate ? "Below Deck Systems" : "System · Live Operations",
       icon: <Network />,
       initial: {
         x: 80,
@@ -1892,7 +1892,12 @@ export function FleetWorkspace() {
         <PlatformCutaway
           value={platform}
           fleet={legacy.snapshot}
+          operations={fleet}
+          arena={arena}
+          agent={agent}
           memory={memory}
+          onChange={setPlatform}
+          onOpenAILab={()=>open("engineer")}
           onError={setError}
         />
       ),
@@ -2026,11 +2031,11 @@ export function FleetWorkspace() {
             <Route />
             <span>{words.mission}</span>
           </button>
-          <button aria-label={words.engineer} title="Show or hide autonomy incident investigation" onClick={() => toggleWindow("engineer")}>
+          <button aria-label={words.engineer} title="Open AI investigations, evidence, replay, and evaluations" onClick={() => toggleWindow("engineer")}>
             <Bot />
             <span>{words.engineer}</span>
           </button>
-          <button aria-label={words.cutaway} title="Show or hide the live infrastructure cutaway" onClick={() => toggleWindow("cutaway")}>
+          <button aria-label={words.cutaway} title="Open live system health, topology, data flow, and recovery" onClick={() => toggleWindow("cutaway")}>
             <Network />
             <span>{words.cutaway}</span>
           </button>
