@@ -182,6 +182,21 @@ func TestWorkspaceCommandOpensReferencedContactFromConversationHistory(t *testin
 	}
 }
 
+func TestWorkspaceCommandResolvesSeaRobinSTTHomophone(t *testing.T) {
+	fleet := domain.FleetSnapshotV2{SurfaceContacts: []domain.SurfaceContactV2{{
+		ID: "surface-sea-robin", Name: "FV Sea Robin", Callsign: "SEA ROBIN", BoatID: "NPC-4108",
+		Class: "trawler", Activity: "gear retrieval", ColorName: "blue",
+		Position: domain.GeoPointV2{-71.2886, 41.1802}, HeadingDeg: 72, SpeedMPS: 1.2,
+	}}}
+	result, err := NewManager(Config{}, slog.Default()).WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{Text: "Tell me about C. Robin."}, fleet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Speech, "FV Sea Robin") || !strings.Contains(result.Speech, "trawler") || !strings.Contains(result.Speech, "gear retrieval") {
+		t.Fatalf("STT homophone did not resolve to the charted contact: %#v", result)
+	}
+}
+
 func TestWorkspaceCommandUsesRecentVoiceHistoryAndVerifiedNearestVessel(t *testing.T) {
 	fleet := domain.FleetSnapshotV2{
 		Vessels: []domain.VesselProfileV2{

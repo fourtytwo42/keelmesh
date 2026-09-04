@@ -171,6 +171,16 @@ func (m *Manager) WorkspaceCommand(ctx context.Context, request domain.Workspace
 	if inspection, ok := deterministicWorkspaceInspection(request, fleet); ok {
 		return inspection, nil
 	}
+	if answer, ok := verifiedOperationalAnswer(request, fleet); ok {
+		return domain.WorkspaceAssistantResponseV1{
+			SchemaVersion: 1,
+			Mode:          "conversation",
+			Speech:        answer,
+			Actions:       []domain.WorkspaceAssistantActionV1{},
+			Provider:      "deterministic",
+			Model:         "keelmesh-observed-state-v1",
+		}, nil
+	}
 	key := readSecret(m.cfg.OpenAIKeyFile)
 	if key == "" {
 		return deterministicWorkspaceCommand(request, fleet), nil
@@ -292,13 +302,31 @@ func workspaceRecentEntityReferences(request domain.WorkspaceAssistantRequestV1,
 }
 
 func containsWorkspaceAlias(text string, aliases ...string) bool {
+	normalizedText := " " + normalizeWorkspaceSpeech(text) + " "
 	for _, alias := range aliases {
-		alias = strings.ToLower(strings.TrimSpace(alias))
-		if len(alias) >= 3 && strings.Contains(text, alias) {
+		alias = normalizeWorkspaceSpeech(alias)
+		if len(alias) >= 3 && strings.Contains(normalizedText, " "+alias+" ") {
 			return true
 		}
 	}
 	return false
+}
+
+// normalizeWorkspaceSpeech keeps entity resolution deterministic while
+// tolerating narrow, common STT substitutions. In particular, "C. Robin" and
+// "see Robin" normalize to the charted callsign "Sea Robin". Matching remains
+// whole-phrase and is accepted only when resolveWorkspaceReference finds one
+// visible entity.
+func normalizeWorkspaceSpeech(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(value, " ")
+	fields := strings.Fields(value)
+	for index, field := range fields {
+		if field == "c" || field == "see" {
+			fields[index] = "sea"
+		}
+	}
+	return strings.Join(fields, " ")
 }
 
 func workspaceSpatialFacts(fleet domain.FleetSnapshotV2) []workspaceSpatialFact {
@@ -337,15 +365,29 @@ func workspaceDistanceM(a, b domain.GeoPointV2) float64 {
 
 func resolveWorkspaceReference(request domain.WorkspaceAssistantRequestV1, fleet domain.FleetSnapshotV2) (workspaceEntityReference, bool) {
 	text := strings.ToLower(request.Text)
+	contactMatches := []workspaceEntityReference{}
 	for _, contact := range fleet.SurfaceContacts {
 		if containsWorkspaceAlias(text, contact.Name, contact.Callsign, contact.BoatID) {
-			return workspaceEntityReference{"contact", contact.ID, contact.Name}, true
+			contactMatches = append(contactMatches, workspaceEntityReference{"contact", contact.ID, contact.Name})
 		}
 	}
+	if len(contactMatches) == 1 {
+		return contactMatches[0], true
+	}
+	if len(contactMatches) > 1 {
+		return workspaceEntityReference{}, false
+	}
+	vesselMatches := []workspaceEntityReference{}
 	for _, vessel := range fleet.Vessels {
 		if containsWorkspaceAlias(text, vessel.Callsign, vessel.Designation, vessel.DisplayName) {
-			return workspaceEntityReference{"vessel", vessel.ID, vessel.DisplayName}, true
+			vesselMatches = append(vesselMatches, workspaceEntityReference{"vessel", vessel.ID, vessel.DisplayName})
 		}
+	}
+	if len(vesselMatches) == 1 {
+		return vesselMatches[0], true
+	}
+	if len(vesselMatches) > 1 {
+		return workspaceEntityReference{}, false
 	}
 	references := workspaceRecentEntityReferences(request, fleet)
 	if len(references) > 0 {
@@ -428,6 +470,14 @@ func verifiedOperationalAnswer(request domain.WorkspaceAssistantRequestV1, fleet
 					items = append(items, detail)
 				}
 				return fmt.Sprintf("The %d closest controlled vessels to %s are: %s.", count, contact.Name, strings.Join(items, "; ")), true
+			}
+		}
+	}
+	aboutQuestion := strings.Contains(lower, "tell me about") || strings.Contains(lower, "what do you know about") || strings.Contains(lower, "describe")
+	if aboutQuestion && reference.Kind == "contact" {
+		for _, contact := range fleet.SurfaceContacts {
+			if contact.ID == reference.ID {
+				return fmt.Sprintf("%s is the %s %s contact, Boat ID %s, currently %s at %.1f meters per second on heading %.0f degrees. Its reported position is %.5f° %s, %.5f° %s.", contact.Name, contact.ColorName, contact.Class, contact.BoatID, contact.Activity, contact.SpeedMPS, contact.HeadingDeg, math.Abs(contact.Position[1]), latitudeHemisphere(contact.Position[1]), math.Abs(contact.Position[0]), longitudeHemisphere(contact.Position[0])), true
 			}
 		}
 	}

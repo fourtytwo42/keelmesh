@@ -4,10 +4,19 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: the natural-cadence hands-off interview demo is complete, pushed to `main`, deployed to VM 214 and all twelve vessel nodes, and reset to a clean Navy baseline.
-- Last meaningful change: the centered Start/Stop Demo control now drives one 13-beat live tour with prerecorded Jarvis or Captain Barbossa narration, typed AI/group/mission actions, exact approval, execution, manual authoring, resilience, Raft/mTLS, data, AI Lab, memory, and an honest boundary statement.
-- Next step: rehearse presentation delivery only; preserve the verified guided-demo, AI-chat mission path, and `simulated|shadow|raft` rollback/comparison modes.
+- Current task: make spoken entity resolution tolerate the STT transcription `C. Robin` for the canonical contact `FV Sea Robin` without broad model guessing.
+- Last meaningful change: informational questions and mission contact targeting now apply narrow punctuation/homophone normalization, require a unique visible match, and answer generic contact questions from verified fleet state before contacting a language provider.
+- Next step: deploy and browser-verify the Sea Robin fix, then preserve the guided-demo, AI-chat mission path, and `simulated|shadow|raft` rollback/comparison modes.
 - Blockers: none for M12. Thin-pool auto-extension remains disabled and aggregate virtual allocation remains overcommitted, so snapshots and storage changes still require a fresh reviewed preflight.
+
+### 2026-09-04 - STT-tolerant Sea Robin resolution
+
+- Context: the browser STT transcribed the operator's spoken `Sea Robin` as `C. Robin`; the exact alias resolver therefore missed `FV Sea Robin` / `SEA ROBIN` / `NPC-4108`, and the language model responded with an unnecessary clarification and invented the prefix `SV`.
+- Decision: normalize punctuation and only the narrow whole-token homophones `C` and `see` to `sea`, then accept the result only when it uniquely identifies one visible vessel or contact. Apply the same normalization to informational assistant turns and mission contact resolution. Answer generic contact-information questions from current fleet state before invoking a model.
+- Files: `internal/agent/manager.go`, `internal/agent/manager_test.go`, `internal/fleetops/manager.go`, and `internal/fleetops/manager_test.go`.
+- Commands/tests: focused agent/fleetops tests plus the complete Go test suite and vet passed in the VM 214 Go 1.27 build environment.
+- Result: local and VM 214 build-stage verification resolve `Tell me about C. Robin` to canonical `FV Sea Robin` and resolve `follow C. Robin` to `surface-08` without provider guessing.
+- Follow-up: deploy the verified core/node binary and prove the exact STT transcript through the in-app browser.
 
 ### 2026-09-04 - Natural-cadence guided interview demo deployed
 
@@ -1031,6 +1040,8 @@ When sources conflict, use this order:
 - Result: VM 214 and all twelve vessel nodes are healthy on binary SHA-256 `2bc7b150e3030e37e51023ebd23a561e12bc391304f843064a8225568179ca72`. Scenario reset restores 20x pacing and asynchronous persistence coalesces stale bursts so durable group deletion is responsive. No GitHub-hosted workflow or Proxmox snapshot ran.
 
 ## Open Follow-ups
+
+- 2026-09-04 critical-scene focus oscillation: live `/api/v4/scenes` sampling proved that Tern (KM-222, 4.6% reserve) and Petrel (KM-223, 19.4% reserve) alternate as the first active critical scene. `internal/agent/scenes.go:RefreshScenes` iterates the scene map, assigns each scene a fresh `UpdatedAt`, and `Scenes` sorts by that timestamp; nondeterministic map iteration therefore changes the first critical result. `web/src/FleetWorkspace.tsx` polls every second and sets `activeSceneID` to `value.scenes.find(...)`, so the visible callout/highlight oscillates even though no command or window is active. Fix should preserve a stable active critical scene, avoid rewriting ordering timestamps for live-binding refreshes, and never move or retarget map focus without a new scene or explicit operator action.
 
 - Complete M8D automatic node-agent interruption escalation. The deployed controller already performs bounded deterministic collision/energy correction and an operator can request a live AI replan that becomes a future exact revision, but a complex out-of-envelope encounter does not yet autonomously invoke the node OpenAI route. Add a typed asynchronous proposal queue, bounded context, deterministic corridor/path validation, provider timeout/fallback, and approval only when authority expands.
 - Extend M9 from the deployed election/MCP vertical slice to signed group proposals, all-affected arming, synchronized future activation, simulated decision-node loss/re-election, and executable pre-authorized signal-seek/return-home corridors. Add expiring observer/operator-assistant/diagnostic MCP identities, rotation, per-tool budgets, and security fuzzing before exposing `/mcp/control` through an authenticated management ingress.

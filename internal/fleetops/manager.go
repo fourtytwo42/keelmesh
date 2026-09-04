@@ -2150,7 +2150,7 @@ func normalizeWaypointColor(color string) string {
 }
 
 func resolveSurfaceContact(text string, at time.Time) (surfaceTrafficSpec, domain.SurfaceContactV2, bool) {
-	lower := strings.ToLower(text)
+	lower := normalizeContactSpeech(text)
 	wantsFollow := false
 	for _, verb := range []string{"follow", "shadow", "trail", "escort", "track", "keep pace with", "stay with", "approach", "go to", "intercept", "observe", "orbit", "surround", "encircle"} {
 		if strings.Contains(lower, verb) {
@@ -2162,10 +2162,10 @@ func resolveSurfaceContact(text string, at time.Time) (surfaceTrafficSpec, domai
 		return surfaceTrafficSpec{}, domain.SurfaceContactV2{}, false
 	}
 	for _, spec := range surfaceTraffic {
-		aliases := []string{strings.ToLower(spec.Name), strings.ToLower(spec.Callsign), strings.ToLower(spec.BoatID)}
+		aliases := []string{normalizeContactSpeech(spec.Name), normalizeContactSpeech(spec.Callsign), normalizeContactSpeech(spec.BoatID)}
 		parts := strings.Fields(strings.ToLower(spec.Name))
 		if len(parts) > 1 {
-			aliases = append(aliases, strings.Join(parts[1:], " "))
+			aliases = append(aliases, normalizeContactSpeech(strings.Join(parts[1:], " ")))
 		}
 		for _, noun := range []string{"boat", "ship", "vessel", "contact", "target", "team"} {
 			aliases = append(aliases, strings.ToLower(spec.ColorName+" "+noun))
@@ -2177,6 +2177,18 @@ func resolveSurfaceContact(text string, at time.Time) (surfaceTrafficSpec, domai
 		}
 	}
 	return surfaceTrafficSpec{}, domain.SurfaceContactV2{}, false
+}
+
+func normalizeContactSpeech(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(value, " ")
+	fields := strings.Fields(value)
+	for index, field := range fields {
+		if field == "c" || field == "see" {
+			fields[index] = "sea"
+		}
+	}
+	return strings.Join(fields, " ")
 }
 
 func inferContactBehavior(text string) string {

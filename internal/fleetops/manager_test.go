@@ -15,6 +15,13 @@ import (
 	"github.com/fourtytwo42/keelmesh/internal/trajectory"
 )
 
+func TestResolveSurfaceContactAcceptsSTTSeaRobinHomophone(t *testing.T) {
+	spec, contact, ok := resolveSurfaceContact("Have Gannet follow C. Robin", time.Unix(0, 0).UTC())
+	if !ok || spec.ID != "surface-08" || contact.Name != "FV Sea Robin" {
+		t.Fatalf("STT homophone did not resolve Sea Robin: ok=%v spec=%#v contact=%#v", ok, spec, contact)
+	}
+}
+
 func TestMain(m *testing.M) {
 	_ = os.Setenv("KEELMESH_FLEET_PROFILE", "legacy48")
 	os.Exit(m.Run())
