@@ -1,12 +1,14 @@
 package arena
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -65,38 +67,97 @@ func (m *Manager) seed() {
 	m.plans = map[string]domain.EngagementPlanV1{}
 	m.leases = map[string]domain.EngagementLeaseV1{}
 	m.sessions = map[string]domain.AgentSessionV1{}
-	classes := []string{"kestrel", "kestrel", "kestrel", "mariner", "mariner", "atlas"}
-	vmids := [][]int{{220, 221, 222, 223, 224, 225}, {229, 231, 232, 233, 234, 236}}
-	hosts := map[int]string{220: "fourtyfour", 221: "fourtyfour", 222: "fourtyfour", 223: "fourtyfour", 224: "fourtyfour", 225: "mini42", 229: "mini42", 231: "mini42", 232: "mini42", 233: "mini43", 234: "mini43", 236: "mini43"}
-	for fi, f := range []string{"A", "B"} {
-		for i := 0; i < 6; i++ {
-			n := i + 1
-			id := fmt.Sprintf("node-%s-%02d", strings.ToLower(f), n)
-			cls := classes[i]
-			cap, hull, solar := 18.0, 60, 1.2
-			if cls == "mariner" {
-				cap, hull, solar = 40, 100, 2
-			}
-			if cls == "atlas" {
-				cap, hull, solar = 90, 180, 4
-			}
-			eq := []string{"eo_sensor"}
-			if i == 5 {
-				eq = []string{"enhanced_radar", "mesh_relay", "battery_upgrade", "disruption_pulse"}
-			} else if i >= 3 {
-				eq = []string{"enhanced_radar", "light_kinetic", "mine_pack"}
-			} else if i == 0 {
-				eq = []string{"enhanced_radar", "communications_jammer"}
-			}
-			vmid := vmids[fi][i]
-			m.nodes[id] = domain.ArenaNodeV1{ID: id, Faction: f, VesselID: fmt.Sprintf("arena-%s-%02d", strings.ToLower(f), n), PlannedVMID: vmid, PlannedManagementIP: fmt.Sprintf("192.168.50.%d", vmid), Host: hosts[vmid], Role: map[bool]string{true: "coordinator", false: "follower"}[i == 0], Status: "provisioned", RadioState: "connected", ManagementConnected: true, InferenceConnected: true, Provider: "openrouter", Position: domain.GeoPointV2{-71.48 + float64(i)*.008 + float64(fi)*.26, 41.34 + float64(i%3)*.012}, HeadingDeg: map[bool]float64{true: 270, false: 90}[fi == 1], BatteryKWh: cap * .82, BatteryCapacityKWh: cap, SolarKW: solar, Hull: hull, HullMaximum: hull, Class: cls, Equipment: eq, TapeDepthSeconds: 60}
+	for _, spec := range domain.VMFleetSpecs() {
+		i := spec.ClassSlot
+		id, f := spec.NodeID, spec.Faction
+		cls := []string{"kestrel", "kestrel", "kestrel", "mariner", "mariner", "atlas"}[i]
+		cap, hull, solar := 18.0, 60, 1.2
+		if cls == "mariner" {
+			cap, hull, solar = 40, 100, 2
 		}
+		if cls == "atlas" {
+			cap, hull, solar = 90, 180, 4
+		}
+		eq := []string{"eo_sensor"}
+		if i == 5 {
+			eq = []string{"enhanced_radar", "mesh_relay", "battery_upgrade", "disruption_pulse"}
+		} else if i >= 3 {
+			eq = []string{"enhanced_radar", "light_kinetic", "mine_pack"}
+		} else if i == 0 {
+			eq = []string{"enhanced_radar", "communications_jammer"}
+		}
+		m.nodes[id] = domain.ArenaNodeV1{ID: id, Faction: f, VesselID: spec.VesselID, PlannedVMID: spec.VMID, PlannedManagementIP: spec.ManagementIP, Host: spec.Host, Role: map[bool]string{true: "coordinator", false: "follower"}[i == 0], Status: "probing", RadioState: "connected", ManagementConnected: true, InferenceConnected: true, Provider: "openai", Position: spec.Position, HeadingDeg: spec.HeadingDeg, BatteryKWh: cap * .82, BatteryCapacityKWh: cap, SolarKW: solar, Hull: hull, HullMaximum: hull, Class: cls, Equipment: eq, TapeDepthSeconds: 60, PNTIntegrity: "trusted", NavigationSource: "GNSS + INS + peer corroboration", GNSSState: "nominal", GNSSAccepted: true, UncertaintyM: 4 + float64(i%3)}
 	}
 	m.coords["A"] = domain.CoordinatorV1{Faction: "A", NodeID: "node-a-01", Epoch: 1, Votes: 6, QuorumRequired: 4, State: "stable"}
 	m.coords["B"] = domain.CoordinatorV1{Faction: "B", NodeID: "node-b-01", Epoch: 1, Votes: 6, QuorumRequired: 4, State: "stable"}
 	m.contacts["A"] = []domain.ContactTrackV1{{ID: "track-a-001", Faction: "A", Classification: "unknown surface contact", Hostility: "unknown", Position: domain.GeoPointV2{-71.25, 41.36}, HeadingDeg: 270, SpeedMPS: 1.7, Confidence: .67, UncertaintyM: 180, Source: "node-a-06/radar", State: "direct"}}
 	m.contacts["B"] = []domain.ContactTrackV1{{ID: "track-b-001", Faction: "B", Classification: "unknown surface contact", Hostility: "unknown", Position: domain.GeoPointV2{-71.46, 41.36}, HeadingDeg: 90, SpeedMPS: 1.5, Confidence: .64, UncertaintyM: 210, Source: "node-b-06/radar", State: "direct"}}
 	m.emit("", "arena.reset", "Two knowledge-isolated factions and twelve symmetric logical nodes initialized.", nil)
+}
+
+// Run verifies the management endpoint of every physical vessel VM. Radio
+// faults never participate in this probe, keeping control/diagnostics separate
+// from the simulated Starlink/HaLow mission plane.
+func (m *Manager) Run(ctx context.Context) {
+	if m.localNodeID != "" {
+		return
+	}
+	m.probeNodes(ctx)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.probeNodes(ctx)
+		}
+	}
+}
+
+func (m *Manager) probeNodes(ctx context.Context) {
+	type result struct {
+		id      string
+		healthy bool
+	}
+	specs := domain.VMFleetSpecs()
+	results := make(chan result, len(specs))
+	client := &http.Client{Timeout: 1200 * time.Millisecond}
+	for _, spec := range specs {
+		go func(spec domain.NodeFleetSpec) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+spec.ManagementIP+":8080/healthz", nil)
+			if err != nil {
+				results <- result{spec.NodeID, false}
+				return
+			}
+			resp, err := client.Do(req)
+			healthy := err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
+			results <- result{spec.NodeID, healthy}
+		}(spec)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	changed := false
+	for range specs {
+		probe := <-results
+		node := m.nodes[probe.id]
+		status := "unreachable"
+		if probe.healthy {
+			status = "healthy"
+		}
+		if node.ManagementConnected != probe.healthy || node.Status != status {
+			changed = true
+		}
+		node.ManagementConnected = probe.healthy
+		node.Status = status
+		m.nodes[probe.id] = node
+	}
+	if changed {
+		m.version++
+	}
 }
 
 func (m *Manager) Snapshot(faction string) domain.ArenaSnapshotV1 {
@@ -243,11 +304,36 @@ func (m *Manager) Fault(req FaultRequest) (domain.ArenaSnapshotV1, error) {
 		c := m.coords[f]
 		c.Votes = 6
 		m.coords[f] = c
+	case "spoof_gnss", "jam_gnss", "restore_pnt":
+		matched := false
+		for id, n := range m.nodes {
+			if n.Faction != f || (req.NodeID != "" && n.ID != req.NodeID) {
+				continue
+			}
+			matched = true
+			switch req.Kind {
+			case "spoof_gnss":
+				n.GNSSState, n.GNSSAccepted, n.PNTIntegrity, n.NavigationSource, n.UncertaintyM = "spoof rejected", false, "suspect", "INS + radar + authenticated peers", 12
+			case "jam_gnss":
+				n.GNSSState, n.GNSSAccepted, n.PNTIntegrity, n.NavigationSource, n.UncertaintyM = "jammed", false, "degraded", "INS + radar + authenticated peers", 18
+			case "restore_pnt":
+				n.GNSSState, n.GNSSAccepted, n.PNTIntegrity, n.NavigationSource, n.UncertaintyM = "nominal", true, "trusted", "GNSS + INS + peer corroboration", 5
+			}
+			m.nodes[id] = n
+		}
+		if !matched {
+			return domain.ArenaSnapshotV1{}, &Error{"NODE_NOT_FOUND", "The requested vessel node is not in this faction."}
+		}
+		m.emit(f, "pnt."+req.Kind, fmt.Sprintf("%s applied; fused position was not changed.", req.Kind), map[string]any{"node_id": req.NodeID, "gnss_accepted": req.Kind == "restore_pnt", "fused_position_changed": false})
 	default:
 		return domain.ArenaSnapshotV1{}, &Error{"INVALID_RADIO_FAULT", "Unknown radio-only fault."}
 	}
 	m.version++
-	m.emit(f, "radio.fault", req.Kind, map[string]any{"management_connected": true, "inference_connected": true})
+	kind := "radio.fault"
+	if strings.Contains(req.Kind, "gnss") || req.Kind == "restore_pnt" {
+		kind = "pnt.fault"
+	}
+	m.emit(f, kind, req.Kind, map[string]any{"management_connected": true, "inference_connected": true})
 	return m.snapshot(f), nil
 }
 

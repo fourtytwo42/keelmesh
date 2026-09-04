@@ -9,6 +9,7 @@ import (
 
 	"github.com/fourtytwo42/keelmesh/internal/agent"
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/memory"
 )
 
 func (s *Server) assistantTurnV4(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +95,21 @@ func (s *Server) scenesV4(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"scenes": s.agent.Scenes(actor, session), "turns": turns})
 }
 func (s *Server) assistantHistoryV4(w http.ResponseWriter, r *http.Request) { s.scenesV4(w, r) }
+func (s *Server) clearAssistantHistoryV4(w http.ResponseWriter, r *http.Request) {
+	if s.memory == nil {
+		memoryUnavailable(w)
+		return
+	}
+	var request struct {
+		memory.Mutation
+		SessionID string `json:"session_id"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	snapshot, err := s.memory.ClearConversation(r.Context(), request.SessionID, request.Mutation)
+	respondMemory(w, map[string]any{"cleared": err == nil, "turns": []domain.ConversationTurnV1{}, "memory": snapshot}, err, http.StatusOK)
+}
 func (s *Server) sceneV4(w http.ResponseWriter, r *http.Request) {
 	value, err := s.agent.SceneForSession(r.PathValue("id"), r.URL.Query().Get("actor_identity"), r.URL.Query().Get("session_id"))
 	respondAgent(w, value, err, http.StatusOK)

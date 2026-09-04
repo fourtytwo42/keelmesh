@@ -16,7 +16,7 @@
 | M3 | Kafka/PostgreSQL scale path, workers, quarantine, replay, metrics |
 | M4 | MCP investigation, retrieval, replay, approval, provider regression |
 | M5 | Quiet Fleet rejection/quorum/arming/future commit; release commands |
-| M6 | Map-first Fleet/Mission workspace, groups, formations, voice, touch |
+| M6 | Map-first twelve-VM Fleet/Mission workspace, optional groups, formations, voice, touch |
 | M7 | Arena vertical slice and twelve-VM node fabric |
 | M8 | Long signed trajectory programs and rolling hot buffers |
 | M9 | Read/draft-only external MCP control boundary |
@@ -27,7 +27,9 @@
 ## Deployment
 
 - VM 214 hosts the core appliance and LAN endpoint.
-- Twelve vessel VMs run the same healthy Go/API/UI node binary.
+- Twelve vessel VMs run the same healthy Go/API/UI node binary and map one-to-one to the twelve persistent operating vessels.
+- The default operating picture has zero groups and scatters all twelve vessels across shoreline-validated open-water positions.
+- VM 214 probes each real node management health endpoint; simulated Starlink/HaLow and GNSS state is projected onto the matching Fleet vessel.
 - PostgreSQL/pgvector, Kafka, workers, AI, and speech remain private.
 - Builds and verification run on VM 214/nodes.
 - GitHub-hosted workflows remain disabled.

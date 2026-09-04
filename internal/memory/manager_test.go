@@ -59,6 +59,30 @@ func TestConversationTurnsAreSessionScopedAndBounded(t *testing.T) {
 	}
 }
 
+func TestClearConversationPreservesLongTermMemoryAndOtherSessions(t *testing.T) {
+	m := testManager()
+	ctx := context.Background()
+	m.RecordExchange(ctx, "remember", "demo-operator", "browser-a", "", "Remember I prefer wide spacing.", "Understood.", "mock")
+	m.RecordExchange(ctx, "other", "demo-operator", "browser-b", "", "Other question", "Other answer", "mock")
+	before := m.Snapshot()
+	after, err := m.ClearConversation(ctx, "browser-a", Mutation{RequestID: "clear-a", IdempotencyKey: "clear-a", ActorID: "demo-operator", ExpectedVersion: before.StateVersion})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.ConversationTurns("demo-operator", "browser-a", 50)) != 0 {
+		t.Fatal("cleared session transcript remained visible")
+	}
+	if len(m.ConversationTurns("demo-operator", "browser-b", 50)) != 2 {
+		t.Fatal("another session transcript was cleared")
+	}
+	if after.CommittedItems == 0 || len(m.items) == 0 {
+		t.Fatal("long-term semantic memory was cleared with chat")
+	}
+	if _, err = m.ClearConversation(ctx, "browser-a", Mutation{RequestID: "clear-a", IdempotencyKey: "clear-a", ActorID: "demo-operator", ExpectedVersion: before.StateVersion}); err != nil {
+		t.Fatalf("idempotent clear failed: %v", err)
+	}
+}
+
 func TestCandidateNeedsExactHashAndTombstoneCannotResurrect(t *testing.T) {
 	m := testManager()
 	ctx := context.Background()

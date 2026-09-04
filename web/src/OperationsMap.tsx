@@ -57,6 +57,8 @@ type Props = {
   sceneAnnotations: SceneMapAnnotationV1[];
   sceneCamera?: { center: Point; zoom: number; bearing: number; pitch: number };
   sceneCameraRequest?: number;
+  vesselCameraID?: string;
+  vesselCameraRequest?: number;
 };
 const empty: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
@@ -565,6 +567,8 @@ export function OperationsMap({
   sceneAnnotations,
   sceneCamera,
   sceneCameraRequest,
+  vesselCameraID,
+  vesselCameraRequest,
 }: Props) {
   const host = useRef<HTMLDivElement>(null),
     mapRef = useRef<MLMap | null>(null),
@@ -1258,6 +1262,16 @@ export function OperationsMap({
     // refreshes may update the suggested center, but must not recapture a map
     // the operator has subsequently panned or zoomed.
   }, [ready, sceneCameraRequest]);
+  useEffect(() => {
+    if (!ready || !mapRef.current || !vesselCameraID || !vesselCameraRequest) return;
+    const vessel = fleetRef.current.vessels.find((item) => item.id === vesselCameraID);
+    if (!vessel) return;
+    mapRef.current.easeTo({
+      center: vessel.telemetry.position,
+      zoom: Math.max(mapRef.current.getZoom(), 12),
+      duration: 500,
+    });
+  }, [ready, vesselCameraID, vesselCameraRequest]);
   useEffect(() => {
     if (!ready || !mapRef.current || !mission || !focusedGeometry) return;
     let point: Point | undefined;
@@ -1953,6 +1967,8 @@ export function OperationsMap({
       data-rendezvous-status={rendezvousStatus || undefined}
       data-command-scene-annotations={sceneAnnotations.length}
       data-command-scene-camera-request={sceneCameraRequest || undefined}
+      data-vessel-camera-request={vesselCameraRequest || undefined}
+      data-vessel-camera-id={vesselCameraID || undefined}
       data-visible-hold-groups={visibleHoldGroups.features.length}
       data-remaining-route-points={remainingMissionRoutes.features.reduce(
         (count, feature) => count + (feature.geometry.type === "LineString" ? feature.geometry.coordinates.length : 0),

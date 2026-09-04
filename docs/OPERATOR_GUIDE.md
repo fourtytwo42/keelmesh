@@ -26,6 +26,7 @@ Use Fleet to:
 - Select individuals, complete groups, filtered results, or mixed targets.
 - Inspect vessel and group status through the eye action.
 - Create, rename, recolor, or delete operational groups.
+- The release baseline starts with twelve dispersed, unassigned vessels. Each is bound to one physical vessel VM; groups are created explicitly for a mission or operating concept.
 - Drag vessels between groups; deleting a group leaves vessels unassigned.
 - Create a mission from the current selection.
 
@@ -103,4 +104,3 @@ The assistant can answer state-backed questions, select/frame entities, manage w
 | Mission edit drag | Move active mission geometry |
 
 Touch targets expand on coarse pointers, and menus become viewport-safe bottom sheets on phones.
-
