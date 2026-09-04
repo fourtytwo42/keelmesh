@@ -1959,11 +1959,14 @@ export function FleetWorkspace() {
     }
     if (action === "create-group") {
       const current = await api<FleetSnapshotV2>("/api/v2/fleet");
-      const names = current.vessels.slice(0, 3).map((item) => item.callsign);
+      const demoVessels = [...current.vessels]
+        .sort((left, right) => right.telemetry.reserve - left.telemetry.reserve)
+        .slice(0, 3);
+      const names = demoVessels.map((item) => item.callsign);
       await handleGlobalTypedMessage(`Create an operational group named Harbor Sentinel containing ${names.join(", ")}.`);
       const updated = await waitForDemo(() => api<FleetSnapshotV2>("/api/v2/fleet"), (value) => value.groups.some((item) => item.name.toLowerCase().includes("harbor sentinel")));
       if (!updated.groups.some((item) => item.name.toLowerCase().includes("harbor sentinel")))
-        await createGroupFor(current.vessels.slice(0, 3).map((item) => item.id), "Harbor Sentinel");
+        await createGroupFor(demoVessels.map((item) => item.id), "Harbor Sentinel");
       setWindows(new Set(["fleet", "assistant-chat"]));
       open("fleet");
       await refresh();
