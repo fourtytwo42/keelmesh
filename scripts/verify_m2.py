@@ -3,10 +3,16 @@
 
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 
 base = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8080").rstrip("/")
+run_id = str(time.time_ns())
+
+
+def key(label):
+    return f"m2-{label}-{run_id}"
 
 
 def request(path, payload=None, expected=200):
@@ -23,21 +29,26 @@ def request(path, payload=None, expected=200):
 
 
 boot = request("/api/v1/bootstrap")
+request("/api/v1/scenarios/demo:reset", {
+    "request_id": key("reset"), "idempotency_key": key("reset"),
+    "expected_state_version": boot["snapshot"]["state_version"],
+})
+boot = request("/api/v1/bootstrap")
 version = boot["snapshot"]["state_version"]
 intent = request("/api/v1/intents:compile", {
-    "request_id": "m2-intent", "expected_state_version": version,
+    "request_id": key("intent"), "expected_state_version": version,
     "text": "Search this area with six vessels. Maintain 30% reserve and avoid the exclusion zone.",
     "area": boot["suggested_area"]["geometry"],
 }, 201)
-plans = request("/api/v1/plans", {"request_id": "m2-plans", "expected_state_version": intent["source_state_version"], "intent_id": intent["id"]}, 201)["plans"]
+plans = request("/api/v1/plans", {"request_id": key("plans"), "expected_state_version": intent["source_state_version"], "intent_id": intent["id"]}, 201)["plans"]
 plan = next(candidate for candidate in plans if candidate["recommended"])
 lease = request(f"/api/v1/plans/{plan['id']}:authorize", {
-    "request_id": "m2-authorize", "expected_state_version": intent["source_state_version"],
+    "request_id": key("authorize"), "expected_state_version": intent["source_state_version"],
     "plan_hash": plan["content_hash"], "operator_id": "demo-operator",
 }, 201)
 request(f"/api/v1/missions/{lease['mission_id']}:start", {
-    "request_id": "m2-start", "expected_state_version": intent["source_state_version"],
-    "lease_id": lease["id"], "plan_hash": plan["content_hash"], "idempotency_key": "m2-start-once",
+    "request_id": key("start"), "expected_state_version": intent["source_state_version"],
+    "lease_id": lease["id"], "plan_hash": plan["content_hash"], "idempotency_key": key("start"),
 })
 
 state = request("/api/v1/resilience")
@@ -49,7 +60,7 @@ snapshots = [state]
 for index, kind in enumerate(schedule):
     state = request("/api/v1/faults", {
         "schema_version": 1, "kind": kind, "target_id": "vessel-04", "scenario_tick": state["mission_tick"],
-        "request_id": f"m2-fault-{index}", "idempotency_key": f"m2-fault-{index}",
+        "request_id": key(f"fault-{index}"), "idempotency_key": key(f"fault-{index}"),
         "expected_state_version": state["state_version"],
     })
     snapshots.append(state)
