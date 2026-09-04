@@ -14,8 +14,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fourtytwo42/keelmesh/internal/arena"
 	"github.com/fourtytwo42/keelmesh/internal/coordination"
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/fleetops"
 )
 
 func (s *Server) coordinationMutationMiddleware(next http.Handler) http.Handler {
@@ -31,6 +33,10 @@ func (s *Server) coordinationMutationMiddleware(next http.Handler) http.Handler 
 			writeJSON(w, http.StatusBadRequest, domain.APIError{Code: "TOOL_ARGUMENT_INVALID", Message: "Unable to read coordinated mutation."})
 			return
 		}
+		if err := validateCoordinatedRequest(r.Method, r.URL.Path, body); err != nil {
+			writeJSON(w, http.StatusBadRequest, domain.APIError{Code: "INVALID_REQUEST", Message: "Invalid request body: " + err.Error()})
+			return
+		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		metadata := map[string]any{}
 		if len(bytes.TrimSpace(body)) > 0 && json.Unmarshal(body, &metadata) != nil {
@@ -44,6 +50,9 @@ func (s *Server) coordinationMutationMiddleware(next http.Handler) http.Handler 
 			return
 		}
 		actor := stringField(metadata, "actor_identity")
+		if actor == "" {
+			actor = stringField(metadata, "actor_id")
+		}
 		if actor == "" {
 			actor = stringField(metadata, "operator_id")
 		}
@@ -137,6 +146,94 @@ func (s *Server) coordinationMutationMiddleware(next http.Handler) http.Handler 
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		next.ServeHTTP(w, r)
 	})
+}
+
+func validateCoordinatedRequest(method, path string, body []byte) error {
+	var target any
+	switch {
+	case method == http.MethodPost && path == "/api/v2/groups":
+		target = &fleetops.CreateGroupRequest{}
+	case method == http.MethodPatch && isResourcePath(path, "/api/v2/groups/"):
+		target = &fleetops.PatchGroupRequest{}
+	case method == http.MethodDelete && isResourcePath(path, "/api/v2/groups/"):
+		target = &fleetops.Mutation{}
+	case method == http.MethodPost && strings.HasSuffix(path, "/route:command") && isNestedResourcePath(path, "/api/v2/groups/", "/route:command"):
+		target = &fleetops.GroupRouteCommandRequest{}
+	case method == http.MethodPost && strings.HasSuffix(path, "/members:move") && isNestedResourcePath(path, "/api/v2/groups/", "/members:move"):
+		target = &fleetops.MoveGroupMemberRequest{}
+	case method == http.MethodPost && path == "/api/v2/missions":
+		target = &fleetops.CreateMissionRequest{}
+	case method == http.MethodPatch && isResourcePath(path, "/api/v2/missions/"):
+		target = &fleetops.PatchMissionRequest{}
+	case method == http.MethodDelete && isResourcePath(path, "/api/v2/missions/"):
+		target = &fleetops.Mutation{}
+	case method == http.MethodPost && isNestedResourcePath(path, "/api/v2/missions/", "/geometry"):
+		target = &fleetops.GeometryRequest{}
+	case method == http.MethodPost && isNestedResourcePath(path, "/api/v2/missions/", "/commands:compile"):
+		target = &fleetops.CompileRequest{}
+	case method == http.MethodPost && isNestedResourcePath(path, "/api/v2/missions/", "/plans"):
+		target = &fleetops.PlansRequest{}
+	case method == http.MethodPost && isMissionPlanActionPath(path):
+		target = &fleetops.PlanActionRequest{}
+	case method == http.MethodPost && path == "/api/v3/matches":
+		target = &domain.ArenaMutationV1{}
+	case method == http.MethodPost && isResourcePath(path, "/api/v3/matches/") && strings.HasSuffix(path, ":start"):
+		target = &domain.ArenaMutationV1{}
+	case method == http.MethodPost && isNestedResourcePath(path, "/api/v3/matches/", "/faults"):
+		target = &arena.FaultRequest{}
+	case method == http.MethodPost && isNestedResourcePath(path, "/api/v3/matches/", "/advance"):
+		target = &struct {
+			domain.ArenaMutationV1
+			Seconds int `json:"seconds"`
+		}{}
+	case method == http.MethodPost && isNestedResourcePath(path, "/api/v3/matches/", "/engagements:plan"):
+		target = &arena.PlanRequest{}
+	case method == http.MethodPost && isArenaEngagementActionPath(path):
+		target = &arena.AuthorizeRequest{}
+	case method == http.MethodPost && isNestedResourcePath(path, "/api/v3/matches/", "/effects"):
+		target = &arena.EffectRequest{}
+	default:
+		return fmt.Errorf("unsupported coordinated route")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("only one JSON object is allowed")
+	}
+	return nil
+}
+
+func isResourcePath(path, prefix string) bool {
+	remainder := strings.TrimPrefix(path, prefix)
+	return remainder != path && remainder != "" && !strings.Contains(remainder, "/")
+}
+
+func isNestedResourcePath(path, prefix, suffix string) bool {
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return false
+	}
+	remainder := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
+	return remainder != "" && !strings.Contains(strings.Trim(remainder, "/"), "/")
+}
+
+func isMissionPlanActionPath(path string) bool {
+	if !strings.HasPrefix(path, "/api/v2/missions/") {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(path, "/api/v2/missions/"), "/")
+	return len(parts) == 3 && parts[0] != "" && parts[1] == "plans" &&
+		(strings.HasSuffix(parts[2], ":preview") || strings.HasSuffix(parts[2], ":authorize") || strings.HasSuffix(parts[2], ":start"))
+}
+
+func isArenaEngagementActionPath(path string) bool {
+	if !strings.HasPrefix(path, "/api/v3/matches/") {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(path, "/api/v3/matches/"), "/")
+	return len(parts) == 3 && parts[0] != "" && parts[1] == "engagements" && strings.HasSuffix(parts[2], ":authorize")
 }
 
 func (s *Server) coordinationMode() coordination.Mode {

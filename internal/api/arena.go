@@ -1,11 +1,16 @@
 package api
 
 import (
+	"context"
 	"errors"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/arena"
+	"github.com/fourtytwo42/keelmesh/internal/coordination"
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 )
 
@@ -128,6 +133,16 @@ func (s *Server) coordinationV3(w http.ResponseWriter, r *http.Request) {
 	if !s.requireArena(w) {
 		return
 	}
+	if s.coordGateway != nil && s.coordGateway.Mode() != coordination.ModeSimulated {
+		cellID := strings.ToUpper(r.PathValue("id"))
+		advertisement, err := s.coordGateway.DiscoverLeader(r.Context(), cellID)
+		if err != nil {
+			writeCoordinationPublicError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, coordinatorFromAdvertisement(advertisement))
+		return
+	}
 	v := s.arena.Snapshot(strings.ToUpper(r.PathValue("id")))
 	writeJSON(w, http.StatusOK, v.Coordinators[0])
 }
@@ -135,9 +150,47 @@ func (s *Server) ingressCoordinatorV3(w http.ResponseWriter, r *http.Request) {
 	if !s.requireArena(w) {
 		return
 	}
-	v := s.arena.Snapshot(strings.ToUpper(r.PathValue("faction_id")))
+	cellID := strings.ToUpper(r.PathValue("faction_id"))
+	if s.coordGateway != nil && s.coordGateway.Mode() != coordination.ModeSimulated {
+		ctx, cancel := contextWithTimeout(r, 2500*time.Millisecond)
+		defer cancel()
+		advertisement, err := s.coordGateway.DiscoverLeader(ctx, cellID)
+		if err != nil {
+			writeCoordinationPublicError(w, err)
+			return
+		}
+		coordinator := coordinatorFromAdvertisement(advertisement)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"faction":              cellID,
+			"coordinator":          coordinator,
+			"management_url":       coordinatorManagementUI(advertisement.ManagementURL),
+			"epoch":                advertisement.AuthorityEpoch,
+			"term":                 advertisement.Term,
+			"commit_index":         advertisement.CommitIndex,
+			"signed_advertisement": advertisement,
+			"source":               "raft-signed-leader-advertisement",
+		})
+		return
+	}
+	v := s.arena.Snapshot(cellID)
 	c := v.Coordinators[0]
 	writeJSON(w, http.StatusOK, map[string]any{"faction": c.Faction, "coordinator": c, "management_url": "http://" + nodeIP(v.Nodes, c.NodeID) + ":8080", "epoch": c.Epoch})
+}
+
+func contextWithTimeout(r *http.Request, duration time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(r.Context(), duration)
+}
+
+func coordinatorFromAdvertisement(advertisement domain.CoordinatorAdvertisementV1) domain.CoordinatorV1 {
+	return domain.CoordinatorV1{Faction: advertisement.CellID, NodeID: advertisement.NodeID, Epoch: int64(advertisement.AuthorityEpoch), Votes: 4, QuorumRequired: 4, State: advertisement.State}
+}
+
+func coordinatorManagementUI(managementURL string) string {
+	parsed, err := url.Parse(managementURL)
+	if err != nil || parsed.Hostname() == "" {
+		return "unavailable"
+	}
+	return "http://" + net.JoinHostPort(parsed.Hostname(), "8080")
 }
 func nodeIP(nodes []domain.ArenaNodeV1, id string) string {
 	for _, n := range nodes {
