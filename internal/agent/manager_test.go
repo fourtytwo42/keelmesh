@@ -112,7 +112,7 @@ func TestInterpretMissionCommandBindsDynamicSurfaceContact(t *testing.T) {
 	}
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"guidance_kind\":\"orbit_contact\",\"contact_id\":\"surface-16\",\"contact_behavior\":\"surround\",\"dynamic_target\":true,\"formation\":\"ring\",\"standoff_m\":120,\"minimum_reserve\":0,\"maximum_speed_mps\":0,\"hold_at_end\":true,\"summary\":\"Approach and surround the identified tanker.\"}"}]}]}`))
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"guidance_kind\":\"orbit_contact\",\"contact_id\":\"surface-16\",\"contact_behavior\":\"surround\",\"dynamic_target\":true,\"formation\":\"ring\",\"formation_spacing_m\":80,\"standoff_m\":120,\"minimum_reserve\":0,\"maximum_speed_mps\":0,\"hold_at_end\":true,\"summary\":\"Approach and surround the identified tanker.\"}"}]}]}`))
 	}))
 	defer provider.Close()
 	manager := NewManager(Config{AIURL: "http://127.0.0.1:1", OpenAIKeyFile: keyFile, OpenAIModel: "gpt-5.6-luna", OpenAIURL: provider.URL}, slog.Default())
@@ -124,7 +124,7 @@ func TestInterpretMissionCommandBindsDynamicSurfaceContact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ContactID != "surface-16" || !result.DynamicTarget || result.ContactBehavior != "surround" || result.Formation != "ring" || result.Provider != "openai" {
+	if result.ContactID != "surface-16" || !result.DynamicTarget || result.ContactBehavior != "surround" || result.Formation != "ring" || result.FormationSpacingM != 80 || result.Provider != "openai" {
 		t.Fatalf("unexpected semantic interpretation: %#v", result)
 	}
 }
@@ -206,6 +206,49 @@ func TestWorkspaceCommandUsesRecentVoiceHistoryAndVerifiedNearestVessel(t *testi
 	}
 }
 
+func TestWorkspacePositionAnswerIncludesRequestedReserve(t *testing.T) {
+	fleet := domain.FleetSnapshotV2{Vessels: []domain.VesselProfileV2{{
+		ID: "vessel-1", Callsign: "Gannet", Designation: "KM-220", DisplayName: "Gannet (KM-220)",
+		Telemetry: domain.VesselTelemetryV2{Position: domain.GeoPointV2{-71.5, 41.1}, HeadingDeg: 90, SpeedMPS: 1.2, Reserve: .73},
+	}}}
+	result, err := NewManager(Config{}, slog.Default()).WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{Text: "What is Gannet's current position and reserve?"}, fleet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Speech, "Gannet (KM-220)") || !strings.Contains(result.Speech, "73.0% reserve") {
+		t.Fatalf("position answer omitted requested reserve: %#v", result)
+	}
+}
+
+func TestWorkspaceClosestAnswerReturnsRequestedCountAndReserves(t *testing.T) {
+	fleet := domain.FleetSnapshotV2{
+		Vessels: []domain.VesselProfileV2{
+			{ID: "v1", Callsign: "Near", DisplayName: "Near (KM-1)", Available: true, Telemetry: domain.VesselTelemetryV2{Position: domain.GeoPointV2{-71.20, 41.20}, Reserve: .8}},
+			{ID: "v2", Callsign: "Middle", DisplayName: "Middle (KM-2)", Available: true, Telemetry: domain.VesselTelemetryV2{Position: domain.GeoPointV2{-71.25, 41.20}, Reserve: .7}},
+			{ID: "v3", Callsign: "Far", DisplayName: "Far (KM-3)", Available: true, Telemetry: domain.VesselTelemetryV2{Position: domain.GeoPointV2{-71.30, 41.20}, Reserve: .6}},
+		},
+		SurfaceContacts: []domain.SurfaceContactV2{{ID: "contact-1", Name: "MV Beacon", Callsign: "BEACON", Position: domain.GeoPointV2{-71.19, 41.20}}},
+	}
+	result, err := NewManager(Config{}, slog.Default()).WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{Text: "Which three boats are closest to MV Beacon and what are their reserves?"}, fleet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"Near (KM-1)", "Middle (KM-2)", "Far (KM-3)", "80.0% reserve", "70.0% reserve", "60.0% reserve"} {
+		if !strings.Contains(result.Speech, expected) {
+			t.Fatalf("ranked answer omitted %q: %s", expected, result.Speech)
+		}
+	}
+}
+
+func TestWorkspaceMissionPromptForbidsPreplanningStrategyClaims(t *testing.T) {
+	instructions := workspaceCommandInstructions("navy")
+	for _, required := range []string{"no route or strategy exists yet", "never invent or name a recommended plan", "If exactly one vessel is named"} {
+		if !strings.Contains(instructions, required) {
+			t.Fatalf("workspace mission instructions omitted %q", required)
+		}
+	}
+}
+
 func TestHoldPositionOrderIsNotMisclassifiedAsPositionQuestion(t *testing.T) {
 	fleet := domain.FleetSnapshotV2{
 		Groups:          []domain.OperationalGroupV2{{ID: "group-ws", Code: "WS", Name: "Watch Shoal", ColorName: "yellow", MemberIDs: []string{"vessel-1"}}},
@@ -253,6 +296,24 @@ func TestWorkspaceCommandConfirmsSingleRecommendedPlanWithoutLetter(t *testing.T
 	}
 	if len(result.Actions) != 1 || result.Actions[0].Kind != "choose_plan" || result.Actions[0].Target != "A" {
 		t.Fatalf("single-plan confirmation was not resolved: %#v", result)
+	}
+}
+
+func TestWorkspaceCommandDoesNotTreatMissionDeletionAsPlanConfirmation(t *testing.T) {
+	fleet := domain.FleetSnapshotV2{Missions: []domain.MissionWorkspaceV2{{ID: "mission-1", Name: "Operation Balanced shoreline loop", Status: "planned"}}}
+	request := domain.WorkspaceAssistantRequestV1{
+		Text:            "Delete the current planned mission Operation Balanced shoreline loop.",
+		ActiveMissionID: "mission-1",
+		PlanOptions: []domain.WorkspacePlanOptionV1{{
+			Label: "B", PlanID: "plan-b", Name: "Balanced shoreline loop", ContentHash: "hash-b", PolicyStatus: "approval_required",
+		}},
+	}
+	result, err := NewManager(Config{}, slog.Default()).WorkspaceCommand(context.Background(), request, fleet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Actions) != 1 || result.Actions[0].Kind != "delete_mission" || result.Actions[0].Target != "mission-1" {
+		t.Fatalf("mission deletion was misclassified as plan confirmation: %#v", result)
 	}
 }
 

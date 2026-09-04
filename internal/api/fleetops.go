@@ -183,7 +183,12 @@ func (s *Server) compileV2(w http.ResponseWriter, r *http.Request) {
 		if selectionContext, contextErr := s.fleetops.TargetSelectionContext(missionID, req.Text); contextErr == nil && len(selectionContext.CurrentTargetIDs) == 0 {
 			var selection domain.MissionTargetSelectionV2
 			var selectionErr error
-			if s.agent != nil {
+			explicit, foundExplicit, explicitErr := s.fleetops.ExplicitTargetSelection(missionID, req.Text)
+			if explicitErr != nil {
+				selectionErr = explicitErr
+			} else if foundExplicit {
+				selection = explicit
+			} else if s.agent != nil {
 				selection, selectionErr = s.agent.SelectMissionTargets(r.Context(), selectionContext)
 			} else {
 				selectionErr = fmt.Errorf("agent unavailable")

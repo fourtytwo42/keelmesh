@@ -4,10 +4,19 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: M12 production rollout and repository cleanup are complete; keep `main`, VM 214, and vessel-node deployments synchronized.
-- Last meaningful change: both six-voter cells and VM 214 now run authoritative Raft mode after live leader, majority/minority partition, convergence, proof, and cross-cell drills. Disposable root artifacts, temporary worktrees/binaries, and duplicate node drop-ins were removed.
-- Next step: record only new product work or post-interview hardening; preserve `simulated|shadow|raft` as rollback/comparison modes.
+- Current task: AI-only operational acceptance is complete across five progressively complex mission tiers; keep `main`, VM 214, and all vessel nodes synchronized.
+- Last meaningful change: conversational grounding now handles exact vessel sets, live spatial/reserve questions, structured formation/spacing/speed/reserve constraints, loop intent, persisted plans, safe mission-management commands, stable scene replacement, and cross-cell mission execution without canned pre-planner claims.
+- Next step: record only new product work or post-interview hardening; preserve the verified AI-chat mission path and `simulated|shadow|raft` rollback/comparison modes.
 - Blockers: none for M12. Thin-pool auto-extension remains disabled and aggregate virtual allocation remains overcommitted, so snapshots and storage changes still require a fresh reviewed preflight.
+
+### 2026-09-04 - Five-tier AI chat operational acceptance
+
+- Context: the operator requested progressively harder mission creation and management using only the shared AI chat, including conversational memory and real cross-cell authority.
+- Decision: ground operational Q&A in live core state; resolve all explicitly named vessels; parse loop, reserve, speed, and separation constraints deterministically after language interpretation; persist plans; prevent management commands from being mistaken for plan confirmations; replace stale unpinned AI scenes instead of repeatedly reopening them; and never let contact-follow heuristics loosen an explicit speed limit.
+- Files: `ai/keelmesh_ai/service.py`, `ai/tests/test_service.py`, `internal/agent/manager.go`, `internal/agent/manager_test.go`, `internal/api/fleetops.go`, `internal/domain/fleetops.go`, `internal/fleetops/manager.go`, `internal/fleetops/manager_test.go`, and `web/src/FleetWorkspace.tsx`.
+- Commands/tests: five live `/browser` tiers (single-vessel transit/hold; group creation and multi-leg formation route; nearest-vessel contact intercept/follow; looping shoreline patrol; cross-cell two-vessel rendezvous), chat-only confirmation/deletion, 500x movement checks, live reserve depletion, cross-cell proof inspection, chat clear/reload continuity, strict TypeScript, 13 Vitest assertions, focused Go tests, full Go tests/vet on VM 214, and 14 Python service tests in the project test environment.
+- Result: every tier reached the expected exact-plan or executing state; Cell A and Cell B each produced six valid acknowledgements for the cross-cell mission where four were required; post-reload chat correctly retained FV Sea Robin / NPC-4108; all test missions and the temporary Beacon Pursuit group were deleted, leaving zero missions and twelve unassigned vessels. No voice test, hosted workflow, Proxmox migration, or snapshot ran.
+- Follow-up: deploy the final identical binary to VM 214 and all twelve nodes, record its checksum, then commit and push `main`.
 
 ### 2026-09-04 - M12 authoritative rollout and repository cleanup complete
 
@@ -209,6 +218,12 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+### 2026-09-04 - AI-only five-tier mission and memory verification
+
+- Context: verify that the global AI chat can answer grounded questions, preserve conversational references, create increasingly complex missions, and manage them through the same authority path as manual operation.
+- Commands/tests: live in-app `/browser` testing through five tiers; 500x execution sampling; `/api/v6` cross-cell proof checks; browser reload memory check; strict TypeScript and 13 Vitest assertions; focused Go/Python regressions and full VM 214 Go tests/vet.
+- Result: single-vessel, group, dynamic-contact, looping patrol, and cross-cell missions behaved as requested. Explicit constraints survived planning, follow routes remained dynamic, management commands did not authorize plans, and short-term context survived reload. Test missions and group were removed afterward.
 
 ### 2026-09-03 - Unsaved mission-draft reuse
 

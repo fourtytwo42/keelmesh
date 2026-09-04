@@ -52,12 +52,13 @@ def test_mission_command_binds_surround_to_live_contact() -> None:
         }
     )
     result = parse_mission_command(
-        '{"guidance_kind":"orbit_contact","contact_id":"surface-16","contact_behavior":"surround","dynamic_target":true,"formation":"ring","standoff_m":120,"minimum_reserve":0,"maximum_speed_mps":0,"hold_at_end":true,"summary":"Surround the identified tanker."}',
+        '{"guidance_kind":"orbit_contact","contact_id":"surface-16","contact_behavior":"surround","dynamic_target":true,"formation":"ring","formation_spacing_m":80,"standoff_m":120,"minimum_reserve":0,"maximum_speed_mps":0,"hold_at_end":true,"summary":"Surround the identified tanker."}',
         request,
     )
     assert result["contact_id"] == "surface-16"
     assert result["dynamic_target"] is True
     assert result["formation"] == "ring"
+    assert result["formation_spacing_m"] == 80
 
 
 def test_openai_responses_output_text_is_extracted() -> None:

@@ -434,6 +434,7 @@ func TestPreviewDoesNotMoveAndExactHashStarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	mission = m.missions[mission.ID]
 	plans, err := m.GeneratePlans(mission.ID, PlansRequest{Mutation: Mutation{RequestID: "plans", IdempotencyKey: "plans", ExpectedVersion: mission.Version}, DraftID: draft.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -549,6 +550,34 @@ func TestCompileResolvesShorelineIntentWithoutDrawnGeometry(t *testing.T) {
 	}
 	if len(plans) != 3 {
 		t.Fatalf("plans = %d", len(plans))
+	}
+}
+
+func TestCompilePersistsNaturalLanguageLoopAndPercentReserve(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	vesselID := snapshot.Vessels[0].ID
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation:  Mutation{RequestID: "loop-intent-mission", IdempotencyKey: "loop-intent-mission", ExpectedVersion: snapshot.FleetVersion},
+		Name:      "Loop intent patrol",
+		TargetIDs: []string{vesselID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation: Mutation{RequestID: "loop-intent-compile", IdempotencyKey: "loop-intent-compile", ExpectedVersion: mission.Version},
+		Text:     "Create a looping shoreline patrol and preserve at least 35 percent reserve.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := m.missions[mission.ID]
+	if !updated.Loop {
+		t.Fatal("natural-language looping intent was not persisted")
+	}
+	if updated.Constraints.MinimumReserve != .35 || draft.Constraints.MinimumReserve != .35 {
+		t.Fatalf("natural-language reserve = mission %.2f draft %.2f", updated.Constraints.MinimumReserve, draft.Constraints.MinimumReserve)
 	}
 }
 
@@ -1406,6 +1435,75 @@ func TestAIInterpretedSurroundCompilesWithoutManualGeometry(t *testing.T) {
 	context, err := m.PlanningContext(draft.ID)
 	if err != nil || context.FollowContact == nil || context.FollowContact.ID != "surface-16" {
 		t.Fatalf("live contact identity was not retained: %#v, %v", context.FollowContact, err)
+	}
+}
+
+func TestExplicitVesselTargetDoesNotExpandToItsGroup(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	group := snapshot.Groups[0]
+	vessel := m.vessels[group.MemberIDs[0]]
+	mission, err := m.CreateMission(CreateMissionRequest{Mutation: Mutation{RequestID: "explicit-create", IdempotencyKey: "explicit-create", ExpectedVersion: snapshot.FleetVersion}, Name: "Explicit Target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, found, err := m.ExplicitTargetSelection(mission.ID, "Have "+vessel.Callsign+" intercept the contact")
+	if err != nil || !found || len(selection.TargetIDs) != 1 || selection.TargetIDs[0] != vessel.ID {
+		t.Fatalf("explicit vessel expanded or failed resolution: %#v, %v", selection, err)
+	}
+}
+
+func TestExplicitTargetSelectionKeepsEveryNamedVessel(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	first, second := snapshot.Vessels[0], snapshot.Vessels[len(snapshot.Vessels)-1]
+	mission, err := m.CreateMission(CreateMissionRequest{Mutation: Mutation{RequestID: "multi-explicit-create", IdempotencyKey: "multi-explicit-create", ExpectedVersion: snapshot.FleetVersion}, Name: "Cross-cell explicit targets"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, found, err := m.ExplicitTargetSelection(mission.ID, "Have "+first.Callsign+" and "+second.Callsign+" rendezvous at Safe Haven")
+	if err != nil || !found || len(selection.TargetIDs) != 2 || !sameMembers(selection.TargetIDs, []string{first.ID, second.ID}) {
+		t.Fatalf("multiple explicit vessels were not preserved: %#v, %v", selection, err)
+	}
+}
+
+func TestExplicitFormationAndSpacingSurviveAdvisorGeneration(t *testing.T) {
+	m := New("", slog.Default())
+	snapshot := m.Snapshot()
+	targets := []string{snapshot.Vessels[0].ID, snapshot.Vessels[1].ID, snapshot.Vessels[2].ID}
+	mission, err := m.CreateMission(CreateMissionRequest{
+		Mutation: Mutation{RequestID: "formation-create", IdempotencyKey: "formation-create", ExpectedVersion: snapshot.FleetVersion},
+		Name:     "Formation Transit", TargetIDs: targets,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	interpretation := domain.MissionCommandInterpretationV2{
+		GuidanceKind: "waypoints", ContactBehavior: "none", Formation: "wedge", FormationSpacingM: 80,
+		Summary: "Use the requested wedge and spacing.", Provider: "openai", Model: "gpt-5.6-luna",
+	}
+	draft, err := m.Compile(mission.ID, CompileRequest{
+		Mutation: Mutation{RequestID: "formation-compile", IdempotencyKey: "formation-compile", ExpectedVersion: mission.Version},
+		Text:     "Move 0.5 nautical miles south in a wedge with 80 meter spacing, maintain 100 meter vessel separation, and limit speed to 1.5 meters per second", PlanningMode: "ai_assisted", CommandInterpretation: &interpretation,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.FormationPreference != "wedge" || draft.Constraints.FormationSpacingM != 80 {
+		t.Fatalf("explicit formation was not compiled: %#v", draft)
+	}
+	if draft.Constraints.MinimumVesselSeparationM != 100 || draft.Constraints.MaximumSpeedMPS != 1.5 {
+		t.Fatalf("explicit separation/speed limits were not compiled: %#v", draft.Constraints)
+	}
+	draft.Advisor = domain.MissionAdvisorV2{State: "accepted", Provider: "openai", Model: "gpt-5.6-luna", Strategies: []domain.MissionStrategyV2{{ID: "advisor-column", Name: "Advisor column", Description: "Deliberately conflicting advisory formation.", Formation: "column", SpeedFactor: .8, ReserveBias: .5, Maneuvers: []string{"regroup", "transit"}}}}
+	m.drafts[draft.ID] = draft
+	current := m.missions[mission.ID]
+	plans, err := m.GeneratePlans(mission.ID, PlansRequest{Mutation: Mutation{RequestID: "formation-plans", IdempotencyKey: "formation-plans", ExpectedVersion: current.Version}, DraftID: draft.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) != 1 || plans[0].Formation != "wedge" || plans[0].MinimumSeparationM != 100 {
+		t.Fatalf("advisor overrode explicit formation or spacing: %#v", plans)
 	}
 }
 

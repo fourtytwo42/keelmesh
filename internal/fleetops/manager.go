@@ -165,9 +165,11 @@ var missionNames = []string{"Harbor Lantern", "Silver Wake", "Tidal Compass", "C
 var patterns = []string{"solid", "diagonal", "dots", "crosshatch", "vertical", "rings", "dash", "chevron"}
 var spawnCenters = []domain.GeoPointV2{{-71.385, 41.43}, {-71.30, 41.43}, {-71.24, 41.45}, {-71.42, 41.39}, {-71.33, 41.37}, {-71.23, 41.35}, {-71.47, 41.25}, {-71.30, 41.20}}
 var legacySpawnCenters = []domain.GeoPointV2{{-71.375, 41.49}, {-71.315, 41.47}, {-71.24, 41.45}, {-71.43, 41.39}, {-71.33, 41.37}, {-71.23, 41.35}, {-71.47, 41.25}, {-71.30, 41.20}}
-var reserveAfterLabel = regexp.MustCompile(`(?i)(?:reserve|battery)[^0-9]{0,24}([0-9]{1,3})\s*%`)
-var reserveBeforeLabel = regexp.MustCompile(`(?i)([0-9]{1,3})\s*%\s*(?:reserve|battery)`)
+var reserveAfterLabel = regexp.MustCompile(`(?i)(?:reserve|battery)[^0-9]{0,24}([0-9]{1,3})\s*(?:%|percent\b)`)
+var reserveBeforeLabel = regexp.MustCompile(`(?i)([0-9]{1,3})\s*(?:%|percent)\s*(?:minimum\s+)?(?:reserve|battery)`)
 var coastalDistance = regexp.MustCompile(`(?i)(?:within|inside|no more than|max(?:imum)?(?: distance)?(?: of)?)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:nm|nmi|nautical\s*miles?)`)
+var maximumSpeedIntent = regexp.MustCompile(`(?i)(?:limit(?:\s+speed)?|maximum\s+speed|max\s+speed|speed\s+cap|no\s+faster\s+than)\s*(?:to|at|of)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:m/s|meters?\s+per\s+second|metres?\s+per\s+second)\b`)
+var vesselSeparationIntent = regexp.MustCompile(`(?i)(?:maintain|keep|minimum|min)\s*(?:at\s+least\s*)?([0-9]+(?:\.[0-9]+)?)\s*(?:m|meters?|metres?)\s*(?:of\s+)?(?:vessel|boat|ship)?\s*separation\b`)
 var relativeTravelDistance = regexp.MustCompile(`(?i)\b(?:travel|go|proceed|sail|run|head|move)?\s*([0-9]+(?:\.[0-9]+)?)\s*(nm|nmi|nautical\s*miles?|km|kilometers?|mi|miles?)\b`)
 var relativeCardinalLeg = regexp.MustCompile(`(?i)\b([0-9]+(?:\.[0-9]+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)[ -]*(nm|nmi|nautical[ -]*miles?|km|kilometers?|mi|miles?)[ ,]*(?:to(?:ward|wards)?(?: the)? |due )?(north(?:ward)?|north[ -]?east|northeast|east(?:ward)?|south[ -]?east|southeast|south(?:ward)?|south[ -]?west|southwest|west(?:ward)?|north[ -]?west|northwest)\b`)
 var explicitHeading = regexp.MustCompile(`(?i)\b(?:heading|bearing|course)\s*(?:of|to|at)?\s*([0-9]{1,3}(?:\.[0-9]+)?)\s*(?:deg(?:rees?)?|°)?\b`)
@@ -1491,6 +1493,68 @@ func (m *Manager) DeterministicTargetSelection(missionID, intent string) (domain
 	return m.resolveTargetsFromIntentLocked(missionID, intent)
 }
 
+// ExplicitTargetSelection resolves names, designations, group aliases, and
+// whole-fleet wording before consulting a model. An explicitly named vessel
+// must not silently expand to its operational group.
+func (m *Manager) ExplicitTargetSelection(missionID, intent string) (domain.MissionTargetSelectionV2, bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if _, ok := m.missions[missionID]; !ok {
+		return domain.MissionTargetSelectionV2{}, false, &Error{"MISSION_NOT_FOUND", "Mission not found."}
+	}
+	lower := strings.ToLower(intent)
+	vessels := make([]domain.VesselProfileV2, 0, len(m.vessels))
+	for _, vessel := range m.vessels {
+		if vessel.Available && len(m.conflicts([]string{vessel.ID}, missionID)) == 0 {
+			vessels = append(vessels, vessel)
+		}
+	}
+	sort.Slice(vessels, func(i, j int) bool { return vessels[i].Designation < vessels[j].Designation })
+	if strings.Contains(lower, "all vessels") || strings.Contains(lower, "all boats") || strings.Contains(lower, "entire fleet") || strings.Contains(lower, "whole fleet") {
+		ids := make([]string, 0, len(vessels))
+		for _, vessel := range vessels {
+			ids = append(ids, vessel.ID)
+		}
+		if len(ids) > 0 {
+			return domain.MissionTargetSelectionV2{TargetIDs: ids, Summary: fmt.Sprintf("Resolved all %d available vessels explicitly requested by the operator.", len(ids)), Provider: "deterministic", Model: "keelmesh-explicit-target-resolver-v1"}, true, nil
+		}
+	}
+	explicitVesselIDs := make([]string, 0, len(vessels))
+	explicitVesselNames := make([]string, 0, len(vessels))
+	for _, vessel := range vessels {
+		if containsIntentAlias(lower, vessel.Callsign, vessel.Designation, vessel.DisplayName) {
+			explicitVesselIDs = append(explicitVesselIDs, vessel.ID)
+			explicitVesselNames = append(explicitVesselNames, vessel.DisplayName)
+		}
+	}
+	if len(explicitVesselIDs) > 0 {
+		return domain.MissionTargetSelectionV2{TargetIDs: explicitVesselIDs, Summary: "Resolved the explicitly named vessels " + strings.Join(explicitVesselNames, ", ") + ".", Provider: "deterministic", Model: "keelmesh-explicit-target-resolver-v1"}, true, nil
+	}
+	groups := make([]domain.OperationalGroupV2, 0, len(m.groups))
+	for _, group := range m.groups {
+		if len(group.MemberIDs) > 0 && len(m.conflicts(group.MemberIDs, missionID)) == 0 {
+			groups = append(groups, group)
+		}
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].Code < groups[j].Code })
+	for _, group := range groups {
+		if containsIntentAlias(lower, group.Name, group.ColorName+" group", group.ColorName+" team") || regexp.MustCompile(`(?i)\b`+regexp.QuoteMeta(group.Code)+`\b`).MatchString(intent) {
+			return domain.MissionTargetSelectionV2{TargetIDs: cloneStrings(group.MemberIDs), Summary: fmt.Sprintf("Resolved the explicitly named group %s · %s.", group.Code, group.Name), Provider: "deterministic", Model: "keelmesh-explicit-target-resolver-v1"}, true, nil
+		}
+	}
+	return domain.MissionTargetSelectionV2{}, false, nil
+}
+
+func containsIntentAlias(lower string, aliases ...string) bool {
+	for _, alias := range aliases {
+		alias = strings.ToLower(strings.TrimSpace(alias))
+		if len(alias) >= 3 && strings.Contains(lower, alias) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Manager) resolveTargetsFromIntentLocked(missionID, intent string) (domain.MissionTargetSelectionV2, error) {
 	lower := strings.ToLower(intent)
 	groups := make([]domain.OperationalGroupV2, 0, len(m.groups))
@@ -1625,13 +1689,24 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 		if req.FollowContactID == "" {
 			req.FollowContactID = interpretation.ContactID
 		}
-		if req.Formation == "" {
+		if interpretation.Formation != "" {
 			req.Formation = interpretation.Formation
 		}
 	}
 	formation := req.Formation
 	if formation == "" {
 		formation = inferFormation(req.Text, mission.Formation)
+	}
+	if len(targets) == 1 {
+		formation = "independent"
+	}
+	if explicit := inferFormation(req.Text, ""); explicit != "" && len(targets) > 1 {
+		formation = explicit
+		if mission.Formation != explicit || mission.Constraints.Formation != explicit {
+			mission.Formation = explicit
+			mission.Constraints.Formation = explicit
+			missionChanged = true
+		}
 	}
 	kind := req.GuidanceKind
 	if kind == "" {
@@ -1758,8 +1833,32 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 			mission.Constraints.MaximumSpeedMPS = requested
 			missionChanged = true
 		}
+		if requested := req.CommandInterpretation.FormationSpacingM; requested >= 15 && requested <= 1000 && requested != constraints.FormationSpacingM {
+			constraints.FormationSpacingM = requested
+			mission.Constraints.FormationSpacingM = requested
+			missionChanged = true
+		}
 	}
-	if contactFound {
+	if requested, ok := requestedFormationSpacing(req.Text); ok && requested != constraints.FormationSpacingM {
+		constraints.FormationSpacingM = requested
+		mission.Constraints.FormationSpacingM = requested
+		missionChanged = true
+		notes = append(notes, fmt.Sprintf("Formation spacing set to %.0f m from intent.", requested))
+	}
+	if requested, ok := requestedMaximumSpeed(req.Text); ok && requested < constraints.MaximumSpeedMPS {
+		constraints.MaximumSpeedMPS = requested
+		mission.Constraints.MaximumSpeedMPS = requested
+		missionChanged = true
+		notes = append(notes, fmt.Sprintf("Maximum speed limited to %.1f m/s from intent.", requested))
+	}
+	if requested, ok := requestedVesselSeparation(req.Text); ok && requested > constraints.MinimumVesselSeparationM {
+		constraints.MinimumVesselSeparationM = requested
+		mission.Constraints.MinimumVesselSeparationM = requested
+		missionChanged = true
+		notes = append(notes, fmt.Sprintf("Minimum vessel separation set to %.0f m from intent.", requested))
+	}
+	_, explicitSpeedLimit := requestedMaximumSpeed(req.Text)
+	if contactFound && !explicitSpeedLimit && contact.SpeedMPS > 0 && constraints.MaximumSpeedMPS <= contact.SpeedMPS {
 		// A follow/intercept draft needs enough speed authority to close on the
 		// contact, not merely match it. Cap the draft at the slowest selected
 		// vessel so every assignment remains executable as a coordinated group.
@@ -1788,6 +1887,15 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 			notes = append(notes, fmt.Sprintf("Minimum reserve set to %.0f%% from intent.", requested*100))
 		} else {
 			notes = append(notes, fmt.Sprintf("Requested %.0f%% reserve; standing policy keeps the effective minimum at %.0f%%.", requested*100, constraints.MinimumReserve*100))
+		}
+	}
+	if requested, ok := requestedMissionLoop(req.Text); ok && mission.Loop != requested {
+		mission.Loop = requested
+		missionChanged = true
+		if requested {
+			notes = append(notes, "Mission completion set to loop continuously from the first route marker.")
+		} else {
+			notes = append(notes, "Mission completion set to hold at the final route marker.")
 		}
 	}
 	if missionChanged {
@@ -2402,6 +2510,40 @@ func requestedReserve(text string) (float64, bool) {
 	}
 	return 0, false
 }
+
+func requestedMaximumSpeed(text string) (float64, bool) {
+	match := maximumSpeedIntent.FindStringSubmatch(text)
+	if len(match) != 2 {
+		return 0, false
+	}
+	value, err := strconv.ParseFloat(match[1], 64)
+	return value, err == nil && value > 0 && value <= 10
+}
+
+func requestedVesselSeparation(text string) (float64, bool) {
+	match := vesselSeparationIntent.FindStringSubmatch(text)
+	if len(match) != 2 {
+		return 0, false
+	}
+	value, err := strconv.ParseFloat(match[1], 64)
+	return value, err == nil && value >= 15 && value <= 5000
+}
+
+func requestedMissionLoop(text string) (bool, bool) {
+	lower := strings.ToLower(text)
+	for _, phrase := range []string{"do not loop", "don't loop", "dont loop", "non-looping", "one-time", "one time", "run once", "single pass"} {
+		if strings.Contains(lower, phrase) {
+			return false, true
+		}
+	}
+	for _, phrase := range []string{"looping", "loop continuously", "continuous loop", "repeat continuously", "repeat the route", "cycle continuously"} {
+		if strings.Contains(lower, phrase) {
+			return true, true
+		}
+	}
+	return false, false
+}
+
 func (m *Manager) GeneratePlans(id string, req PlansRequest) ([]domain.FleetPlanV2, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -2425,6 +2567,12 @@ func (m *Manager) GeneratePlans(id string, req PlansRequest) ([]domain.FleetPlan
 	}
 	out := make([]domain.FleetPlanV2, 0, len(strategies))
 	for i, strategy := range strategies {
+		if explicit := inferFormation(draft.SourceText, ""); explicit != "" {
+			strategy.Formation = explicit
+		}
+		if len(draft.TargetIDs) == 1 {
+			strategy.Formation = "independent"
+		}
 		p := m.makePlan(mission, draft, strategy, i)
 		m.plans[p.ID] = p
 		out = append(out, p)
@@ -2449,6 +2597,10 @@ func (m *Manager) GeneratePlans(id string, req PlansRequest) ([]domain.FleetPlan
 	mission.Version++
 	mission.UpdatedAt = time.Now().UTC()
 	m.missions[id] = mission
+	// A planned mission must remain confirmable after a core restart. Persist
+	// the immutable offered plans together with the mission's plan IDs instead
+	// of leaving the approval context only in process memory.
+	m.persistAsync()
 	return out, nil
 }
 
@@ -2718,7 +2870,7 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 			reference = sweepLane(mission.Geometry.IncludedAreas[0], i, len(targets))
 		}
 		for _, p := range reference {
-			spacing := draft.Constraints.FormationSpacingM
+			spacing := math.Max(draft.Constraints.FormationSpacingM, draft.Constraints.MinimumVesselSeparationM)
 			if draft.ContactBehavior == "surround" && draft.ContactStandoffM > 0 {
 				spacing = draft.ContactStandoffM
 			}
@@ -2756,7 +2908,7 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 	}
 	duration := maxDistance * 1000 / speed / 60
 	coverage := math.Min(99, 72+float64(len(targets))*2.4-float64(index)*1.6)
-	minSep := draft.Constraints.FormationSpacingM
+	minSep := math.Max(draft.Constraints.FormationSpacingM, draft.Constraints.MinimumVesselSeparationM)
 	if len(targets) == 1 {
 		minSep = 0
 	}
@@ -3683,6 +3835,25 @@ func inferFormation(s, def string) string {
 		}
 	}
 	return def
+}
+
+func requestedFormationSpacing(value string) (float64, bool) {
+	lower := strings.ToLower(value)
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?:with|at|using)?\s*(\d+(?:\.\d+)?)\s*(?:m|meter|meters|metre|metres)\s+(?:formation\s+)?spacing\b`),
+		regexp.MustCompile(`\b(?:formation\s+)?spacing\s+(?:of|at|to)?\s*(\d+(?:\.\d+)?)\s*(?:m|meter|meters|metre|metres)\b`),
+	}
+	for _, pattern := range patterns {
+		match := pattern.FindStringSubmatch(lower)
+		if len(match) != 2 {
+			continue
+		}
+		spacing, err := strconv.ParseFloat(match[1], 64)
+		if err == nil && spacing >= 15 && spacing <= 1000 {
+			return spacing, true
+		}
+	}
+	return 0, false
 }
 func inferGuidance(s string) string {
 	v := strings.ToLower(s)

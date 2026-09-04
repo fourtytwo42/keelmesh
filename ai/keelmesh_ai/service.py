@@ -697,6 +697,7 @@ def mission_command_format(request: MissionCommandRequest) -> dict[str, Any]:
                 "contact_behavior",
                 "dynamic_target",
                 "formation",
+                "formation_spacing_m",
                 "standoff_m",
                 "minimum_reserve",
                 "maximum_speed_mps",
@@ -731,6 +732,7 @@ def mission_command_format(request: MissionCommandRequest) -> dict[str, Any]:
                 },
                 "dynamic_target": {"type": "boolean"},
                 "formation": {"type": "string", "enum": sorted(ALLOWED_FORMATIONS)},
+                "formation_spacing_m": {"type": "number", "minimum": 0, "maximum": 1000},
                 "standoff_m": {"type": "number", "minimum": 0, "maximum": 5000},
                 "minimum_reserve": {"type": "number", "minimum": 0, "maximum": 1},
                 "maximum_speed_mps": {"type": "number", "minimum": 0, "maximum": 10},
@@ -772,7 +774,7 @@ async def openai_mission_command_attempt(request: MissionCommandRequest) -> tupl
             "approach, go to, observe, orbit, encircle, and surround a contact must return its exact "
             "contact_id and dynamic_target=true; never turn a contact objective into fixed coordinates. "
             "Use contact_behavior follow, intercept, approach, observe, or surround. Use 0 for an "
-            "unspecified numeric limit. Choose ring for a multi-vessel surround and independent for a "
+            "unspecified numeric limit. Preserve an explicitly requested formation and formation spacing in meters. Choose ring for a multi-vessel surround and independent for a "
             "single vessel. Return no route, coordinates, authority, or invented identity."
         ),
         "input": json.dumps(request.model_dump(by_alias=True), sort_keys=True)[:20000],
@@ -822,6 +824,7 @@ def deterministic_mission_command(request: MissionCommandRequest) -> dict[str, A
         "contact_behavior": behavior,
         "dynamic_target": contact is not None,
         "formation": formation,
+        "formation_spacing_m": 0,
         "standoff_m": 120 if behavior == "surround" else (80 if contact else 0),
         "minimum_reserve": 0,
         "maximum_speed_mps": 0,

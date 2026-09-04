@@ -1543,8 +1543,13 @@ export function FleetWorkspace() {
 	return /\b(options?|alternatives?|choices?|compare|comparison|strateg(?:y|ies)|several|multiple|(?:two|three|2|3)\s+(?:plans?|ways?|routes?|formations?)|different\s+(?:plans?|routes?|formations?))\b/i.test(text);
   }
 
-  function planOptionPayload() {
-    return plans.slice(0, 3).map((value, index) => ({
+  function plansForActiveMission(sourcePlans = plans) {
+    if (!mission) return [];
+    return sourcePlans.filter((value) => value.mission_id === mission.id);
+  }
+
+  function planOptionPayload(sourcePlans = plans) {
+    return plansForActiveMission(sourcePlans).slice(0, 3).map((value, index) => ({
       label: String.fromCharCode(65 + index),
       plan_id: value.id,
       name: value.name,
@@ -1554,6 +1559,13 @@ export function FleetWorkspace() {
   }
 
   async function askWorkspaceAssistant(text: string, presentScene = true) {
+    let availablePlans = plansForActiveMission();
+    if (mission && (mission.plan_ids ?? []).length > 0 && availablePlans.length === 0) {
+      const response = await api<{ plans: FleetPlanV2[] }>(`/api/v2/missions/${mission.id}/plans`);
+      availablePlans = response.plans;
+      setPlans(response.plans);
+      setPlanID((response.plans.find((plan) => plan.recommended) ?? response.plans[0])?.id ?? "");
+    }
     const turn = await api<AssistantTurnV2>("/api/v4/assistant/turns", {
       method: "POST",
       body: JSON.stringify({
@@ -1565,12 +1577,24 @@ export function FleetWorkspace() {
         selected_ids: [...selected],
         open_windows: [...windows],
         active_mission_id: mission?.id ?? "",
-        plan_options: planOptionPayload(),
+        plan_options: planOptionPayload(availablePlans),
         actor_identity: "demo-operator",
         session_id: sceneSessionID,
         workspace_version: fleet?.fleet_version ?? 0,
       }),
     });
+    const replaceableSceneWindows = new Set(
+      commandScenes
+        .filter((scene) => scene.state === "active" && !scene.pinned && !scene.critical && !scene.pending_approval)
+        .map((scene) => `scene-${scene.id}`),
+    );
+    if (replaceableSceneWindows.size > 0) {
+      setWindows((current) => {
+        const next = new Set(current);
+        for (const id of replaceableSceneWindows) next.delete(id);
+        return next;
+      });
+    }
     setCommandScenes((current) => [turn.scene, ...current.map((scene) => scene.state === "active" && !scene.pinned && !scene.critical && !scene.pending_approval ? { ...scene, state: "replaced" } : scene).filter((scene) => scene.id !== turn.scene.id)].slice(0, 50));
 	if (presentScene) {
 	  focusCommandScene(turn.scene.id);
@@ -1620,7 +1644,7 @@ export function FleetWorkspace() {
   function chosenPlan(action: WorkspaceAssistantActionV1) {
     if (action.kind !== "choose_plan") return null;
     const target = action.target.trim().toLowerCase();
-    return plans.slice(0, 3).find((value, index) =>
+    return plansForActiveMission().slice(0, 3).find((value, index) =>
       target === String.fromCharCode(97 + index) ||
       target === value.id.toLowerCase() ||
       target === value.name.toLowerCase(),

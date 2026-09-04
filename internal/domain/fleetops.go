@@ -285,19 +285,20 @@ type MissionTargetSelectionContextV2 struct {
 // command authority. Contact objectives remain bound to a contact identity so
 // deterministic planning can follow its live state instead of a stale point.
 type MissionCommandInterpretationV2 struct {
-	GuidanceKind    string              `json:"guidance_kind"`
-	ContactID       string              `json:"contact_id,omitempty"`
-	ContactBehavior string              `json:"contact_behavior"`
-	DynamicTarget   bool                `json:"dynamic_target"`
-	Formation       string              `json:"formation"`
-	StandoffM       float64             `json:"standoff_m"`
-	MinimumReserve  float64             `json:"minimum_reserve"`
-	MaximumSpeedMPS float64             `json:"maximum_speed_mps"`
-	HoldAtEnd       bool                `json:"hold_at_end"`
-	Summary         string              `json:"summary"`
-	Provider        string              `json:"provider"`
-	Model           string              `json:"model"`
-	Attempts        []ProviderAttemptV1 `json:"attempts"`
+	GuidanceKind      string              `json:"guidance_kind"`
+	ContactID         string              `json:"contact_id,omitempty"`
+	ContactBehavior   string              `json:"contact_behavior"`
+	DynamicTarget     bool                `json:"dynamic_target"`
+	Formation         string              `json:"formation"`
+	FormationSpacingM float64             `json:"formation_spacing_m"`
+	StandoffM         float64             `json:"standoff_m"`
+	MinimumReserve    float64             `json:"minimum_reserve"`
+	MaximumSpeedMPS   float64             `json:"maximum_speed_mps"`
+	HoldAtEnd         bool                `json:"hold_at_end"`
+	Summary           string              `json:"summary"`
+	Provider          string              `json:"provider"`
+	Model             string              `json:"model"`
+	Attempts          []ProviderAttemptV1 `json:"attempts"`
 }
 
 type MissionCommandInterpretationContextV2 struct {
