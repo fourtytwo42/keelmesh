@@ -656,6 +656,15 @@ test("workspace windows move, minimize, restore, dock, and top navigation toggle
   await page.getByRole("button", { name: "Cutaway" }).click();
   await expect(cutaway).toBeVisible();
   await expect(cutaway.getByRole("button", { name: /Snap (left|right)/ })).toHaveCount(0);
+  const cutawayBounds = await cutaway.boundingBox();
+  const cutawayBody = await cutaway.locator(".cutaway").evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(cutawayBounds).not.toBeNull();
+  expect(cutawayBounds!.y).toBeGreaterThanOrEqual(82);
+  expect(cutawayBounds!.y + cutawayBounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height - 64);
+  expect(cutawayBody.scrollHeight).toBeLessThanOrEqual(cutawayBody.clientHeight + 1);
 });
 
 test("single-vessel intent uses the real advisor boundary and never offers fleet formations", async ({ page }) => {

@@ -358,7 +358,7 @@ code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
 .window-engineer .engineer-action button{padding:8px 12px;border-radius:2px;background:var(--m6-amber);color:#17130d;font-size:8px}
 
 /* Cutaway uses the same graphite/amber console language and fits its default window. */
-.window-cutaway .cutaway{position:relative!important;inset:auto!important;box-sizing:border-box;width:100%;height:100%;overflow:hidden;padding:8px 10px;background:radial-gradient(circle at 45% 0,#e5a23a10,transparent 34%),linear-gradient(180deg,#151c1c,#101616);color:var(--m6-ink)}
+.window-cutaway .cutaway{position:relative!important;inset:auto!important;box-sizing:border-box;width:100%;height:100%;overflow:auto;padding:8px 10px;background:radial-gradient(circle at 45% 0,#e5a23a10,transparent 34%),linear-gradient(180deg,#151c1c,#101616);color:var(--m6-ink);scrollbar-width:thin;scrollbar-color:#9a7435 #171d1b}
 .window-cutaway .mission-strip{height:27px;gap:10px;padding:0 8px;border-color:#3d4540;border-radius:2px;background:#1b2220;font-size:6px}
 .window-cutaway .mission-strip>span:first-child,.window-cutaway .mission-strip i{color:var(--m6-amber)}
 .window-cutaway .cutaway-head{margin:8px 1px 7px;align-items:center}
@@ -373,7 +373,7 @@ code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
 .window-cutaway .metric-ribbon small{font-size:5px}
 .window-cutaway .metric-ribbon strong{margin:2px 0;font-size:14px}
 .window-cutaway .metric-ribbon span{font-size:6px;color:#92978f}
-.window-cutaway .pipeline{grid-template-columns:1fr 42px 1.05fr 42px 1.35fr 42px 1.1fr;min-height:0;height:230px;margin:7px 0}
+.window-cutaway .pipeline{grid-template-columns:1fr 42px 1.05fr 42px 1.35fr 42px 1.1fr;min-height:0;height:195px;margin:7px 0}
 .window-cutaway .pipeline-stage,.window-cutaway .workers-stage{padding:7px;border-color:#3b4540;border-radius:2px;background:linear-gradient(160deg,#202725,#171e1c);box-shadow:none}
 .window-cutaway .pipeline-stage h2{margin:6px 0 7px;font-size:10px}
 .window-cutaway .pipeline-stage>strong{font-size:21px}
@@ -394,6 +394,20 @@ code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
 .window-cutaway .accounting b{font-size:10px}
 .window-cutaway .cutaway-foot{margin-top:5px;font-size:6px}
 .window-cutaway .memory-cutaway{margin-top:7px;border:1px solid #3c4540;background:#1a211f;padding:6px 8px}.window-cutaway .memory-cutaway header{display:grid;grid-template-columns:1.5fr repeat(5,auto);align-items:center;gap:10px}.window-cutaway .memory-cutaway header div{display:grid}.window-cutaway .memory-cutaway small{color:var(--m6-amber);font-size:6px;letter-spacing:.1em}.window-cutaway .memory-cutaway strong{font-size:9px}.window-cutaway .memory-cutaway header>span{color:#92978f;font:6px ui-monospace}.window-cutaway .memory-flow{display:flex;align-items:center;gap:6px;margin-top:5px;color:#898f88;font:6px ui-monospace}.window-cutaway .memory-flow b{padding:3px 5px;border:1px solid #3e4942;background:#222a27;color:#d8d5ca}.window-cutaway .memory-flow i{color:var(--m6-amber);font-style:normal}.window-cutaway .memory-flow small{margin-left:auto;color:#8e948c;letter-spacing:0}
+
+@container workspace-window (max-height:600px) and (min-width:901px){
+  .window-cutaway .cutaway-head{margin:5px 1px 4px}
+  .window-cutaway .cutaway-head p{display:none}
+  .window-cutaway .cutaway-head h1{font-size:17px}
+  .window-cutaway .metric-ribbon>div{padding:4px 7px}
+  .window-cutaway .metric-ribbon strong{font-size:12px}
+  .window-cutaway .pipeline{height:172px;margin:5px 0}
+  .window-cutaway .evidence-row>section{min-height:70px;padding:5px}
+  .window-cutaway .evidence-row>section>button{padding:3px;margin-top:2px}
+  .window-cutaway .accounting{margin-top:4px}
+  .window-cutaway .memory-cutaway{margin-top:5px;padding:4px 6px}
+  .window-cutaway .memory-flow{margin-top:3px}
+}
 
 @media(max-width:1050px){
   .window-engineer .engineer-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr))}
