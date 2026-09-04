@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "state": "migrated-raft-rollout-in-progress",
+  "state": "active-raft",
   "quorum": 4,
   "planes": {
     "management": "192.168.50.0/24 tcp/7444",

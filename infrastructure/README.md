@@ -73,7 +73,10 @@ leaf certificates, then invoke `systemctl reload keelmesh-node`.
 VM 214 keeps the offline authority root private and exposes only a runtime copy
 of the referee leaf identity and signed cell manifests to the unprivileged core
 container. Start the gateway with `compose.m12.yaml`; the override defaults to
-`shadow` and can be switched explicitly to `raft` after shadow receipts match.
+`shadow` for a new deployment and must be switched explicitly after shadow
+receipts match. The verified VM 214 deployment and all twelve voters have used
+authoritative `raft` mode since 2026-09-04. The `simulated` and `shadow` modes
+remain rollback and comparison paths.
 
 Run the software-only two-cell proof before deployment:
 

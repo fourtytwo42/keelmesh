@@ -40,7 +40,7 @@ Recent product hardening adds first-class multi-turn provider input for the shar
 ## Limitations
 
 - Radio behavior is simulated; no physical HaLow radios are attached.
-- M12 Raft and mTLS software passes the local twelve-process fault suite, and the twelve production voters are distributed 2/2/2 per cell across the three Proxmox hosts. Cell A Raft promotion is paused while a leader-restart epoch regression is validated; Cell B and VM 214 remain in shadow mode.
+- M12 is authoritative in production Raft mode. The twelve voters are distributed 2/2/2 per cell across the three Proxmox hosts; live leader restart, 4/2 majority, 3/3 no-quorum, follower convergence, signed proof, and cross-cell activation drills pass.
 - Radio-plane memory bundle exchange remains separate follow-up work.
 - Separate GPU LLM/STT/TTS services do not run on every node.
 - Kafka is single-broker and does not demonstrate broker HA.
@@ -51,9 +51,8 @@ Recent product hardening adds first-class multi-turn provider input for the shar
 ## Next investments
 
 1. Migrate legacy browser tests to global Assistant plus manual Mission semantics.
-2. Complete the guarded M12 per-cell cutover after the leader-restart regression and live quorum drills pass.
-3. Complete radio-plane memory synchronization on the authenticated M12 transport.
-4. Finish browser/node STT benchmarks and trusted-peer routing.
-5. Replace remaining fixture retrieval with bundled ONNX indexing.
-6. Complete private OTLP ingestion and cross-process traces.
-7. Add stable named HTTPS ingress after domain/account selection.
+2. Complete radio-plane memory synchronization on the authenticated M12 transport.
+3. Finish browser/node STT benchmarks and trusted-peer routing.
+4. Replace remaining fixture retrieval with bundled ONNX indexing.
+5. Complete private OTLP ingestion and cross-process traces.
+6. Add stable named HTTPS ingress after domain/account selection.
