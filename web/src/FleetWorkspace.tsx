@@ -126,6 +126,15 @@ const reservePercent = (reserve: number) => {
   if (percent === 100) return "100";
   return percent >= 99 ? percent.toFixed(2) : percent.toFixed(1);
 };
+const formatSimulationTime = (tickMS: number) => {
+  const totalSeconds = 8 * 60 * 60 + Math.max(0, Math.floor(tickMS / 1000));
+  const day = Math.floor(totalSeconds / 86400) + 1;
+  const daySeconds = totalSeconds % 86400;
+  const hours = Math.floor(daySeconds / 3600);
+  const minutes = Math.floor((daySeconds % 3600) / 60);
+  const seconds = daySeconds % 60;
+  return `DAY ${day} · ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+};
 
 function commandSceneSessionID() {
   const key = "keelmesh.command-scene-session.v1";
@@ -177,6 +186,10 @@ export function FleetWorkspace() {
     [activeSceneID, setActiveSceneID] = useState(""),
     [sceneCameraRequest, setSceneCameraRequest] = useState<{
       sceneID: string;
+      token: number;
+    } | null>(null),
+    [vesselCameraRequest, setVesselCameraRequest] = useState<{
+      vesselID: string;
       token: number;
     } | null>(null),
     [assistantTurns, setAssistantTurns] = useState<ConversationTurnV1[]>([]),
@@ -452,6 +465,13 @@ export function FleetWorkspace() {
   const openVesselInspector = useCallback((id: string) => {
     open(`inspector-${id}`);
   }, [open]);
+  const inspectAndFrameVessel = useCallback((id: string) => {
+    openVesselInspector(id);
+    setVesselCameraRequest((current) => ({
+      vesselID: id,
+      token: (current?.token ?? 0) + 1,
+    }));
+  }, [openVesselInspector]);
   const openContactInspector = useCallback((id: string) => {
     open(`contact-inspector-${id}`);
   }, [open]);
@@ -1717,7 +1737,7 @@ export function FleetWorkspace() {
           onManage={(id) => {
             openGroupManager(id);
           }}
-          onInspect={openVesselInspector}
+          onInspect={inspectAndFrameVessel}
           onMove={moveVessel}
           onCreateGroup={createGroup}
           onCreateGroupFromVessel={createGroupFromVessel}
@@ -2159,6 +2179,8 @@ export function FleetWorkspace() {
         sceneAnnotations={commandScenes.find((scene) => scene.id === activeSceneID && scene.state === "active")?.map_annotations ?? []}
         sceneCamera={commandScenes.find((scene) => scene.id === sceneCameraRequest?.sceneID && scene.state === "active")?.map_camera}
         sceneCameraRequest={sceneCameraRequest?.token}
+        vesselCameraID={vesselCameraRequest?.vesselID}
+        vesselCameraRequest={vesselCameraRequest?.token}
       />
       <button className="assistant-chat-trigger" aria-label="Toggle text chat with KeelMesh AI" title="Open or close text chat" onClick={() => toggleWindow("assistant-chat")}><MessageCircle /><span className="assistant-chat-dots" aria-hidden="true"><i /><i /><i /></span></button>
       {pendingDeleteMission && (
@@ -2328,7 +2350,7 @@ export function FleetWorkspace() {
             </button>
           ))}
         </div>
-        <span className="status-clock">{new Date(fleet.generated_at).toLocaleTimeString()}</span>
+        <span className="status-clock" title={`Authoritative game time · ${fleet.simulation_rate === 0 ? "paused" : `${fleet.simulation_rate}× speed`}`}><small>SIM TIME</small><b>{formatSimulationTime(fleet.simulation_tick_ms)}</b></span>
       </footer>
     </main>
   );

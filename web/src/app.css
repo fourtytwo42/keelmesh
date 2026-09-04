@@ -434,7 +434,7 @@ code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
 
 /* Mission membership, automatic voice, compact authoring, and map-centered environment controls. */
 .environment-overlays{left:50%;right:auto;top:8px;transform:translateX(-50%)}
-.ops-status>.status-clock{margin-left:auto}
+.ops-status>.status-clock{margin-left:auto;display:grid;justify-items:end;gap:1px;min-width:92px;line-height:1}.ops-status>.status-clock small{color:#8a918b;font-size:5px;letter-spacing:.13em}.ops-status>.status-clock b{color:#ddd8ca;font:8px ui-monospace;letter-spacing:.04em;white-space:nowrap}
 .mission-scope-strip{display:grid;grid-template-columns:15px minmax(0,1fr) auto auto;align-items:center;gap:6px;margin:4px 0;padding:5px 6px;border:1px solid #39423d;background:#1d2422;color:#d4d2c8}
 .mission-scope-strip>svg{width:13px;height:13px;color:var(--m6-amber)}
 .mission-scope-strip>span{display:grid;min-width:0;gap:1px}

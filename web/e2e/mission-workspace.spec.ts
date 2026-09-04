@@ -68,3 +68,29 @@ test("Mission remains usable at a phone viewport", async ({ page }) => {
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
 });
+
+test("vessel status frames the vessel and the clock follows simulation time", async ({ page }) => {
+  await page.goto("/");
+  const fleetSnapshot = await (await page.request.get("/api/v2/fleet")).json();
+  const gannet = fleetSnapshot.vessels.find((vessel: { callsign: string }) => vessel.callsign === "Gannet");
+  const fleet = page.getByRole("region", { name: "Fleet" });
+  await fleet.getByRole("button", { name: "View status of Gannet" }).click();
+  const map = page.getByRole("application", { name: /Fleet operating map/ });
+  await expect(map).toHaveAttribute("data-vessel-camera-id", gannet.id);
+  await expect(map).toHaveAttribute("data-vessel-camera-request", "1");
+  await expect(page.getByRole("region", { name: /Gannet \(KM-220\)/ })).toBeVisible();
+
+  const clock = page.locator(".status-clock");
+  await expect(clock).toContainText("SIM TIME");
+  const before = await clock.textContent();
+  await page.getByRole("button", { name: "Run simulation at 100 times speed" }).click();
+  await page.waitForTimeout(1300);
+  const after = await clock.textContent();
+  expect(after).not.toBe(before);
+
+  await page.getByRole("button", { name: "Pause simulation" }).click();
+  await page.waitForTimeout(300);
+  const paused = await clock.textContent();
+  await page.waitForTimeout(1200);
+  await expect(clock).toHaveText(paused ?? "");
+});
