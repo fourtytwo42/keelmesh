@@ -554,6 +554,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 html[data-theme="pirate"] .guided-demo-toggle{border-color:#a23b32;background:linear-gradient(180deg,#34231e,#1d1816);color:#f0bb65}html[data-theme="pirate"] .guided-demo-hud{border-color:#a34e3d;background:#1a1614f3}html[data-theme="pirate"] .guided-demo-progress i{background:linear-gradient(90deg,#a73f33,#f0ba5f)}
 @media(max-width:1050px){.guided-demo-toggle{left:43%}}
 @media(max-width:760px){.ops-bar .ops-brand{width:44px}.ops-bar .ops-brand>span{display:none}.ops-bar nav button{width:42px;padding:0}.ops-bar nav button span{display:none}.guided-demo-toggle{left:50%;height:30px;padding:0 9px}.guided-demo-hud{top:88px;width:calc(100vw - 12px)}.guided-demo-hud em{display:none}.guided-demo-hud{grid-template-columns:1fr}.guided-demo-toggle span{font-size:8px}}
+.demo-running [class*="window-scene-"]{display:none!important}
 @media(max-width:640px){.scene-history-trigger{right:64px;bottom:82px}.scene-state-strip em{display:none}.scene-artifact{padding:8px}.km-a2ui-surface{padding:10px}}
 /* A startup failure must never collapse into the graphite page background. */
 .startup-failure{position:fixed;inset:0;display:grid;place-content:center;justify-items:start;gap:10px;padding:32px;background:#101817;color:#f1eee4;font-family:Inter,system-ui,sans-serif}

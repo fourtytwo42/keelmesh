@@ -1582,6 +1582,10 @@ export function FleetWorkspace() {
   }
 
   async function askWorkspaceAssistant(text: string, presentScene = true) {
+    // A voice session or guided tour may span several committed mutations.
+    // Bind each new turn to current authority state, not its launching render.
+    const workspaceSnapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
+    setFleet(workspaceSnapshot);
     let availablePlans = plansForActiveMission();
     if (mission && (mission.plan_ids ?? []).length > 0 && availablePlans.length === 0) {
       const response = await api<{ plans: FleetPlanV2[] }>(`/api/v2/missions/${mission.id}/plans`);
@@ -1603,7 +1607,7 @@ export function FleetWorkspace() {
         plan_options: planOptionPayload(availablePlans),
         actor_identity: "demo-operator",
         session_id: sceneSessionID,
-        workspace_version: fleet?.fleet_version ?? 0,
+        workspace_version: workspaceSnapshot.fleet_version,
       }),
     });
     const replaceableSceneWindows = new Set(
