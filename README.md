@@ -10,8 +10,17 @@ KeelMesh demonstrates how one operator can plan, authorize, observe, and adapt m
 
 > The screenshot shows simulation data in Narragansett Bay and Rhode Island Sound. KeelMesh is not a certified navigation or vessel-control product.
 
+## Watch the demo
+
+[![Watch the KeelMesh voice, mission, resilience, and Pirate-mode demonstration](https://img.youtube.com/vi/lCs2Dij3lYU/maxresdefault.jpg)](https://www.youtube.com/watch?v=lCs2Dij3lYU)
+
+**[Watch the complete KeelMesh demonstration on YouTube →](https://www.youtube.com/watch?v=lCs2Dij3lYU)**
+
+The recording opens with live voice-assistant questions and AI-assisted mission creation, continues through the hands-off technical tour of fleet operations and resilient infrastructure, and concludes with the complete Pirate-mode demonstration.
+
 ## On this page
 
+- [Watch the demo](#watch-the-demo)
 - [Documentation index](#documentation-index)
 - [What KeelMesh demonstrates](#what-keelmesh-demonstrates)
 - [System at a glance](#system-at-a-glance)
