@@ -4,10 +4,19 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: unassigned-vessel charging and stale mission-state reconciliation are complete, deployed, and live-verified.
-- Last meaningful change: all idle vessels now advance the day/night energy model even when they have no operational group; startup clears vessel mission bindings whose mission no longer exists.
-- Next step: preserve the verified fleet-wide energy progression, guided-demo cleanup, stable critical-scene history, and `simulated|shadow|raft` rollback/comparison modes.
-- Blockers: none for M12. Thin-pool auto-extension remains disabled and aggregate virtual allocation remains overcommitted, so snapshots and storage changes still require a fresh reviewed preflight.
+- Current task: PRD v1.0 alignment with the deployed M1-M12 product is complete and awaiting commit/review.
+- Last meaningful change: `PRD.md` now defines the twelve-node product, manual/AI mission workflow, A2UI and memory planes, real Raft/mTLS authority, current acceptance state, guided demo, limitations, and evidence-focused roadmap; adjacent architecture/API references were corrected.
+- Next step: preserve the verified fleet energy progression, guided-demo cleanup, stable critical-scene history, and `simulated|shadow|raft` rollback/comparison modes while completing the explicitly unchecked PRD acceptance debt.
+- Blockers: none for documentation. Thin-pool auto-extension remains disabled and aggregate virtual allocation remains overcommitted, so snapshots and storage changes still require a fresh reviewed preflight.
+
+### 2026-09-04 - PRD v1.0 current-state alignment
+
+- Context: the prior Draft 0.7 PRD still described the M0-M5 logical-node appliance, fixed one-minute mission-tape framing, earlier speech/provider choices, future MLOps services, and a six-minute demo despite the deployed product reaching M12.
+- Decision: replace it with a concise requirements-led v1.0 that separates implemented, demonstrated, and deferred capabilities; retain the authority/safety thesis; and make incomplete browser tests, STT benchmarking, radio-memory sync, ONNX retrieval migration, tracing, and stable ingress visible rather than implied complete.
+- Files: `PRD.md`, `docs/ARCHITECTURE.md`, and `docs/REFERENCE.md`.
+- Commands/tests: Markdown local-link check, heading/legacy-language search, and `git diff --check`.
+- Result: the PRD now covers current UX, twelve VM vessels, Mission/Assistant boundaries, signed trajectory programs, two real six-voter Raft cells, mTLS, quorum proofs, scoped memory, A2UI, guided demo, acceptance status, limitations, and near-term roadmap. Architecture no longer says VM rollout is pending; API reference includes v6 coordination.
+- Follow-up: update the PRD verification date and checked acceptance boxes only from fresh evidence when behavior changes.
 
 ### 2026-09-04 - Unassigned fleet charging and demo reserve recovery
 

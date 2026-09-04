@@ -66,9 +66,9 @@ The platform records throughput, latency, lag, rebalances, quarantine, replay, C
 
 Twelve vessel VMs run the same Go/API/UI binary with management and simulated-radio interfaces. VM 214 remains neutral referee and ingress. Player/faction knowledge is filtered before serialization.
 
-Implemented in M12 software: two independent fixed-membership six-voter Hashicorp Raft cells, four-vote quorum, durable BoltDB state, follower forwarding, separate radio/management mTLS roles, signed application acknowledgements, referee-validated quorum proofs, and two-cell future activation. Raft binds only to the simulated-radio address; browser ingress, diagnostics, and provider HTTPS remain on management.
+Implemented and deployed in M12: two independent fixed-membership six-voter Hashicorp Raft cells, four-vote quorum, durable BoltDB state, follower forwarding, separate radio/management mTLS roles, signed application acknowledgements, referee-validated quorum proofs, and two-cell future activation. Both cells are distributed 2/2/2 across the three Proxmox hosts. Raft binds only to the simulated-radio address; browser ingress, diagnostics, and provider HTTPS remain on management.
 
-Not claimed complete: physical HaLow radios, dynamic Raft membership, production PKI/HSM operations, twelve GPU/LLM services, or physical navigation/control. VM rollout remains distinct from the validated local process implementation.
+Not claimed complete: physical HaLow radios, dynamic Raft membership, production PKI/HSM operations, twelve GPU/LLM services, or physical navigation/control. The deployed VMs prove the software coordination and failure model over an impaired IP radio plane, not physical maritime-radio performance.
 
 ## Failure behavior
 

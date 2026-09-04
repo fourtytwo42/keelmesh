@@ -12,7 +12,7 @@
 
 ## Compatibility
 
-KeelMesh preserves `/api/v1` through `/api/v5`. Public contracts are versioned, mirrored across languages where applicable, and exercised through fixtures.
+KeelMesh preserves `/api/v1` through `/api/v6`. Public contracts are versioned, mirrored across languages where applicable, and exercised through fixtures.
 
 ## API families
 
@@ -23,6 +23,7 @@ KeelMesh preserves `/api/v1` through `/api/v5`. Public contracts are versioned, 
 | `/api/v3` | Agent actions, factions, Arena, nodes, topology |
 | `/api/v4` | Assistant turns, A2UI scenes, history, catalog |
 | `/api/v5` | Memory, candidates, contexts, entities, sync, replay |
+| `/api/v6` | Coordination cells, logs, quorum proofs, cross-cell state, security |
 
 Prometheus metrics are at `/metrics`. WebSocket/SSE extensions preserve earlier fields.
 
