@@ -25,6 +25,7 @@ import (
 type GatewayConfig struct {
 	Mode             Mode
 	Manifests        map[string]domain.CoordinationCellManifestV1
+	ManifestFiles    map[string]string
 	CertificateFile  string
 	TLSKeyFile       string
 	TrustBundleFile  string
@@ -84,7 +85,7 @@ func loadRefereeClientTLS(cfg GatewayConfig) (*tls.Config, error) {
 	if !roots.AppendCertsFromPEM(encoded) {
 		return nil, fmt.Errorf("referee trust bundle contains no certificates")
 	}
-	return &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}, RootCAs: roots, NextProtos: []string{"keelmesh-coordination-v1"}, VerifyConnection: func(state tls.ConnectionState) error {
+	return &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}, RootCAs: roots, NextProtos: []string{"http/1.1"}, VerifyConnection: func(state tls.ConnectionState) error {
 		if len(state.PeerCertificates) == 0 {
 			return fmt.Errorf("PEER_IDENTITY_INVALID: missing node certificate")
 		}
@@ -99,7 +100,11 @@ func loadRefereeClientTLS(cfg GatewayConfig) (*tls.Config, error) {
 				continue
 			}
 			host, _, _ := net.SplitHostPort(member.ManagementAddress)
-			if member.ManagementTLSSerial != "" && !strings.EqualFold(member.ManagementTLSSerial, leaf.SerialNumber.Text(16)) {
+			serialAccepted := strings.EqualFold(member.ManagementTLSSerial, leaf.SerialNumber.Text(16))
+			for _, serial := range member.PreviousManagementTLSSerials {
+				serialAccepted = serialAccepted || strings.EqualFold(serial, leaf.SerialNumber.Text(16))
+			}
+			if member.ManagementTLSSerial != "" && !serialAccepted {
 				return fmt.Errorf("PEER_IDENTITY_INVALID: TLS serial differs from manifest")
 			}
 			if !containsIP(leaf.IPAddresses, net.ParseIP(host)) {
@@ -131,8 +136,27 @@ func (g *Gateway) Commit(ctx context.Context, command domain.ReplicatedCommandV1
 	if err != nil {
 		return domain.AppliedCommandReceiptV1{}, domain.QuorumCommitProofV1{}, err
 	}
+	return g.commitAt(ctx, manifest, leader.ManagementURL, command)
+}
+
+// CommitViaNode exercises the same public mutation path through a specific cell
+// member. Followers forward the canonical command to the current leader.
+func (g *Gateway) CommitViaNode(ctx context.Context, command domain.ReplicatedCommandV1, nodeID string) (domain.AppliedCommandReceiptV1, domain.QuorumCommitProofV1, error) {
+	manifest, ok := g.cfg.Manifests[command.CellID]
+	if !ok {
+		return domain.AppliedCommandReceiptV1{}, domain.QuorumCommitProofV1{}, fmt.Errorf("CELL_MEMBERSHIP_DENIED: unknown cell %s", command.CellID)
+	}
+	for _, member := range manifest.Members {
+		if member.NodeID == nodeID {
+			return g.commitAt(ctx, manifest, "https://"+member.ManagementAddress, command)
+		}
+	}
+	return domain.AppliedCommandReceiptV1{}, domain.QuorumCommitProofV1{}, fmt.Errorf("CELL_MEMBERSHIP_DENIED: unknown node %s", nodeID)
+}
+
+func (g *Gateway) commitAt(ctx context.Context, manifest domain.CoordinationCellManifestV1, managementURL string, command domain.ReplicatedCommandV1) (domain.AppliedCommandReceiptV1, domain.QuorumCommitProofV1, error) {
 	var receipt domain.AppliedCommandReceiptV1
-	if err := g.requestJSON(ctx, http.MethodPost, leader.ManagementURL+"/internal/v1/coordination/commands:propose", command, &receipt); err != nil {
+	if err := g.requestJSON(ctx, http.MethodPost, managementURL+"/internal/v1/coordination/commands:propose", command, &receipt); err != nil {
 		return receipt, domain.QuorumCommitProofV1{}, err
 	}
 	proof, err := g.collectProof(ctx, manifest, receipt)
@@ -331,8 +355,14 @@ func (g *Gateway) Cells(ctx context.Context) map[string][]domain.CoordinationCel
 		for _, member := range manifest.Members {
 			var snapshot domain.CoordinationCellSnapshotV1
 			url := "https://" + member.ManagementAddress + "/internal/v1/coordination/status"
-			if g.client == nil || g.requestJSON(ctx, http.MethodGet, url, nil, &snapshot) != nil {
-				snapshot = domain.CoordinationCellSnapshotV1{SchemaVersion: 1, CellID: cellID, ClusterID: manifest.ClusterID, Mode: string(g.cfg.Mode), LocalNodeID: member.NodeID, State: "unreachable", QuorumRequired: manifest.Quorum, UpdatedAt: nowUTC()}
+			var requestErr error
+			if g.client == nil {
+				requestErr = fmt.Errorf("coordination client unavailable")
+			} else {
+				requestErr = g.requestJSON(ctx, http.MethodGet, url, nil, &snapshot)
+			}
+			if requestErr != nil {
+				snapshot = domain.CoordinationCellSnapshotV1{SchemaVersion: 1, CellID: cellID, ClusterID: manifest.ClusterID, Mode: string(g.cfg.Mode), LocalNodeID: member.NodeID, State: "unreachable", QuorumRequired: manifest.Quorum, UpdatedAt: nowUTC(), LastError: requestErr.Error()}
 			}
 			result[cellID] = append(result[cellID], snapshot)
 		}

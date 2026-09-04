@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { api, KeelMeshError, requestID } from "./api";
-import type { AgentSnapshot, EvalCandidate, EvalRun, InvestigationRun, MemorySnapshotV1, ReplayResult } from "./types";
+import type { AgentSnapshot, CoordinationOverviewV1, EvalCandidate, EvalRun, InvestigationRun, MemorySnapshotV1, ReplayResult } from "./types";
 
-type Props = { value: AgentSnapshot; memory:MemorySnapshotV1|null; onChange:(next:AgentSnapshot)=>void; onOpenSystem:()=>void; onError:(message:string)=>void };
+type Props = { value: AgentSnapshot; memory:MemorySnapshotV1|null; coordination:CoordinationOverviewV1|null; onChange:(next:AgentSnapshot)=>void; onOpenSystem:()=>void; onError:(message:string)=>void };
 
-export function EngineerView({ value, memory, onChange, onOpenSystem, onError }: Props) {
+export function EngineerView({ value, memory, coordination, onChange, onOpenSystem, onError }: Props) {
   const [busy, setBusy] = useState(false);
   const incident = value.incidents[0];
   const receipts = value.investigation?.tool_receipts ?? [];
@@ -20,6 +20,7 @@ export function EngineerView({ value, memory, onChange, onOpenSystem, onError }:
   const fault = (kind:string) => act(()=>api("/api/v1/ai/faults",{method:"POST",body:JSON.stringify({...mutation("fault"),kind})}));
   const reset = () => act(()=>api("/api/v1/scenarios/ai-tooling:reset",{method:"POST",body:JSON.stringify(mutation("reset"))}));
   const primary = !value.investigation ? {label:"Investigate incident",run:investigate} : !value.investigation.replay ? {label:"Run isolated replay",run:replay} : value.candidate?.state !== "approved" ? {label:"Approve exact candidate hash",run:approve} : !value.evaluation ? {label:"Run versioned regression",run:evaluate} : {label:"Reset AI workflow",run:reset};
+  const cells = Object.entries(coordination?.cells ?? {}).map(([id,nodes]) => ({id,nodes,leader:nodes.find(node=>node.state==="leader")??nodes.find(node=>node.leader_node_id===node.local_node_id)}));
 
   return <section className="engineer-view" aria-label="AI Lab workspace">
     <header className="engineer-hero">
@@ -29,6 +30,11 @@ export function EngineerView({ value, memory, onChange, onOpenSystem, onError }:
     </header>
 
     <div className="engineer-grid">
+      <article className="engineer-card coordination-card"><header><span>M12</span><div><small>REAL CONSENSUS</small><h2>Quorum-backed node authority</h2></div><strong>{cells.length ? `${cells.length} cells` : "offline"}</strong></header>
+        <div className="memory-evidence-strip">{cells.map(cell=><div key={cell.id}><small>CELL {cell.id} · TERM {cell.leader?.term??"—"}</small><b>{cell.leader?.leader_node_id??"electing"}</b><em>{cell.leader?.reachable_voters??0}/{cell.leader?.quorum_required??4} proof quorum · index {cell.leader?.commit_index??0}</em></div>)}</div>
+        <div className="memory-hit-list">{cells.map(cell=><div key={cell.id}><span className={cell.leader?.state==="leader"?"verified":"inferred"}>{cell.leader?.state??"unavailable"}</span><b>epoch {cell.leader?.authority_epoch??0}</b><em>{cell.leader?.last_election_ms??0} ms election · {cell.leader?.state_hash?.slice(0,12)??"no checksum"}</em></div>)}{!cells.length&&<p>Raft telemetry is unavailable; simulated authority remains the rollback path.</p>}</div>
+        <p>Radio-plane Raft and application signatures are independent of management, AI, memory, and telemetry.</p>
+      </article>
       <article className="engineer-card memory-card"><header><span>M11</span><div><small>RETRIEVAL EVIDENCE</small><h2>Scoped context assembly</h2></div><strong>{memory?.retrieval_mode ?? "offline"}</strong></header>
         <div className="memory-evidence-strip"><div><small>EXACT TURNS</small><b>{memory?.last_context?.recent_turns.length??0}</b></div><div><small>SEMANTIC</small><b>{memory?.last_context?.semantic_memories.length??0}</b></div><div><small>RUNBOOK</small><b>{memory?.last_context?.procedural_chunks.length??0}</b></div><div><small>EPISODES</small><b>{memory?.last_context?.operational_episodes.length??0}</b></div></div>
         <div className="memory-hit-list">{(memory?.last_receipt?.hits??[]).slice(0,3).map(hit=><div key={hit.item_id}><span className={hit.trust}>{hit.trust}</span><b>{hit.kind.replaceAll("_"," ")}</b><em>{hit.scope.kind} · {Math.round(hit.combined_score*100)}%</em></div>)}{!memory?.last_receipt?.hits.length&&<p>No retrieval receipt yet. Run the investigation to assemble cited context.</p>}</div>

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
@@ -19,8 +20,14 @@ import (
 
 type tlsStreamLayer struct {
 	listener net.Listener
-	client   *tls.Config
+	configs  *tlsConfigSwitcher
 	address  raft.ServerAddress
+}
+
+type tlsConfigSwitcher struct {
+	mu     sync.RWMutex
+	server *tls.Config
+	client *tls.Config
 }
 
 type peerPlane string
@@ -30,12 +37,39 @@ const (
 	managementPlane peerPlane = "management"
 )
 
-func newTLSStreamLayer(address string, server, client *tls.Config) (*tlsStreamLayer, error) {
-	listener, err := tls.Listen("tcp", address, server)
+func newTLSConfigSwitcher(server, client *tls.Config) *tlsConfigSwitcher {
+	return &tlsConfigSwitcher{server: server, client: client}
+}
+
+func (s *tlsConfigSwitcher) serverConfig() *tls.Config {
+	front := &tls.Config{MinVersion: tls.VersionTLS13}
+	front.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return s.server.Clone(), nil
+	}
+	return front
+}
+
+func (s *tlsConfigSwitcher) clientConfig() *tls.Config {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.client.Clone()
+}
+
+func (s *tlsConfigSwitcher) replace(server, client *tls.Config) {
+	s.mu.Lock()
+	s.server = server
+	s.client = client
+	s.mu.Unlock()
+}
+
+func newTLSStreamLayer(address string, configs *tlsConfigSwitcher) (*tlsStreamLayer, error) {
+	listener, err := tls.Listen("tcp", address, configs.serverConfig())
 	if err != nil {
 		return nil, err
 	}
-	return &tlsStreamLayer{listener: listener, client: client, address: raft.ServerAddress(address)}, nil
+	return &tlsStreamLayer{listener: listener, configs: configs, address: raft.ServerAddress(address)}, nil
 }
 
 func (s *tlsStreamLayer) Dial(address raft.ServerAddress, timeout time.Duration) (net.Conn, error) {
@@ -43,7 +77,7 @@ func (s *tlsStreamLayer) Dial(address raft.ServerAddress, timeout time.Duration)
 	if err != nil {
 		return nil, err
 	}
-	config := s.client.Clone()
+	config := s.configs.clientConfig()
 	config.ServerName = host
 	dialer := &net.Dialer{Timeout: timeout}
 	return tls.DialWithDialer(dialer, "tcp", string(address), config)
@@ -97,7 +131,15 @@ func loadNodeTLSConfigs(identity domain.NodeIdentityV2, manifest domain.Coordina
 		if plane == managementPlane {
 			expectedSerial = member.ManagementTLSSerial
 		}
-		if expectedSerial != "" && !strings.EqualFold(expectedSerial, leaf.SerialNumber.Text(16)) {
+		previousSerials := member.PreviousRaftTLSSerials
+		if plane == managementPlane {
+			previousSerials = member.PreviousManagementTLSSerials
+		}
+		serialAccepted := strings.EqualFold(expectedSerial, leaf.SerialNumber.Text(16))
+		for _, serial := range previousSerials {
+			serialAccepted = serialAccepted || strings.EqualFold(serial, leaf.SerialNumber.Text(16))
+		}
+		if expectedSerial != "" && !serialAccepted {
 			return fmt.Errorf("PEER_IDENTITY_INVALID: certificate serial does not match manifest")
 		}
 		peerIP := member.RadioAddress
@@ -110,10 +152,14 @@ func loadNodeTLSConfigs(identity domain.NodeIdentityV2, manifest domain.Coordina
 		}
 		return nil
 	}
+	protocol := "keelmesh-raft-v1"
+	if plane == managementPlane {
+		protocol = "http/1.1"
+	}
 	base := &tls.Config{
 		MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate},
 		RootCAs: roots, ClientCAs: roots, ClientAuth: tls.RequireAndVerifyClientCert,
-		VerifyConnection: verify, NextProtos: []string{"keelmesh-coordination-v1"},
+		VerifyConnection: verify, NextProtos: []string{protocol},
 	}
 	return base.Clone(), base.Clone(), nil
 }

@@ -1210,7 +1210,8 @@ export type ArenaSnapshotV1 = {
 
 export type CoordinationCellMemberV1 = {
   node_id: string; faction: string; vm_id: number; host: string;
-  management_address: string; radio_address: string; raft_tls_serial?: string; management_tls_serial?: string; signing_public_key?: string;
+  management_address: string; radio_address: string; raft_tls_serial?: string; management_tls_serial?: string;
+  previous_raft_tls_serials?: string[]; previous_management_tls_serials?: string[]; signing_public_key?: string;
 };
 export type CoordinationCellManifestV1 = {
   schema_version: number; cell_id: string; cluster_id: string; quorum: number;
@@ -1250,10 +1251,14 @@ export type CoordinationPeerV1 = {
 };
 export type CoordinationCellSnapshotV1 = {
   schema_version: number; cell_id: string; cluster_id: string; mode: string; local_node_id?: string;
-  leader_node_id?: string; leader_address?: string; state: string; term: number; authority_epoch: number;
+  leader_node_id?: string; leader_address?: string; state: string; term: number; authority_epoch: number; state_version: number;
   commit_index: number; applied_index: number; last_log_index: number; quorum_required: number;
   reachable_voters: number; state_hash: string; election_count: number; last_election_ms?: number;
   peers: CoordinationPeerV1[]; latest_receipt?: AppliedCommandReceiptV1; updated_at: string;
+  last_error?: string;
+};
+export type CoordinationOverviewV1 = {
+  cells: Record<string, CoordinationCellSnapshotV1[]>;
 };
 export type CrossCellActivationCertificateV1 = {
   schema_version: number; operation_id: string; command_hash: string; activation_at: string;

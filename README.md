@@ -50,6 +50,7 @@ Product and design records remain available in the [PRD](PRD.md), [implementatio
 - A private MCP boundary, deterministic incident replay, human-approved evaluation promotion, and trusted A2UI operational scenes.
 - Central and node-local memory with scoped retrieval, immutable provenance, tombstones, and deterministic projection replay.
 - Twelve symmetric vessel-node VMs plus a neutral referee/ingress VM for distributed-system demonstrations.
+- Two fixed six-voter Raft cells with radio-plane replication, four-signature effect proofs, cross-cell future activation, and separate Ed25519 mTLS identities; `simulated` and `shadow` remain guarded rollback modes during rollout.
 
 ## System at a glance
 
@@ -119,6 +120,7 @@ Mission execution never depends on AI availability. On touch devices, tapping wa
 | Offline | Cached images, isolated provider mode | Deterministic mission/resilience proof without outbound AI |
 | `memory-lab` | Adds MinIO, Dagster, and MLflow | Optional ingestion, experiment, and artifact showcase |
 | Vessel node | Symmetric Go/API/UI node with local stores | Per-vessel and coordinator-failover demonstrations |
+| M12 coordination | Two independent six-voter Raft cells | Quorum authority, signed receipts, mTLS, and failover |
 
 ## Engineering principles
 
@@ -154,6 +156,8 @@ scripts/keelmesh verify
 scripts/keelmesh offline-verify
 scripts/keelmesh restart-verify
 scripts/keelmesh export-evidence
+scripts/keelmesh m12-local-verify
+scripts/keelmesh coordination-verify
 ```
 
 No Proxmox snapshot may be created without storage preflight and explicit authorization. See [Verification](docs/VERIFICATION.md) for current coverage and known test migration work.

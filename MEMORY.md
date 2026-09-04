@@ -5,8 +5,8 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M12 real node consensus, quorum failover, and mTLS implementation.
-- Last meaningful change: completed the first M12 software checkpoint: durable six-voter Raft manager/FSM, private management service, separate radio/management mTLS profiles, offline PKI generator, signed quorum-proof gateway, cross-cell prepare/certify flow, `/api/v6` reads, compatibility mutation middleware, mirrored contracts, and local security/partition tests.
-- Next step: add the real two-cell process harness, certificate reload/rotation, follower forwarding and observability polish; then build the identical binary and begin shadow deployment only after software gates pass.
+- Last meaningful change: completed the M12 local software gate: a real twelve-process/two-cell harness now proves follower forwarding, leader replacement, 4/2 whole-host survival, 3/3 rejection, recovery, four-signature receipts, and cross-cell future activation. SIGHUP credential reload, staged trust-overlap rotation, public verification, and Engineer/System observability are implemented.
+- Next step: commit the completed software gate, perform fresh read-only Proxmox host/storage/network preflight, and only then begin the guarded one-VM-at-a-time rebalance and shadow rollout if every destination is safe.
 - Blockers: Proxmox VM migration remains gated on fresh host/storage preflight. No snapshot is authorized.
 
 ### 2026-09-03 - Non-destructive repository cleanup
@@ -23,6 +23,15 @@ Durable project context lives here. Update this file whenever information should
 - Commands/tests: VM-local cached Go 1.27 container tests for coordination/API/domain/PKI; strict TypeScript; six-voter majority-election and 3/3 rejection tests; canonical hashing/idempotency/snapshot tests; same-cell, wrong-cell, revoked, expired, and plaintext TLS tests.
 - Result: checkpoint tests pass. No production PKI was generated, no node was switched from simulated mode, no VM was migrated, and no GitHub-hosted workflow or Proxmox snapshot ran.
 - Follow-up: process-level two-cell test, SIGHUP certificate rotation, follower forwarding, complete build/full-suite verification, then guarded Proxmox preflight and shadow rollout.
+
+### 2026-09-04 - M12 local two-cell acceptance gate
+
+- Context: The initial M12 package tests did not prove real process-to-process forwarding, host-shaped loss, or credential rotation.
+- Decision: add a twelve-process loopback harness, same-cell follower forwarding over management mTLS, four-signer proof collection from any node entrypoint, staged PKI rotation with old/new trust overlap, SIGHUP reload, and read-only `/api/v6` UI/CLI evidence.
+- Files: `cmd/keelmesh-coordination-{node,check}/`, `internal/coordination/`, `internal/api/coordination_gateway.go`, `scripts/verify_m12{,_local}.py`, `scripts/keelmesh`, `web/src/{EngineerView,PlatformCutaway,FleetWorkspace}.tsx`, and M12 infrastructure/docs files.
+- Commands/tests: Go 1.27 full `go test ./...` and `go vet ./...` on VM 214; strict TypeScript, 13 Vitest assertions, production Vite build; two six-process cells with follower forwarding, leader kill, 4/2 host loss, intentional 3/3 failure, restart convergence, and matching cross-cell certification.
+- Result: all local software gates pass. No production PKI was generated, no production mode changed, no VM migrated, no hosted workflow ran, and no snapshot was created.
+- Follow-up: fresh Proxmox preflight, sequential stopped migration only if safe, then Cell A shadow/Raft and Cell B shadow/Raft rollout with live proofs.
 
 ## Current State
 

@@ -85,6 +85,26 @@ func TestCoordinationTLSDeniesPlaintext(t *testing.T) {
 	}
 }
 
+func TestRefereeManagementTLSProfile(t *testing.T) {
+	directory := t.TempDir()
+	if err := GeneratePKI(PKIConfig{OutputDir: directory, ValidFor: 24 * time.Hour, Now: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	manifestA, _ := readManifest(filepath.Join(directory, "cells", "a", "manifest.json"))
+	server, _, err := loadNodeTLSConfigs(identityForTest("node-a-01", "A", 220), manifestA, filepath.Join(directory, "nodes", "node-a-01", "management.crt"), filepath.Join(directory, "nodes", "node-a-01", "management.key"), filepath.Join(directory, "nodes", "node-a-01", "cell-ca.crt"), managementPlane, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := loadRefereeClientTLS(GatewayConfig{Manifests: map[string]domain.CoordinationCellManifestV1{"A": manifestA}, CertificateFile: filepath.Join(directory, "referee", "referee.crt"), TLSKeyFile: filepath.Join(directory, "referee", "referee.key"), TrustBundleFile: filepath.Join(directory, "referee", "root-ca.crt")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.ServerName = "192.168.50.220"
+	if err := handshakePair(server, client); err != nil {
+		t.Fatalf("referee-to-management mTLS failed: %v", err)
+	}
+}
+
 func identityForTest(nodeID, cell string, vmid int) domain.NodeIdentityV2 {
 	host := strconv.Itoa(vmid)
 	return domain.NodeIdentityV2{SchemaVersion: 2, NodeID: nodeID, CellID: cell, Faction: cell, VMID: vmid, ManagementIP: "192.168.50." + host, RadioIP: "10.77.0." + host}

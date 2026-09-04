@@ -22,6 +22,7 @@
 | M9 | Read/draft-only external MCP control boundary |
 | M10 | Trusted A2UI scenes, live bindings, assistant tools, critical scenes |
 | M11 | Central/node memory, Kafka learning, replay, optional MLOps profile |
+| M12 | Real two-cell Raft runtime, separate-role mTLS PKI, four-signature proofs, follower forwarding, cross-cell activation, and signed leader discovery |
 
 ## Deployment
 
@@ -37,8 +38,8 @@
 ## Limitations
 
 - Radio behavior is simulated; no physical HaLow radios are attached.
-- Faction coordination is not completed production Raft.
-- Full node mTLS and radio-plane memory exchange need further work.
+- M12 Raft and mTLS software passes the local twelve-process fault suite; production VM migration and shadow-to-Raft rollout remain gated on fresh Proxmox preflight.
+- Radio-plane memory bundle exchange remains separate follow-up work.
 - Separate GPU LLM/STT/TTS services do not run on every node.
 - Kafka is single-broker and does not demonstrate broker HA.
 - Map, environment, contacts, navigation, and effects are simulation-only.
@@ -48,8 +49,8 @@
 ## Next investments
 
 1. Migrate legacy browser tests to global Assistant plus manual Mission semantics.
-2. Implement real faction replication, quorum leases, forwarding, and split-brain tests.
-3. Complete node identity/mTLS and radio-plane memory synchronization.
+2. Complete guarded M12 shadow deployment and per-cell cutover after host/storage preflight.
+3. Complete radio-plane memory synchronization on the authenticated M12 transport.
 4. Finish browser/node STT benchmarks and trusted-peer routing.
 5. Replace remaining fixture retrieval with bundled ONNX indexing.
 6. Complete private OTLP ingestion and cross-process traces.

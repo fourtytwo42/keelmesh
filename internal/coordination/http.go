@@ -19,11 +19,13 @@ func (m *Manager) StartManagement(ctx context.Context) error {
 	if m.cfg.Mode == ModeSimulated || m.cfg.Identity.NodeID == "" {
 		return nil
 	}
-	serverTLS, _, err := loadNodeTLSConfigs(m.cfg.Identity, m.cfg.Manifest, m.cfg.ManagementCertificateFile, m.cfg.ManagementTLSKeyFile, m.cfg.TrustBundleFile, managementPlane, true)
+	serverTLS, clientTLS, err := loadNodeTLSConfigs(m.cfg.Identity, m.cfg.Manifest, m.cfg.ManagementCertificateFile, m.cfg.ManagementTLSKeyFile, m.cfg.TrustBundleFile, managementPlane, true)
 	if err != nil {
 		return err
 	}
-	listener, err := listenTLS(ctx, m.cfg.ManagementAddress, serverTLS)
+	m.managementTLS = newTLSConfigSwitcher(serverTLS, serverTLS)
+	m.client = &http.Client{Transport: &http.Transport{TLSClientConfig: clientTLS, MaxIdleConns: 12, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second}, Timeout: m.cfg.ApplyTimeout + 2*time.Second}
+	listener, err := listenTLS(ctx, m.cfg.ManagementAddress, m.managementTLS.serverConfig())
 	if err != nil {
 		return err
 	}
@@ -56,7 +58,7 @@ func (m *Manager) handlePropose(w http.ResponseWriter, r *http.Request) {
 	if !decodeCoordination(w, r, &command) {
 		return
 	}
-	receipt, err := m.Propose(r.Context(), command)
+	receipt, err := m.ProposeOrForward(r.Context(), command)
 	respondCoordination(w, receipt, err, http.StatusCreated)
 }
 
