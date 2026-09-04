@@ -3,10 +3,40 @@ package agent
 import (
 	"context"
 	"log/slog"
+	"reflect"
 	"testing"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 )
+
+func TestRefreshScenesKeepsCriticalOrderAndLifecycleTimestampStable(t *testing.T) {
+	manager := NewManager(Config{OpenAIKeyFile: t.TempDir() + "/missing"}, slog.Default())
+	fleet := domain.FleetSnapshotV2{FleetVersion: 21, SimulationTick: 1000, Vessels: []domain.VesselProfileV2{
+		{ID: "vessel-tern", DisplayName: "Tern (KM-222)", Telemetry: domain.VesselTelemetryV2{Reserve: .046, Position: domain.GeoPointV2{-71.3, 41.2}}},
+		{ID: "vessel-petrel", DisplayName: "Petrel (KM-223)", Telemetry: domain.VesselTelemetryV2{Reserve: .194, Position: domain.GeoPointV2{-71.2, 41.3}}},
+	}}
+	manager.RefreshScenes(fleet)
+	first := manager.Scenes("demo-operator", "browser-test")
+	if len(first) != 2 {
+		t.Fatalf("expected two critical scenes, got %#v", first)
+	}
+	firstIDs := []string{first[0].ID, first[1].ID}
+	firstUpdated := map[string]string{first[0].ID: first[0].UpdatedAt.String(), first[1].ID: first[1].UpdatedAt.String()}
+
+	fleet.FleetVersion++
+	fleet.Vessels[0].Telemetry.Reserve = .045
+	manager.RefreshScenes(fleet)
+	second := manager.Scenes("demo-operator", "browser-test")
+	secondIDs := []string{second[0].ID, second[1].ID}
+	if !reflect.DeepEqual(firstIDs, secondIDs) {
+		t.Fatalf("live refresh changed critical ordering: before=%v after=%v", firstIDs, secondIDs)
+	}
+	for _, scene := range second {
+		if scene.UpdatedAt.String() != firstUpdated[scene.ID] {
+			t.Fatalf("live refresh rewrote lifecycle timestamp for %s", scene.ID)
+		}
+	}
+}
 
 func TestCommandSceneUsesTrustedOrderedSurfaceAndReplacement(t *testing.T) {
 	manager := NewManager(Config{OpenAIKeyFile: t.TempDir() + "/missing"}, slog.Default())

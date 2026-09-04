@@ -158,7 +158,7 @@ export function restorableCommandScenes(scenes: CommandSceneV1[]) {
   return scenes.filter(
     (scene) =>
       scene.pinned ||
-      (scene.state === "active" && (scene.critical || scene.pending_approval || scene.id === newestReplaceable?.id)),
+      (scene.state === "active" && (scene.pending_approval || scene.id === newestReplaceable?.id)),
   );
 }
 
@@ -223,6 +223,7 @@ export function FleetWorkspace() {
     }>({ running: false, index: -1, title: "", focus: "map", status: "ready", startedAt: 0 });
   const audio = useRef<HTMLAudioElement | null>(null),
     demoAudio = useRef<HTMLAudioElement | null>(null),
+    demoAudioResolve = useRef<(() => void) | null>(null),
     demoRun = useRef(0),
     demoMissionID = useRef(""),
     speechAbort = useRef<AbortController | null>(null),
@@ -342,11 +343,11 @@ export function FleetWorkspace() {
         .then((value) => {
           setCommandScenes(value.scenes);
           setAssistantTurns(value.turns ?? []);
-          const active = value.scenes.find((scene) => scene.critical && scene.state === "active");
-          if (active) {
-            setActiveSceneID(active.id);
-            setWindows((current) => current.has(`scene-${active.id}`) ? current : new Set([...current, `scene-${active.id}`]));
-          }
+          // Critical transitions remain available in history/status, but a
+          // telemetry poll is never permission to open a window or move map
+          // focus. The operator or guided demo must present one explicitly.
+          setActiveSceneID((current) => current && value.scenes.some((scene) => scene.id === current && scene.state === "active") ? current : "");
+          setSceneCameraRequest((current) => current && value.scenes.some((scene) => scene.id === current.sceneID && scene.state === "active") ? current : null);
         })
         .catch(() => {});
     }, 1000);
@@ -1153,19 +1154,36 @@ export function FleetWorkspace() {
     open("planner");
   }
   async function setSimulationRate(rate: FleetSnapshotV2["simulation_rate"]) {
-    const current = await api<FleetSnapshotV2>("/api/v2/fleet");
-    const updated = await mutate(() =>
-      api<FleetSnapshotV2>("/api/v2/simulation/rate", {
-        method: "POST",
-        body: JSON.stringify({
-          request_id: requestID("simulation-rate"),
-          idempotency_key: requestID("simulation-rate-key"),
-          expected_version: current.fleet_version,
-          rate,
-        }),
-      }),
-    ).catch(() => null);
-    if (updated) setFleet(updated);
+    setBusy(true);
+    let lastError: unknown;
+    try {
+      // Fleet telemetry advances the version continuously. A GET followed by the
+      // rate mutation can therefore race one simulation tick; retry only that
+      // optimistic-concurrency failure with a fresh authoritative snapshot.
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        try {
+          const current = await api<FleetSnapshotV2>("/api/v2/fleet");
+          const updated = await api<FleetSnapshotV2>("/api/v2/simulation/rate", {
+            method: "POST",
+            body: JSON.stringify({
+              request_id: requestID("simulation-rate"),
+              idempotency_key: requestID("simulation-rate-key"),
+              expected_version: current.fleet_version,
+              rate,
+            }),
+          });
+          setFleet(updated);
+          setError("");
+          return;
+        } catch (reason) {
+          lastError = reason;
+          if (!(reason instanceof KeelMeshError) || reason.code !== "STALE_STATE" || attempt === 4) break;
+        }
+      }
+      setError(lastError instanceof KeelMeshError ? `${lastError.code}: ${lastError.message}` : String(lastError));
+    } finally {
+      setBusy(false);
+    }
   }
   async function addPolygon(kind: "include" | "exclude", poly: Point[]) {
     if (!mission || !plannerVisible) return;
@@ -2031,6 +2049,8 @@ export function FleetWorkspace() {
     }
     if (action === "finish") {
       await setSimulationRate(20);
+      setActiveSceneID("");
+      setSceneCameraRequest(null);
       setWindows(new Set(["cutaway"]));
       open("cutaway");
     }
@@ -2040,16 +2060,31 @@ export function FleetWorkspace() {
     demoRun.current += 1;
     demoAudio.current?.pause();
     demoAudio.current = null;
+    demoAudioResolve.current?.();
+    demoAudioResolve.current = null;
+    setActiveSceneID("");
+    setSceneCameraRequest(null);
+    setWindows((current) => new Set([...current].filter((id) => !id.startsWith("scene-"))));
     setDemoState((value) => ({ ...value, running: false, status: "stopped" }));
   }
 
   async function playGuidedDemoAudio(path: string, runID: number) {
     await new Promise<void>((resolve, reject) => {
       const player = new Audio(path);
+      const finish = () => {
+        if (demoAudio.current === player) demoAudio.current = null;
+        if (demoAudioResolve.current === finish) demoAudioResolve.current = null;
+        resolve();
+      };
       demoAudio.current = player;
+      demoAudioResolve.current = finish;
       player.preload = "auto";
-      player.onended = () => resolve();
-      player.onerror = () => reject(new Error(`Prerecorded demo narration is unavailable: ${path}`));
+      player.onended = finish;
+      player.onerror = () => {
+        if (demoAudio.current === player) demoAudio.current = null;
+        if (demoAudioResolve.current === finish) demoAudioResolve.current = null;
+        reject(new Error(`Prerecorded demo narration is unavailable: ${path}`));
+      };
       void player.play().catch(reject);
     });
     if (demoRun.current !== runID) throw new DOMException("Demo stopped", "AbortError");
@@ -2068,21 +2103,33 @@ export function FleetWorkspace() {
     setDemoState({ running: true, index: -1, title: pirate ? "Preparing the voyage" : "Preparing guided demo", focus: "map", status: "preparing", startedAt: Date.now() });
     try {
       for (let index = 0; index < guidedDemoBeats.length; index += 1) {
-        if (demoRun.current !== runID) return;
+        if (demoRun.current !== runID) {
+          await setSimulationRate(20).catch(() => undefined);
+          return;
+        }
         const beat = guidedDemoBeats[index];
         setDemoState((value) => ({ ...value, index, title: beat.title, focus: beat.focus, status: "automating + narrating" }));
         // Start media first so the initial click grants a playback session on
         // mobile Safari/Chrome. The matching live action runs under narration.
         const narration = playGuidedDemoAudio(beat.audio[persona], runID);
         await performGuidedDemoAction(beat.action);
-        if (demoRun.current !== runID) return;
+        if (demoRun.current !== runID) {
+          await setSimulationRate(20).catch(() => undefined);
+          return;
+        }
         setDemoState((value) => ({ ...value, status: "narrating" }));
         await narration;
       }
       setDemoState((value) => ({ ...value, running: false, status: "complete" }));
     } catch (reason) {
-      if ((reason as Error).name === "AbortError") return;
+      if ((reason as Error).name === "AbortError") {
+        await setSimulationRate(20).catch(() => undefined);
+        return;
+      }
       demoAudio.current?.pause();
+      demoAudio.current = null;
+      demoAudioResolve.current = null;
+      await setSimulationRate(20).catch(() => undefined);
       setDemoState((value) => ({ ...value, running: false, status: "failed" }));
       setError(reason instanceof Error ? reason.message : String(reason));
     }

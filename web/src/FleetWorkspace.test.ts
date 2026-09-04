@@ -29,16 +29,17 @@ const scene = (id: string, overrides: Partial<CommandSceneV1> = {}): CommandScen
 });
 
 describe("restorableCommandScenes", () => {
-  it("restores only the newest ordinary scene plus protected scene lifecycles", () => {
+  it("restores the newest ordinary scene and protected user-owned lifecycles without auto-opening alerts", () => {
     const restored = restorableCommandScenes([
       scene("newest"),
       scene("older"),
       scene("critical", { critical: true }),
       scene("approval", { pending_approval: true }),
       scene("pinned", { pinned: true, state: "replaced" }),
+      scene("pinned-critical", { pinned: true, critical: true }),
       scene("dismissed", { state: "dismissed" }),
     ]);
 
-    expect(restored.map((item) => item.id)).toEqual(["newest", "critical", "approval", "pinned"]);
+    expect(restored.map((item) => item.id)).toEqual(["newest", "approval", "pinned", "pinned-critical"]);
   });
 });

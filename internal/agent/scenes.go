@@ -554,7 +554,9 @@ func (m *Manager) RefreshScenes(fleet domain.FleetSnapshotV2) {
 		scene.MapAnnotations, scene.MapCamera = sceneMapContext(entities, fleet, scene.ID)
 		scene.WorkspaceVersion = fleet.FleetVersion
 		scene.PrimarySurface.Sequence++
-		scene.UpdatedAt = time.Now().UTC()
+		// UpdatedAt expresses a lifecycle or operator mutation, not a live-data
+		// heartbeat. Rewriting it here made sort order depend on Go map iteration
+		// and caused equally critical scenes to alternate in the browser.
 		m.scenes[id] = scene
 	}
 	m.evaluateProactiveLocked(fleet)
