@@ -375,6 +375,68 @@ func (m *Manager) ConversationTurns(actor, session string, limit int) []domain.C
 	return result
 }
 
+// ClearConversation removes only the exact short-term transcript for one
+// actor/session. Committed semantic memories, candidates, entities, scenes,
+// retrieval receipts, and context evidence are deliberately preserved.
+func (m *Manager) ClearConversation(ctx context.Context, session string, req Mutation) (domain.MemorySnapshotV1, error) {
+	session = strings.TrimSpace(session)
+	if session == "" {
+		return domain.MemorySnapshotV1{}, problem("MEMORY_SOURCE_INVALID", "session_id is required to clear a conversation.")
+	}
+	m.mu.Lock()
+	repeated, err := m.checkMutationLocked(req, "clear-conversation:"+session)
+	if err != nil {
+		m.mu.Unlock()
+		return domain.MemorySnapshotV1{}, err
+	}
+	if repeated {
+		out := clone(m.snapshot)
+		m.mu.Unlock()
+		return out, nil
+	}
+	if req.ExpectedVersion != m.snapshot.StateVersion {
+		delete(m.idempotency, req.IdempotencyKey)
+		m.mu.Unlock()
+		return domain.MemorySnapshotV1{}, problem("MEMORY_STALE_STATE", "Memory changed; refresh before clearing this conversation.")
+	}
+	if m.pool != nil {
+		if _, err = m.pool.Exec(ctx, "DELETE FROM memory_conversation_turns WHERE actor_id=$1 AND session_id=$2", req.ActorID, session); err != nil {
+			delete(m.idempotency, req.IdempotencyKey)
+			m.mu.Unlock()
+			m.logger.Warn("conversation transcript delete failed", "actor", req.ActorID, "session", session, "error", err)
+			return domain.MemorySnapshotV1{}, problem("MEMORY_UNAVAILABLE", "The conversation could not be cleared from durable memory.")
+		}
+	}
+	if m.local != nil {
+		if err = m.local.clearTurns(req.ActorID, session); err != nil {
+			delete(m.idempotency, req.IdempotencyKey)
+			m.mu.Unlock()
+			m.logger.Warn("node-local conversation transcript delete failed", "actor", req.ActorID, "session", session, "error", err)
+			return domain.MemorySnapshotV1{}, problem("MEMORY_UNAVAILABLE", "The conversation could not be cleared from node-local memory.")
+		}
+	}
+	kept := make([]domain.ConversationTurnV1, 0, len(m.turns))
+	cleared := int64(0)
+	for _, turn := range m.turns {
+		if turn.ActorID == req.ActorID && turn.SessionID == session {
+			cleared++
+			continue
+		}
+		kept = append(kept, turn)
+	}
+	m.turns = kept
+	m.snapshot.ConversationTurns -= cleared
+	if m.snapshot.ConversationTurns < 0 {
+		m.snapshot.ConversationTurns = 0
+	}
+	m.snapshot.StateVersion++
+	m.snapshot.UpdatedAt = time.Now().UTC()
+	out := clone(m.snapshot)
+	m.mu.Unlock()
+	m.persistState(ctx)
+	return out, nil
+}
+
 func (m *Manager) RecordExchange(ctx context.Context, turnID, actor, session, mission, userText, assistantText, provider string) {
 	now := time.Now().UTC()
 	values := []domain.ConversationTurnV1{{ID: stable("turn", turnID, "user"), ActorID: actor, SessionID: session, MissionID: mission, Role: "user", Content: userText, SourceID: turnID, CreatedAt: now}, {ID: stable("turn", turnID, "assistant"), ActorID: actor, SessionID: session, MissionID: mission, Role: "assistant", Content: assistantText, SourceID: turnID, CreatedAt: now.Add(time.Microsecond)}}

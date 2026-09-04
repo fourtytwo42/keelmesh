@@ -182,6 +182,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v4/scenes/{action}", s.sceneMutationV4)
 	mux.HandleFunc("POST /api/v4/scenes/{id}/actions", s.sceneActionV4)
 	mux.HandleFunc("GET /api/v4/assistant/history", s.assistantHistoryV4)
+	mux.HandleFunc("POST /api/v4/assistant/history:clear", s.clearAssistantHistoryV4)
 	mux.HandleFunc("GET /api/v4/catalogs/keelmesh-operations-v1", s.sceneCatalogV4)
 	mux.HandleFunc("GET /api/v5/memory", s.memorySnapshotV5)
 	mux.HandleFunc("POST /api/v5/memory/search", s.memorySearchV5)

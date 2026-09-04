@@ -1703,6 +1703,32 @@ export function FleetWorkspace() {
       setAssistantChatBusy(false);
     }
   }
+  async function clearAssistantChat() {
+    if (assistantChatBusy) return;
+    setAssistantChatBusy(true);
+    setError("");
+    try {
+      const snapshot = await api<MemorySnapshotV1>("/api/v5/memory");
+      const id = requestID("clear-chat");
+      const result = await api<{ turns: ConversationTurnV1[]; memory: MemorySnapshotV1 }>("/api/v4/assistant/history:clear", {
+        method: "POST",
+        body: JSON.stringify({
+          request_id: id,
+          idempotency_key: id,
+          actor_identity: "demo-operator",
+          session_id: sceneSessionID,
+          expected_memory_state_version: snapshot.state_version,
+        }),
+      });
+      setAssistantTurns(result.turns);
+      setAssistantChatInput("");
+      setMemory(result.memory);
+    } catch (reason) {
+      setError(reason instanceof KeelMeshError ? `${reason.code}: ${reason.message}` : String(reason));
+    } finally {
+      setAssistantChatBusy(false);
+    }
+  }
   if (!fleet)
     return (
       <main className="m6-loading">
@@ -2031,7 +2057,7 @@ export function FleetWorkspace() {
       toggleActivation: windowToggleActivations["assistant-chat"],
       initial: { x: Math.max(20, window.innerWidth - 470), y: Math.max(90, window.innerHeight - 620), width: 430, height: 520 }, minWidth: 310, minHeight: 260,
       preferredDock: "right", maximizable: true, minimizable: false, toggleMode: "close",
-      content: <AssistantChat turns={assistantTurns} value={assistantChatInput} busy={assistantChatBusy} pirate={pirate} onChange={setAssistantChatInput} onSend={(text) => void handleGlobalTypedMessage(text)} onOpenScene={(scene) => { focusCommandScene(scene.id); if (scene.type === "mission_canvas") open("planner"); else open(`scene-${scene.id}`); }} scenes={commandScenes} />,
+      content: <AssistantChat turns={assistantTurns} value={assistantChatInput} busy={assistantChatBusy} pirate={pirate} onChange={setAssistantChatInput} onSend={(text) => void handleGlobalTypedMessage(text)} onClear={() => void clearAssistantChat()} onOpenScene={(scene) => { focusCommandScene(scene.id); if (scene.type === "mission_canvas") open("planner"); else open(`scene-${scene.id}`); }} scenes={commandScenes} />,
     });
   return (
     <main className="m6-shell">
@@ -3982,17 +4008,19 @@ function SceneHistory({ scenes, onOpen }: { scenes: CommandSceneV1[]; onOpen: (s
   return <div className="scene-history"><header><History /><span><b>COMMAND HISTORY</b><small>Provider turns, trusted surfaces, bindings, and receipts</small></span></header>{scenes.length === 0 ? <p>No command scenes have been composed in this session.</p> : scenes.map((scene) => <button key={scene.id} onClick={() => onOpen(scene)}><Sparkles /><span><b>{scene.title}</b><small>{scene.summary}</small></span><em>{scene.pinned ? "PINNED" : scene.state}</em></button>)}</div>;
 }
 
-function AssistantChat({ turns, value, busy, pirate, onChange, onSend, scenes, onOpenScene }: {
+function AssistantChat({ turns, value, busy, pirate, onChange, onSend, onClear, scenes, onOpenScene }: {
   turns: ConversationTurnV1[];
   value: string;
   busy: boolean;
   pirate: boolean;
   onChange: (value: string) => void;
   onSend: (value: string) => void;
+  onClear: () => void;
   scenes: CommandSceneV1[];
   onOpenScene: (scene: CommandSceneV1) => void;
 }) {
   const end = useRef<HTMLDivElement | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
   }, [turns.length, busy]);
@@ -4001,6 +4029,8 @@ function AssistantChat({ turns, value, busy, pirate, onChange, onSend, scenes, o
     <header>
       <MessageCircle />
       <span><b>{pirate ? "SHIP'S INTELLIGENCE" : "TEXT CHANNEL"}</b><small>Shared memory with the primary voice assistant · text replies only</small></span>
+      <button className="assistant-chat-clear" aria-label="Clear current chat" title="Clear this conversation, but keep long-term memory" disabled={busy || turns.length === 0} onClick={() => setConfirmClear(true)}><Trash2 /></button>
+      {confirmClear && <div className="assistant-chat-clear-confirm" role="dialog" aria-label="Clear current chat confirmation"><b>Clear this chat?</b><span>Recent conversation context will be removed. Long-term memory and learned preferences stay intact.</span><div><button onClick={() => setConfirmClear(false)}>Cancel</button><button className="danger" onClick={() => { setConfirmClear(false); onClear(); }}>Clear chat</button></div></div>}
     </header>
     <div className="assistant-chat-transcript" aria-live="polite">
       {turns.length === 0 && <div className="assistant-chat-empty"><Sparkles /><b>Ask KeelMesh anything</b><span>Type here when voice is not convenient. Mission and workspace requests use the same bounded tools and approvals.</span></div>}

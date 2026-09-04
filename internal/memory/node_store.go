@@ -56,6 +56,29 @@ func (s *localStore) putTurn(v domain.ConversationTurnV1) error {
 	}
 	return s.append("turn", v.ID, raw)
 }
+func (s *localStore) clearTurns(actor, session string) error {
+	rows, err := s.db.Query("SELECT id,payload FROM turns")
+	if err != nil {
+		return err
+	}
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		var raw []byte
+		var turn domain.ConversationTurnV1
+		if rows.Scan(&id, &raw) == nil && json.Unmarshal(raw, &turn) == nil && turn.ActorID == actor && turn.SessionID == session {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	for _, id := range ids {
+		if _, err = s.db.Exec("DELETE FROM turns WHERE id=?", id); err != nil {
+			return err
+		}
+	}
+	raw, _ := json.Marshal(map[string]any{"actor_identity": actor, "session_id": session})
+	return s.append("conversation_cleared", actor+":"+session, raw)
+}
 func (s *localStore) putItem(v domain.MemoryItemV1) error {
 	raw, _ := json.Marshal(v)
 	if _, err := s.db.Exec("INSERT INTO items(id,payload,tombstoned,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,tombstoned=excluded.tombstoned,updated_at=excluded.updated_at", v.ID, raw, v.Tombstoned, v.UpdatedAt.Format(time.RFC3339Nano)); err != nil {
