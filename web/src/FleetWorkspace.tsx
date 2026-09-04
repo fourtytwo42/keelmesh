@@ -1886,7 +1886,7 @@ export function FleetWorkspace() {
         x: 80,
         y: 82,
         width: Math.min(1220, window.innerWidth - 100),
-        height: Math.min(590, window.innerHeight - 146),
+        height: Math.min(680, window.innerHeight - 146),
       },
       content: (
         <PlatformCutaway
