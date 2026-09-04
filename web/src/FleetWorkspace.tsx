@@ -33,6 +33,7 @@ import { OperationsMap, type WaypointColor } from "./OperationsMap";
 import { WindowManager, type WindowDefinition } from "./WindowManager";
 import { HoverHelp } from "./HoverHelp";
 import { useLongPressContext } from "./useLongPressContext";
+import { guidedDemoBeats, guidedDemoEstimatedSeconds, type GuidedDemoAction, type GuidedDemoFocus } from "./guidedDemo";
 import { EngineerView } from "./EngineerView";
 import { PlatformCutaway } from "./PlatformCutaway";
 import { ResilienceDrill } from "./ResilienceDrill";
@@ -87,6 +88,7 @@ import {
   Satellite,
   Sun,
   Undo2,
+  Square,
 } from "lucide-react";
 
 type Tool = "select" | "box" | "waypoint" | "include" | "exclude" | "hold" | "orbit";
@@ -210,8 +212,18 @@ export function FleetWorkspace() {
     } | null>(null),
     [assistantTurns, setAssistantTurns] = useState<ConversationTurnV1[]>([]),
     [assistantChatInput, setAssistantChatInput] = useState(""),
-    [assistantChatBusy, setAssistantChatBusy] = useState(false);
+    [assistantChatBusy, setAssistantChatBusy] = useState(false),
+    [demoState, setDemoState] = useState<{
+      running: boolean;
+      index: number;
+      title: string;
+      focus: GuidedDemoFocus;
+      status: string;
+      startedAt: number;
+    }>({ running: false, index: -1, title: "", focus: "map", status: "ready", startedAt: 0 });
   const audio = useRef<HTMLAudioElement | null>(null),
+    demoAudio = useRef<HTMLAudioElement | null>(null),
+    demoRun = useRef(0),
     speechAbort = useRef<AbortController | null>(null),
     recorder = useRef<MediaRecorder | null>(null),
     recordingStream = useRef<MediaStream | null>(null),
@@ -1798,6 +1810,258 @@ export function FleetWorkspace() {
       setAssistantChatBusy(false);
     }
   }
+
+  async function waitForDemo<T>(read: () => Promise<T>, ready: (value: T) => boolean, timeoutMS = 18000) {
+    const deadline = Date.now() + timeoutMS;
+    let value = await read();
+    while (!ready(value) && Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 400));
+      value = await read();
+    }
+    return value;
+  }
+
+  async function resetGuidedDemo() {
+    const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
+    const id = requestID("guided-demo-reset");
+    const reset = await api<FleetSnapshotV2>("/api/v2/scenarios/fleet-operations:reset", {
+      method: "POST",
+      body: JSON.stringify({ request_id: id, idempotency_key: id, expected_version: snapshot.fleet_version }),
+    });
+    setFleet(reset);
+    setSelected(new Set());
+    setActiveMissionID("");
+    setPlans([]);
+    setPlanID("");
+    setPreview(null);
+    setLease(null);
+    setPendingPlanID("");
+    setCommandScenes([]);
+    setActiveSceneID("");
+    setTool("select");
+    setWindows(new Set(["fleet"]));
+    open("fleet");
+    await clearAssistantChat().catch(() => undefined);
+    await setSimulationRate(1);
+  }
+
+  async function demoMissionAndPlans() {
+    const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
+    const target = [...snapshot.missions].reverse().find((item) => item.name.toLowerCase().includes("sentinel")) ??
+      [...snapshot.missions].reverse().find((item) => (item.plan_ids?.length ?? 0) > 0);
+    if (!target) return { snapshot, mission: null, plans: [] as FleetPlanV2[] };
+    const result = await api<{ plans: FleetPlanV2[] }>(`/api/v2/missions/${target.id}/plans`).catch(() => ({ plans: [] }));
+    return { snapshot, mission: target, plans: result.plans };
+  }
+
+  async function executeGuidedDemoPlan(target: MissionWorkspaceV2, chosen: FleetPlanV2) {
+    let current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find((item) => item.id === target.id);
+    if (!current) throw new Error("The guided-demo mission disappeared before approval.");
+    const routePreview = await api<FleetPreviewV2>(`/api/v2/missions/${target.id}/plans/${chosen.id}:preview`, {
+      method: "POST",
+      body: JSON.stringify({ request_id: requestID("demo-preview"), idempotency_key: requestID("demo-preview-key"), expected_version: current.version }),
+    });
+    setPreview(routePreview);
+    current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find((item) => item.id === target.id);
+    if (!current) throw new Error("The guided-demo mission disappeared during preview.");
+    const authority = await api<FleetLeaseV2>(`/api/v2/missions/${target.id}/plans/${chosen.id}:authorize`, {
+      method: "POST",
+      body: JSON.stringify({ request_id: requestID("demo-authorize"), idempotency_key: requestID("demo-authorize-key"), expected_version: current.version, plan_hash: chosen.content_hash, operator_id: "guided-demo" }),
+    });
+    setLease(authority);
+    current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find((item) => item.id === target.id);
+    if (!current) throw new Error("The guided-demo mission disappeared before activation.");
+    await api(`/api/v2/missions/${target.id}/plans/${chosen.id}:start`, {
+      method: "POST",
+      body: JSON.stringify({ request_id: requestID("demo-start"), idempotency_key: `guided-demo-start-${authority.id}`, expected_version: current.version, plan_hash: chosen.content_hash, lease_id: authority.id }),
+    });
+    setPendingPlanID("");
+    setActivePlansByMission((value) => ({ ...value, [target.id]: chosen }));
+    await refresh();
+    await setSimulationRate(100);
+  }
+
+  async function authorGuidedManualMission() {
+    const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
+    const occupied = new Set(snapshot.missions.flatMap((item) => item.target_ids));
+    const targets = snapshot.vessels.filter((item) => !occupied.has(item.id)).slice(0, 2).map((item) => item.id);
+    const created = await createMissionFor(targets, "operator", "Survey the southern operating box, avoid the marked hazard, then hold at the final waypoint.", true);
+    if (!created) throw new Error("Unable to create the manual guided-demo mission.");
+    const geometry = {
+      ...created.geometry,
+      included_areas: [[[-71.42, 41.20], [-71.31, 41.20], [-71.31, 41.27], [-71.42, 41.27], [-71.42, 41.20]]],
+      exclusion_areas: [[[-71.375, 41.225], [-71.36, 41.225], [-71.36, 41.238], [-71.375, 41.238], [-71.375, 41.225]]],
+      waypoints: [[-71.405, 41.215], [-71.345, 41.215], [-71.325, 41.255]] as Point[],
+      waypoint_details: [
+        { id: requestID("demo-waypoint"), position: [-71.405, 41.215] as Point, color: "amber" as const, sequence: 1 },
+        { id: requestID("demo-waypoint"), position: [-71.345, 41.215] as Point, color: "amber" as const, sequence: 2 },
+        { id: requestID("demo-waypoint"), position: [-71.325, 41.255] as Point, color: "amber" as const, sequence: 3 },
+      ],
+      pois: [{ id: requestID("demo-hold"), name: "Survey hold", kind: "hold", position: [-71.325, 41.255] as Point, radius_m: 50 }],
+    };
+    const updated = await saveGeometry(created, geometry);
+    if (updated) {
+      await api(`/api/v2/missions/${updated.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ request_id: requestID("demo-save"), idempotency_key: requestID("demo-save-key"), expected_version: updated.version, draft_saved: true }),
+      });
+    }
+    setSelected(new Set(targets));
+    setActiveMissionID(created.id);
+    setTool("select");
+    open("planner");
+    await refresh();
+  }
+
+  async function runGuidedResilience() {
+    const bootstrap = await api<Bootstrap>("/api/v1/bootstrap");
+    let state = bootstrap.snapshot.resilience;
+    if (!state) return;
+    if (state.phase !== "ready") {
+      const resetID = requestID("demo-resilience-reset");
+      state = await api<NonNullable<Bootstrap["snapshot"]["resilience"]>>("/api/v1/scenarios/resilient-edge:reset", {
+        method: "POST", body: JSON.stringify({ request_id: resetID, idempotency_key: resetID, expected_state_version: state.state_version }),
+      });
+    }
+    open("resilience");
+    for (const kind of ["fail_starlink", "partition_vessel4", "inject_gnss_spoof", "restore_contact"]) {
+      const id = requestID(`demo-${kind}`);
+      state = await api<typeof state>("/api/v1/faults", {
+        method: "POST",
+        body: JSON.stringify({ schema_version: 1, kind, target_id: "vessel-04", scenario_tick: state.mission_tick, request_id: id, idempotency_key: id, expected_state_version: state.state_version }),
+      });
+      setLegacy((value) => value ? { ...value, snapshot: { ...value.snapshot, resilience: state } } : value);
+      await new Promise((resolve) => window.setTimeout(resolve, 550));
+    }
+  }
+
+  async function performGuidedDemoAction(action: GuidedDemoAction) {
+    if (action === "reset") await resetGuidedDemo();
+    if (action === "inspect-vessel") {
+      open("assistant-chat");
+      const current = await api<FleetSnapshotV2>("/api/v2/fleet");
+      const vessel = current.vessels[0];
+      await handleGlobalTypedMessage(`Locate ${vessel.callsign}, report its current position, reserve, PNT integrity, and connectivity, then open its status.`);
+      inspectAndFrameVessel(vessel.id);
+    }
+    if (action === "create-group") {
+      const current = await api<FleetSnapshotV2>("/api/v2/fleet");
+      const names = current.vessels.slice(0, 3).map((item) => item.callsign);
+      await handleGlobalTypedMessage(`Create an operational group named Harbor Sentinel containing ${names.join(", ")}.`);
+      const updated = await waitForDemo(() => api<FleetSnapshotV2>("/api/v2/fleet"), (value) => value.groups.some((item) => item.name.toLowerCase().includes("harbor sentinel")));
+      if (!updated.groups.some((item) => item.name.toLowerCase().includes("harbor sentinel")))
+        await createGroupFor(current.vessels.slice(0, 3).map((item) => item.id), "Harbor Sentinel");
+      setWindows(new Set(["fleet", "assistant-chat"]));
+      open("fleet");
+      await refresh();
+    }
+    if (action === "create-ai-mission") {
+      await handleGlobalTypedMessage("Create one mission for Harbor Sentinel to patrol two nautical miles east, preserve at least thirty percent battery, maintain safe depth and separation, then hold position. Do not offer alternatives.");
+      let state = await waitForDemo(demoMissionAndPlans, (value) => Boolean(value.mission && value.plans.length));
+      if (!state.mission) {
+        const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
+        const group = snapshot.groups.find((item) => item.name.toLowerCase().includes("harbor sentinel"));
+        if (!group) throw new Error("The guided-demo group was not available for mission planning.");
+        const created = await createMissionFor(group.member_ids, "ai", "Patrol two nautical miles east, preserve at least thirty percent battery, maintain safe depth and separation, then hold position.", false);
+        if (created) await createPlans(created, created.objective, "ai_assisted", "patrol", "", true, 1, false);
+        state = await waitForDemo(demoMissionAndPlans, (value) => Boolean(value.mission && value.plans.length));
+      }
+      if (state.mission) {
+        setFleet(state.snapshot);
+        setActiveMissionID(state.mission.id);
+        setSelected(new Set(state.mission.target_ids));
+        setPlans(state.plans);
+        setPlanID((state.plans.find((item) => item.recommended) ?? state.plans[0])?.id ?? "");
+        setWindows(new Set(["fleet", "planner"]));
+        open("planner");
+      }
+    }
+    if (action === "review-plan") {
+      const state = await demoMissionAndPlans();
+      const chosen = state.plans.find((item) => item.recommended && item.policy_status !== "prohibited") ?? state.plans.find((item) => item.policy_status !== "prohibited");
+      if (!state.mission || !chosen) throw new Error("No valid guided-demo plan is available for review.");
+      setFleet(state.snapshot);
+      setActiveMissionID(state.mission.id);
+      setPlans(state.plans);
+      setPlanID(chosen.id);
+      setPendingPlanID(chosen.id);
+      open("planner");
+    }
+    if (action === "execute-plan") {
+      const state = await demoMissionAndPlans();
+      const chosen = state.plans.find((item) => item.recommended && item.policy_status !== "prohibited") ?? state.plans.find((item) => item.policy_status !== "prohibited");
+      if (!state.mission || !chosen) throw new Error("No valid guided-demo plan is available to execute.");
+      await executeGuidedDemoPlan(state.mission, chosen);
+      setWindows(new Set(["fleet"]));
+    }
+    if (action === "author-manual-mission") await authorGuidedManualMission();
+    if (action === "run-resilience") await runGuidedResilience();
+    if (action === "show-consensus" || action === "show-data-plane" || action === "show-memory") {
+      setWindows(new Set(["cutaway"]));
+      open("cutaway");
+    }
+    if (action === "show-ai-lab") {
+      setWindows(new Set(["engineer"]));
+      open("engineer");
+    }
+    if (action === "finish") {
+      await setSimulationRate(20);
+      setWindows(new Set(["cutaway"]));
+      open("cutaway");
+    }
+  }
+
+  function stopGuidedDemo() {
+    demoRun.current += 1;
+    demoAudio.current?.pause();
+    demoAudio.current = null;
+    setDemoState((value) => ({ ...value, running: false, status: "stopped" }));
+  }
+
+  async function playGuidedDemoAudio(path: string, runID: number) {
+    await new Promise<void>((resolve, reject) => {
+      const player = new Audio(path);
+      demoAudio.current = player;
+      player.preload = "auto";
+      player.onended = () => resolve();
+      player.onerror = () => reject(new Error(`Prerecorded demo narration is unavailable: ${path}`));
+      void player.play().catch(reject);
+    });
+    if (demoRun.current !== runID) throw new DOMException("Demo stopped", "AbortError");
+  }
+
+  async function startGuidedDemo() {
+    if (demoState.running) {
+      stopGuidedDemo();
+      return;
+    }
+    audio.current?.pause();
+    speechAbort.current?.abort();
+    const runID = ++demoRun.current;
+    const persona = pirate ? "pirate" : "navy";
+    setError("");
+    setDemoState({ running: true, index: -1, title: pirate ? "Preparing the voyage" : "Preparing guided demo", focus: "map", status: "preparing", startedAt: Date.now() });
+    try {
+      for (let index = 0; index < guidedDemoBeats.length; index += 1) {
+        if (demoRun.current !== runID) return;
+        const beat = guidedDemoBeats[index];
+        setDemoState((value) => ({ ...value, index, title: beat.title, focus: beat.focus, status: "automating + narrating" }));
+        // Start media first so the initial click grants a playback session on
+        // mobile Safari/Chrome. The matching live action runs under narration.
+        const narration = playGuidedDemoAudio(beat.audio[persona], runID);
+        await performGuidedDemoAction(beat.action);
+        if (demoRun.current !== runID) return;
+        setDemoState((value) => ({ ...value, status: "narrating" }));
+        await narration;
+      }
+      setDemoState((value) => ({ ...value, running: false, status: "complete" }));
+    } catch (reason) {
+      if ((reason as Error).name === "AbortError") return;
+      demoAudio.current?.pause();
+      setDemoState((value) => ({ ...value, running: false, status: "failed" }));
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
   if (!fleet)
     return (
       <main className="m6-loading">
@@ -2130,7 +2394,7 @@ export function FleetWorkspace() {
       content: <AssistantChat turns={assistantTurns} value={assistantChatInput} busy={assistantChatBusy} pirate={pirate} onChange={setAssistantChatInput} onSend={(text) => void handleGlobalTypedMessage(text)} onClear={() => void clearAssistantChat()} onOpenScene={(scene) => { focusCommandScene(scene.id); if (scene.type === "mission_canvas") open("planner"); else open(`scene-${scene.id}`); }} scenes={commandScenes} />,
     });
   return (
-    <main className="m6-shell">
+    <main className={`m6-shell ${demoState.running ? "demo-running" : ""} demo-focus-${demoState.focus}`}>
       <header className="ops-bar">
         <div className="ops-brand">
           <b>{pirate ? <Skull /> : "KM"}</b>
@@ -2139,6 +2403,15 @@ export function FleetWorkspace() {
             <small>{words.subtitle}</small>
           </span>
         </div>
+        <button
+          className={`guided-demo-toggle ${demoState.running ? "running" : ""}`}
+          aria-label={demoState.running ? "Stop guided demo" : "Start guided demo"}
+          title={demoState.running ? "Stop the hands-off guided demonstration" : `Run the ${pirate ? "Barbossa" : "Jarvis"} guided demonstration`}
+          onClick={() => void startGuidedDemo()}
+        >
+          {demoState.running ? <Square /> : <Play />}
+          <span>{demoState.running ? "Stop Demo" : "Start Demo"}</span>
+        </button>
         <nav>
           <button aria-label={words.fleet} title="Show or hide fleet and operational groups" onClick={() => toggleWindow("fleet")}>
             <Ship />
@@ -2161,6 +2434,7 @@ export function FleetWorkspace() {
           className="theme-toggle"
           aria-label={pirate ? "Return to navy mode" : "Enter pirate mode"}
           title={pirate ? "Return to Navy mode" : "Hoist the pirate colors"}
+          disabled={demoState.running}
           onClick={() => setPirate((v) => !v)}
         >
           {pirate ? <Anchor /> : <Skull />}
@@ -2176,6 +2450,13 @@ export function FleetWorkspace() {
               : "RECONNECTING"}
         </div>
       </header>
+      {demoState.running && demoState.index >= 0 && (
+        <aside className="guided-demo-hud" role="status" aria-live="polite">
+          <div className="guided-demo-progress"><i style={{ width: `${((demoState.index + 1) / guidedDemoBeats.length) * 100}%` }} /></div>
+          <span><small>{pirate ? "AUTONOMOUS SHOW-AND-TELL" : "GUIDED SYSTEM DEMO"}</small><b>{demoState.title}</b></span>
+          <em>{demoState.index + 1}/{guidedDemoBeats.length} · {demoState.status} · ≤{Math.ceil(guidedDemoEstimatedSeconds / 60)} min</em>
+        </aside>
+      )}
       <div className="mission-tabs">
         <button
           className="new-tab"

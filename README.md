@@ -16,6 +16,7 @@ KeelMesh demonstrates how one operator can plan, authorize, observe, and adapt m
 - [What KeelMesh demonstrates](#what-keelmesh-demonstrates)
 - [System at a glance](#system-at-a-glance)
 - [Quick start](#quick-start)
+- [Five-minute guided demo](#five-minute-guided-demo)
 - [Core operating workflow](#core-operating-workflow)
 - [Runtime profiles](#runtime-profiles)
 - [Engineering principles](#engineering-principles)
@@ -99,6 +100,29 @@ scripts/keelmesh verify
 ```
 
 Read the [Operations runbook](docs/OPERATIONS.md) before configuring provider secrets, running offline/restart drills, or exporting evidence.
+
+## Five-minute guided demo
+
+Select **Start Demo** in the center of the top bar for a hands-off tour of the
+working system. Navy mode uses prerecorded Jarvis narration; Pirate mode follows
+the same technical beats with prerecorded Captain Barbossa narration. The button
+changes to **Stop Demo** during playback and stops automation immediately without
+rolling back the state already demonstrated.
+
+The tour resets transient Fleet Operations state, then exercises live application
+interfaces to inspect a vessel with AI, create a group, build and authorize an
+AI-assisted mission, accelerate execution, author a second mission manually, run
+the connectivity/PNT resilience scenario, and inspect Raft/mTLS, Kafka/PostgreSQL,
+MCP/evaluation, and distributed-memory evidence. Narration is served as bundled
+audio; no TTS request occurs while the tour is running. Long-term semantic memory
+is preserved by the demo reset.
+
+The script explicitly distinguishes implemented infrastructure from simulated
+conditions: the twelve VM nodes, two Raft cells, mTLS identities, quorum receipts,
+data pipeline, and authority services are real software deployments; Starlink,
+HaLow radio behavior, GNSS faults, environmental conditions, and vessel motion are
+deterministic simulations. The complete run is designed to remain below five
+minutes, including ordinary live API/provider latency.
 
 ## Core operating workflow
 
