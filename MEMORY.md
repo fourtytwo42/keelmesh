@@ -9,6 +9,12 @@ Durable project context lives here. Update this file whenever information should
 - Next step: complete the node coordination manager, private management API, PKI generator, quorum-proof gateway, tests, and only then begin shadow deployment.
 - Blockers: Proxmox VM migration remains gated on fresh host/storage preflight. No snapshot is authorized.
 
+### 2026-09-03 - Non-destructive repository cleanup
+
+- Context: the root checkout was 47 commits behind `origin/main`, contained 1,194 tracked changes (mostly missing generated map/UI assets), and retained large deployment/test artifacts; the M12 worktree also had intentional uncommitted foundation code.
+- Decision: committed the M12 foundation on `m11-memory`, preserved every tracked root-checkout change on `codex/repository-recovery-20260903` at `f991826`, then fast-forwarded the root `main` checkout to `origin/main`. Local binaries, bundles, screenshots, test output, and the nested worktree remain physically intact but are hidden from status through `.git/info/exclude`.
+- Result: both registered worktrees are clean after dedicated commits; no files, snapshots, branches, or hosted workflows were deleted or run.
+
 ## Current State
 
 - Project concept: an offline-first one-operator/many-vessel peer-autonomy demonstration for a Havoc AI infrastructure interview.
