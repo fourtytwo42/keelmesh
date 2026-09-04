@@ -25,7 +25,7 @@ test.afterEach(async ({ page }) => {
   await resetFleet(page);
 });
 
-test("Mission and plus open the same Fleet-driven planning workflow", async ({ page }) => {
+test("Mission and plus reuse an unsaved draft, then create after it is saved", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Mission", exact: true }).click();
 
@@ -50,6 +50,20 @@ test("Mission and plus open the same Fleet-driven planning workflow", async ({ p
   await mission.getByRole("button", { name: /1 Plan/ }).click();
   await expect(mission.getByText("Map authoring", { exact: true })).toBeVisible();
 
+  const originalID = (await (await page.request.get("/api/v2/fleet")).json()).missions[0].id;
+  await mission.getByRole("button", { name: "Minimize" }).click();
+  await page.getByRole("button", { name: "New mission" }).click();
+  await expect(mission).toBeVisible();
+  await expect(page.locator(".mission-tabs .mission-tab")).toHaveCount(1);
+  expect((await (await page.request.get("/api/v2/fleet")).json()).missions[0].id).toBe(originalID);
+
+  await mission.getByRole("button", { name: "Minimize" }).click();
+  await page.getByRole("button", { name: "Mission", exact: true }).click();
+  await expect(mission).toBeVisible();
+  await expect(page.locator(".mission-tabs .mission-tab")).toHaveCount(1);
+
+  await mission.getByRole("button", { name: "Save draft" }).click();
+  await expect(mission.getByRole("button", { name: "Draft saved" })).toBeDisabled();
   await page.getByRole("button", { name: "New mission" }).click();
   await expect(page.locator(".mission-tabs .mission-tab")).toHaveCount(2);
 });

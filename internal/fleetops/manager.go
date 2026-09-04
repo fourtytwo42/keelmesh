@@ -93,6 +93,7 @@ type PatchMissionRequest struct {
 	Name        *string                 `json:"name"`
 	Objective   *string                 `json:"objective"`
 	Status      *string                 `json:"status"`
+	DraftSaved  *bool                   `json:"draft_saved"`
 	Formation   *string                 `json:"formation"`
 	Loop        *bool                   `json:"loop"`
 	TargetIDs   *[]string               `json:"target_ids"`
@@ -1223,6 +1224,12 @@ func (m *Manager) PatchMission(id string, req PatchMissionRequest) (domain.Missi
 			return v, &Error{"INVALID_MISSION_STATUS", "Mission status must be paused or executing."}
 		}
 		v.Status = *req.Status
+	}
+	if req.DraftSaved != nil {
+		if *req.DraftSaved && v.Status != "draft" {
+			return v, &Error{"INVALID_MISSION_TRANSITION", "Only an editable draft can be saved as a draft."}
+		}
+		v.DraftSaved = *req.DraftSaved
 	}
 	if req.Formation != nil {
 		v.Formation = *req.Formation

@@ -730,6 +730,7 @@ export type MissionWorkspaceV2 = {
   name_source?: string;
   objective: string;
   status: string;
+  draft_saved: boolean;
   target_ids: string[];
   target_snapshot_hash: string;
   fleet_version: number;

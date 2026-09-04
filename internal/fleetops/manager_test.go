@@ -910,6 +910,17 @@ func TestEmptyMissionDraftAcceptsTargetsAfterCreation(t *testing.T) {
 	if len(updated.TargetIDs) != len(targets) || updated.AuthorizedPlanID != "" {
 		t.Fatalf("targets were not assigned safely: %#v", updated)
 	}
+	saved := true
+	updated, err = m.PatchMission(mission.ID, PatchMissionRequest{
+		Mutation:   Mutation{RequestID: "save-empty-draft", IdempotencyKey: "save-empty-draft", ExpectedVersion: updated.Version},
+		DraftSaved: &saved,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.DraftSaved || updated.Status != "draft" {
+		t.Fatalf("explicitly saved draft lost its editable lifecycle: %#v", updated)
+	}
 }
 
 func TestGeneratedAndAINamedMissionsAndEntityRenames(t *testing.T) {

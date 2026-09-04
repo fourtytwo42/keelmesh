@@ -598,11 +598,34 @@ export function FleetWorkspace() {
     return m;
   }
   async function createMission() {
+    const current = await api<FleetSnapshotV2>("/api/v2/fleet").catch((reason) => {
+      setError(reason instanceof KeelMeshError ? `${reason.code}: ${reason.message}` : String(reason));
+      return null;
+    });
+    if (!current) return null;
+    const unsavedDrafts = current.missions
+      .filter((item) => item.status === "draft" && !item.draft_saved)
+      .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at));
+    const reusable =
+      unsavedDrafts.find((item) => item.id === activeMissionID) ??
+      unsavedDrafts[0];
+    if (reusable) {
+      missionSelectionSync.current = `${reusable.id}:${[...reusable.target_ids].sort().join(",")}`;
+      setSelected(new Set(reusable.target_ids));
+      setActiveMissionID(reusable.id);
+      setPlannerContactSeed(null);
+      setPlans([]);
+      setDraft(null);
+      setPreview(null);
+      setLease(null);
+      open("planner");
+      return reusable;
+    }
     // Selection is convenient but no longer a prerequisite. Never copy assets
     // already owned by another open mission into a new draft: opening Mission
     // from an existing mission should still produce a clean, usable creator.
     const occupied = new Set(
-      (fleet?.missions ?? [])
+      current.missions
         .filter((item) => !["completed", "failed"].includes(item.status))
         .flatMap((item) => item.target_ids),
     );
@@ -1861,7 +1884,7 @@ export function FleetWorkspace() {
             setLease(null);
             void updateMission({ loop });
           }}
-          onObjective={(objective) => updateMission({ objective })}
+          onSaveDraft={(objective) => updateMission({ objective, draft_saved: true })}
           onArea={(kind) => setTool(kind)}
           onTool={setTool}
           onGenerateManual={(missionType, objective) => void generateManualMission(missionType, objective)}
@@ -2138,7 +2161,7 @@ export function FleetWorkspace() {
             >
               <i className={m.status} />
               <span>{m.name}</span>
-              <small>{m.status}</small>
+              <small>{m.status === "draft" && m.draft_saved ? "saved draft" : m.status}</small>
             </button>
             <div className="mission-tab-actions">
               <button
@@ -3506,7 +3529,7 @@ function EditableTitle({
     </form>
   );
 }
-function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool, contactSeed, geometryFocus, onFormation, onLoop, onObjective, onArea, onTool, onGenerateManual, onRefineAI, onOpenConstraints, onApplyContactSeed, onClearContactSeed, onUndoGeometry, onClearGeometry, onDeleteGeometry, onFocusGeometry, onReorderWaypoint, onChoose, onConfirmPlan, onStatus, onRename, onDelete }: {
+function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool, contactSeed, geometryFocus, onFormation, onLoop, onSaveDraft, onArea, onTool, onGenerateManual, onRefineAI, onOpenConstraints, onApplyContactSeed, onClearContactSeed, onUndoGeometry, onClearGeometry, onDeleteGeometry, onFocusGeometry, onReorderWaypoint, onChoose, onConfirmPlan, onStatus, onRename, onDelete }: {
   pirate: boolean;
   mission: MissionWorkspaceV2 | null;
   groups: FleetSnapshotV2["groups"];
@@ -3520,7 +3543,7 @@ function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool,
   geometryFocus: GeometryFocus | null;
   onFormation: (value: string) => void;
   onLoop: (loop: boolean) => void;
-  onObjective: (value: string) => void;
+  onSaveDraft: (value: string) => void;
   onArea: (kind: "include" | "exclude") => void;
   onTool: (tool: Tool) => void;
   onGenerateManual: (missionType: string, objective: string) => void;
@@ -3566,12 +3589,13 @@ function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool,
   const individualCount = mission.target_ids.filter((id) => !coveredTargets.has(id)).length;
   const scopeParts = [...assignedGroups.map((group) => `${group.code} · ${group.name}`), ...(individualCount ? [`${individualCount} individual${individualCount === 1 ? "" : "s"}`] : [])];
   const markerCount = mission.geometry.waypoints.length + mission.geometry.pois.length;
+  const objectiveChanged = manualObjective.trim() !== mission.objective;
   const readiness = mission.target_ids.length === 0 ? "ASSETS NEEDED" : !manualObjective.trim() ? "OBJECTIVE NEEDED" : plans.length === 0 ? "READY TO BUILD" : activePlan?.policy_status === "prohibited" ? "REVISION REQUIRED" : "READY TO REVIEW";
 
   return <div className="planner mission-editor mission-command-center">
     <header className="mission-command-header">
       <div><small>{pirate ? "VOYAGE CONTROL" : "MISSION CONTROL"}</small><EditableTitle value={mission.name} label="mission" onSave={onRename} /><p>{scopeParts.length ? scopeParts.join(" · ") : pirate ? "No crew assigned" : "No assets assigned"}</p></div>
-      <div className="mission-summary-actions"><span className={`mission-status ${mission.status}`}>{mission.status}</span><button aria-label={`${mission.status === "paused" ? "Resume" : "Pause"} ${mission.name}`} title={mission.status === "paused" ? "Resume mission" : "Pause mission"} disabled={mission.status !== "executing" && mission.status !== "paused"} onClick={() => onStatus(mission.status === "paused" ? "executing" : "paused")}>{mission.status === "paused" ? <Play /> : <Pause />}</button><button className="delete" aria-label={`Delete ${mission.name}`} title="Delete mission" onClick={onDelete}><Trash2 /></button></div>
+      <div className="mission-summary-actions"><span className={`mission-status ${mission.status}`}>{mission.status === "draft" && mission.draft_saved ? "saved draft" : mission.status}</span><button aria-label={`${mission.status === "paused" ? "Resume" : "Pause"} ${mission.name}`} title={mission.status === "paused" ? "Resume mission" : "Pause mission"} disabled={mission.status !== "executing" && mission.status !== "paused"} onClick={() => onStatus(mission.status === "paused" ? "executing" : "paused")}>{mission.status === "paused" ? <Play /> : <Pause />}</button><button className="delete" aria-label={`Delete ${mission.name}`} title="Delete mission" onClick={onDelete}><Trash2 /></button></div>
     </header>
     <div className="mission-readiness-strip"><span><Ship /><b>{mission.target_ids.length}</b><small>ASSETS</small></span><span><MapPinned /><b>{markerCount}</b><small>MARKERS</small></span><span><Route /><b>{plans.length}</b><small>ROUTES</small></span><em>{readiness}</em></div>
     {contactSeed && <div className="planner-contact-seed"><i style={{ background: contactSeed.color }} /><span><b>{contactSeed.name}</b><small>{contactSeed.boat_id} · planning target</small></span><button onClick={() => onApplyContactSeed(false)}>Use here</button><button onClick={() => onApplyContactSeed(true)}>New mission</button><button aria-label="Dismiss contact planning context" onClick={onClearContactSeed}><X /></button></div>}
@@ -3585,7 +3609,7 @@ function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool,
         <div className="mission-section-heading"><span><Compass /><b>Mission definition</b><small>Describe the outcome, then place route and safety geometry directly on the map.</small></span><em>{missionType.replaceAll("_", " ")}</em></div>
         <div className="mission-definition-grid"><label>MISSION TYPE<select aria-label="MISSION TYPE" value={missionType} onChange={(event) => setMissionType(event.target.value)}><option value="transit">Transit</option><option value="patrol">Patrol</option><option value="search">Search</option><option value="follow_contact">Follow contact</option><option value="hold">Hold</option><option value="orbit">Orbit</option><option value="custom_route">Custom route</option></select></label><label className="mission-objective-field">OBJECTIVE<textarea aria-label="OBJECTIVE" value={manualObjective} onChange={(event) => setManualObjective(event.target.value)} placeholder="What should these vessels accomplish?" /></label>{mission.target_ids.length > 1 ? <label>FORMATION<select value={mission.formation} onChange={(event) => onFormation(event.target.value)}>{formations.map((formation) => <option value={formation} key={formation}>{formation.replaceAll("_", " ")}</option>)}</select></label> : <div className="solo-mode"><Ship /><span><b>{mission.target_ids.length === 1 ? "INDEPENDENT VESSEL" : "NO ASSETS"}</b><small>{mission.target_ids.length === 1 ? "Formation controls are not required." : "Select vessels or groups in Fleet."}</small></span></div>}<button type="button" className={`mission-loop-control ${mission.loop ? "active" : ""}`} onClick={() => onLoop(!mission.loop)}><RotateCcw /><span><b>{mission.loop ? "Loop continuously" : "Hold at end"}</b><small>{mission.loop ? "Return to the first marker after completion." : "Station-keep at the final marker."}</small></span></button></div>
         <div className="mission-map-authoring"><div className="mission-section-heading"><span><MapPinned /><b>Map authoring</b><small>{tool === "select" ? "Choose a tool, then work on the map." : `${tool.replaceAll("_", " ")} active · Escape cancels`}</small></span><em>geometry r{mission.geometry.revision}</em></div><div className="geometry-actions"><button aria-label="Select or edit mission geometry" className={tool === "select" ? "active" : ""} onClick={() => onTool("select")} title="Select or edit"><MousePointer2 /><small>Edit</small></button><button aria-label="Add operating area" className={tool === "include" ? "active" : ""} onClick={() => onArea("include")} title="Operating area"><Plus /><small>Area</small></button><button aria-label="Add exclusion area" className={tool === "exclude" ? "active" : ""} onClick={() => onArea("exclude")} title="Exclusion area"><Ban /><small>Exclude</small></button><button aria-label="Add waypoint" className={tool === "waypoint" ? "active" : ""} onClick={() => onTool("waypoint")} title="Waypoint"><MapPinned /><small>Waypoint</small></button><button aria-label="Add hold point" className={tool === "hold" ? "active" : ""} onClick={() => onTool("hold")} title="Hold point"><CircleDot /><small>Hold</small></button><button aria-label="Add orbit point" className={tool === "orbit" ? "active" : ""} onClick={() => onTool("orbit")} title="Orbit point"><RotateCcw /><small>Orbit</small></button><button aria-label="Undo mission geometry change" onClick={onUndoGeometry} title="Undo"><Undo2 /><small>Undo</small></button></div><div className="geometry-summary"><span>{mission.geometry.included_areas.length} operating</span><span>{mission.geometry.exclusion_areas.length} exclusions</span><span>{mission.geometry.waypoints.length} waypoints</span><span>{mission.geometry.pois.length} hold/orbit</span></div><div className="geometry-inventory">{mission.geometry.included_areas.map((_, index) => <button className={geometryFocus?.kind === "include" && geometryFocus.index === index ? "selected" : ""} key={`include-${index}`} onClick={() => onFocusGeometry({ kind: "include", index })}><span>Operating area {index + 1}</span><Eye /></button>)}{mission.geometry.exclusion_areas.map((_, index) => <button className={geometryFocus?.kind === "exclude" && geometryFocus.index === index ? "selected" : ""} key={`exclude-${index}`} onClick={() => onFocusGeometry({ kind: "exclude", index })}><span>Exclusion area {index + 1}</span><Eye /></button>)}{mission.geometry.waypoints.map((_, index) => <div className={geometryFocus?.kind === "waypoint" && geometryFocus.index === index ? "selected" : ""} key={`waypoint-${index}`}><button onClick={() => onFocusGeometry({ kind: "waypoint", index })}><span>Waypoint {index + 1}</span><Eye /></button><button disabled={index === 0} onClick={() => onReorderWaypoint(index, -1)}><ChevronUp /></button><button disabled={index === mission.geometry.waypoints.length - 1} onClick={() => onReorderWaypoint(index, 1)}><ChevronDown /></button></div>)}{mission.geometry.pois.map((poi, index) => <button className={geometryFocus?.kind === "poi" && geometryFocus.index === index ? "selected" : ""} key={poi.id} onClick={() => onFocusGeometry({ kind: "poi", index })}><span>{poi.kind === "orbit" ? "Orbit" : "Hold"} point {index + 1}</span><Eye /></button>)}{geometryFocus && <button className="geometry-delete" onClick={() => onDeleteGeometry(geometryFocus)}><Trash2 />Delete selected</button>}</div><div className="geometry-clear-actions"><button onClick={() => onClearGeometry("include")}>Clear areas</button><button onClick={() => onClearGeometry("exclude")}>Clear exclusions</button><button onClick={() => onClearGeometry("waypoint")}>Clear route</button><button onClick={() => onClearGeometry("poi")}>Clear holds</button></div></div>
-        <div className="mission-plan-actions"><button onClick={onOpenConstraints} disabled={busy}><SlidersHorizontal /><span><b>Constraints</b><small>Reserve, speed, separation, PNT</small></span></button><button onClick={() => onObjective(manualObjective.trim())} disabled={busy || !manualObjective.trim() || manualObjective.trim() === mission.objective}><Save /><span><b>Save definition</b><small>Persist objective changes</small></span></button><button className="amber" onClick={() => { setWorkspaceTab("route"); onGenerateManual(missionType, manualObjective); }} disabled={busy || mission.target_ids.length === 0}><Route /><span><b>{plans.length ? "Rebuild routes" : "Build routes"}</b><small>Deterministic validation · no AI required</small></span></button></div>
+        <div className="mission-plan-actions"><button onClick={onOpenConstraints} disabled={busy}><SlidersHorizontal /><span><b>Constraints</b><small>Reserve, speed, separation, PNT</small></span></button><button onClick={() => onSaveDraft(manualObjective.trim())} disabled={busy || !manualObjective.trim() || (mission.draft_saved && !objectiveChanged)}><Save /><span><b>{mission.draft_saved ? objectiveChanged ? "Save changes" : "Draft saved" : "Save draft"}</b><small>{mission.draft_saved && !objectiveChanged ? "Mission is ready to revisit." : "Keep this mission and release the creator."}</small></span></button><button className="amber" onClick={() => { setWorkspaceTab("route"); onGenerateManual(missionType, manualObjective); }} disabled={busy || mission.target_ids.length === 0}><Route /><span><b>{plans.length ? "Rebuild routes" : "Build routes"}</b><small>Deterministic validation · no AI required</small></span></button></div>
       </section>}
       {workspaceTab === "route" && <section className="mission-route-workspace">
         <div className="mission-section-heading"><span><ShieldCheck /><b>Review &amp; execute</b><small>{plans.length > 1 ? `${plans.length} validated alternatives · select one to preview` : plans.length === 1 ? "One validated route ready for review" : "Build a route from the Plan tab first."}</small></span>{activePlan && <em>{activePlan.advisor_source === "deterministic" ? "MANUAL" : "AI REFINED"}</em>}</div>

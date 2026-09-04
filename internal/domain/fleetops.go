@@ -175,6 +175,7 @@ type MissionWorkspaceV2 struct {
 	NameSource         string                      `json:"name_source,omitempty"`
 	Objective          string                      `json:"objective"`
 	Status             string                      `json:"status"`
+	DraftSaved         bool                        `json:"draft_saved"`
 	TargetIDs          []string                    `json:"target_ids"`
 	TargetSnapshotHash string                      `json:"target_snapshot_hash"`
 	FleetVersion       int64                       `json:"fleet_version"`
