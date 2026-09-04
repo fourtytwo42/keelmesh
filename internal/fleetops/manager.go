@@ -362,7 +362,6 @@ func (m *Manager) seedLegacyFleet() {
 func (m *Manager) SyncNodeTopology(snapshot domain.ArenaSnapshotV1) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	changed := false
 	byNode := make(map[string]domain.ArenaNodeV1, len(snapshot.Nodes))
 	for _, node := range snapshot.Nodes {
 		byNode[node.ID] = node
@@ -380,17 +379,11 @@ func (m *Manager) SyncNodeTopology(snapshot domain.ArenaSnapshotV1) {
 		if !node.InferenceConnected {
 			inference = "unavailable"
 		}
-		if vessel.NodeStatus != status || vessel.RadioState != node.RadioState || vessel.InferenceState != inference || vessel.GNSSState != node.GNSSState || vessel.GNSSAccepted != node.GNSSAccepted || vessel.Telemetry.PNTIntegrity != node.PNTIntegrity || vessel.Telemetry.UncertaintyM != node.UncertaintyM {
-			changed = true
-		}
 		vessel.NodeStatus, vessel.RadioState, vessel.InferenceState = status, node.RadioState, inference
 		vessel.NavigationSource, vessel.GNSSState, vessel.GNSSAccepted = node.NavigationSource, node.GNSSState, node.GNSSAccepted
 		vessel.Telemetry.PNTIntegrity, vessel.Telemetry.UncertaintyM = node.PNTIntegrity, node.UncertaintyM
 		vessel.Available = node.ManagementConnected
 		m.vessels[id] = vessel
-	}
-	if changed {
-		m.fleetVersion++
 	}
 }
 
