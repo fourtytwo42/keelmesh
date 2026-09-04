@@ -144,4 +144,4 @@ export const guidedDemoBeats: GuidedDemoBeat[] = [
   },
 ];
 
-export const guidedDemoEstimatedSeconds = 285;
+export const guidedDemoEstimatedSeconds = 420;

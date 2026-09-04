@@ -1582,7 +1582,7 @@ export function FleetWorkspace() {
     }));
   }
 
-  async function askWorkspaceAssistant(text: string, presentScene = true) {
+  async function askWorkspaceAssistant(text: string, presentScene = true, selectedIDs?: string[]) {
     // A voice session or guided tour may span several committed mutations.
     // Bind each new turn to current authority state, not its launching render.
     const workspaceSnapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
@@ -1602,7 +1602,7 @@ export function FleetWorkspace() {
         idempotency_key: requestID("workspace-assistant-key"),
         text,
         persona: pirate ? "pirate" : "navy",
-        selected_ids: [...selected],
+        selected_ids: selectedIDs ?? [...selected],
         open_windows: [...windows],
         active_mission_id: mission?.id ?? "",
         plan_options: planOptionPayload(availablePlans),
@@ -1884,7 +1884,7 @@ export function FleetWorkspace() {
     if (!current) throw new Error("The guided-demo mission disappeared during preview.");
     const authority = await api<FleetLeaseV2>(`/api/v2/missions/${target.id}/plans/${chosen.id}:authorize`, {
       method: "POST",
-      body: JSON.stringify({ request_id: requestID("demo-authorize"), idempotency_key: requestID("demo-authorize-key"), expected_version: current.version, plan_hash: chosen.content_hash, operator_id: "guided-demo" }),
+      body: JSON.stringify({ request_id: requestID("demo-authorize"), idempotency_key: requestID("demo-authorize-key"), expected_version: current.version, plan_hash: chosen.content_hash, operator_id: "demo-operator" }),
     });
     setLease(authority);
     current = (await api<FleetSnapshotV2>("/api/v2/fleet")).missions.find((item) => item.id === target.id);
@@ -1968,7 +1968,11 @@ export function FleetWorkspace() {
         .sort((left, right) => right.telemetry.reserve - left.telemetry.reserve)
         .slice(0, 3);
       const names = demoVessels.map((item) => item.callsign);
-      await askWorkspaceAssistant(`Create an operational group named Harbor Sentinel containing ${names.join(", ")}.`, false);
+      await askWorkspaceAssistant(
+        `Create an operational group named Harbor Sentinel containing ${names.join(", ")}.`,
+        false,
+        demoVessels.map((item) => item.id),
+      );
       const updated = await api<FleetSnapshotV2>("/api/v2/fleet");
       if (!updated.groups.some((item) => item.name.toLowerCase().includes("harbor sentinel")))
         await createGroupFor(demoVessels.map((item) => item.id), "Harbor Sentinel");

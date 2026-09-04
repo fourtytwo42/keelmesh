@@ -5,7 +5,8 @@ describe("guided demo release contract", () => {
   it("keeps both personas on the same concise, truthful sequence", () => {
     expect(guidedDemoBeats).toHaveLength(13);
     expect(new Set(guidedDemoBeats.map((beat) => beat.id)).size).toBe(guidedDemoBeats.length);
-    expect(guidedDemoEstimatedSeconds).toBeLessThanOrEqual(300);
+    expect(guidedDemoEstimatedSeconds).toBeGreaterThanOrEqual(360);
+    expect(guidedDemoEstimatedSeconds).toBeLessThanOrEqual(480);
     for (const beat of guidedDemoBeats) {
       expect(beat.audio.navy).toBe(`/assets/demo/navy/${beat.id}.mp3`);
       expect(beat.audio.pirate).toBe(`/assets/demo/pirate/${beat.id}.mp3`);

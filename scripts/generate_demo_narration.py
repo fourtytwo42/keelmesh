@@ -58,7 +58,10 @@ def main() -> int:
         temp = Path(temporary)
         for match in beats:
             beat_id = match.group("id")
-            for persona, voice, tempo in (("navy", "jarvis", "1.60"), ("pirate", "barbossa", "1.20")):
+            # Preserve the cloned voices' natural cadence. The guided tour is
+            # intentionally allowed to run longer than five minutes so its
+            # technical content remains comfortable to follow in an interview.
+            for persona, voice, tempo in (("navy", "jarvis", "1.00"), ("pirate", "barbossa", "1.00")):
                 text = json.loads(match.group(persona))
                 destination = args.output / persona / f"{beat_id}.mp3"
                 destination.parent.mkdir(parents=True, exist_ok=True)

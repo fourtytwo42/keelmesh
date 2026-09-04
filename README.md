@@ -16,7 +16,7 @@ KeelMesh demonstrates how one operator can plan, authorize, observe, and adapt m
 - [What KeelMesh demonstrates](#what-keelmesh-demonstrates)
 - [System at a glance](#system-at-a-glance)
 - [Quick start](#quick-start)
-- [Five-minute guided demo](#five-minute-guided-demo)
+- [Guided interview demo](#guided-interview-demo)
 - [Core operating workflow](#core-operating-workflow)
 - [Runtime profiles](#runtime-profiles)
 - [Engineering principles](#engineering-principles)
@@ -101,7 +101,7 @@ scripts/keelmesh verify
 
 Read the [Operations runbook](docs/OPERATIONS.md) before configuring provider secrets, running offline/restart drills, or exporting evidence.
 
-## Five-minute guided demo
+## Guided interview demo
 
 Select **Start Demo** in the center of the top bar for a hands-off tour of the
 working system. Navy mode uses prerecorded Jarvis narration; Pirate mode follows
@@ -121,8 +121,9 @@ The script explicitly distinguishes implemented infrastructure from simulated
 conditions: the twelve VM nodes, two Raft cells, mTLS identities, quorum receipts,
 data pipeline, and authority services are real software deployments; Starlink,
 HaLow radio behavior, GNSS faults, environmental conditions, and vessel motion are
-deterministic simulations. The complete run is designed to remain below five
-minutes, including ordinary live API/provider latency.
+deterministic simulations. Both voices play at their natural cadence; allow about
+seven minutes for the complete technical walkthrough, including ordinary live
+API/provider latency.
 
 ## Core operating workflow
 
