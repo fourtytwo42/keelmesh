@@ -224,6 +224,7 @@ export function FleetWorkspace() {
   const audio = useRef<HTMLAudioElement | null>(null),
     demoAudio = useRef<HTMLAudioElement | null>(null),
     demoRun = useRef(0),
+    demoMissionID = useRef(""),
     speechAbort = useRef<AbortController | null>(null),
     recorder = useRef<MediaRecorder | null>(null),
     recordingStream = useRef<MediaStream | null>(null),
@@ -1853,6 +1854,7 @@ export function FleetWorkspace() {
     setPreview(null);
     setLease(null);
     setPendingPlanID("");
+    demoMissionID.current = "";
     setCommandScenes([]);
     setActiveSceneID("");
     setTool("select");
@@ -1864,8 +1866,7 @@ export function FleetWorkspace() {
 
   async function demoMissionAndPlans() {
     const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
-    const target = [...snapshot.missions].reverse().find((item) => item.name.toLowerCase().includes("sentinel")) ??
-      [...snapshot.missions].reverse().find((item) => (item.plan_ids?.length ?? 0) > 0);
+    const target = snapshot.missions.find((item) => item.id === demoMissionID.current) ?? null;
     if (!target) return { snapshot, mission: null, plans: [] as FleetPlanV2[] };
     const result = await api<{ plans: FleetPlanV2[] }>(`/api/v2/missions/${target.id}/plans`).catch(() => ({ plans: [] }));
     return { snapshot, mission: target, plans: result.plans };
@@ -1958,7 +1959,7 @@ export function FleetWorkspace() {
       open("assistant-chat");
       const current = await api<FleetSnapshotV2>("/api/v2/fleet");
       const vessel = current.vessels[0];
-      await handleGlobalTypedMessage(`Locate ${vessel.callsign}, report its current position, reserve, PNT integrity, and connectivity, then open its status.`);
+      await askWorkspaceAssistant(`Locate ${vessel.callsign}, report its current position, reserve, PNT integrity, and connectivity, then open its status.`, false);
       inspectAndFrameVessel(vessel.id);
     }
     if (action === "create-group") {
@@ -1967,8 +1968,8 @@ export function FleetWorkspace() {
         .sort((left, right) => right.telemetry.reserve - left.telemetry.reserve)
         .slice(0, 3);
       const names = demoVessels.map((item) => item.callsign);
-      await handleGlobalTypedMessage(`Create an operational group named Harbor Sentinel containing ${names.join(", ")}.`);
-      const updated = await waitForDemo(() => api<FleetSnapshotV2>("/api/v2/fleet"), (value) => value.groups.some((item) => item.name.toLowerCase().includes("harbor sentinel")));
+      await askWorkspaceAssistant(`Create an operational group named Harbor Sentinel containing ${names.join(", ")}.`, false);
+      const updated = await api<FleetSnapshotV2>("/api/v2/fleet");
       if (!updated.groups.some((item) => item.name.toLowerCase().includes("harbor sentinel")))
         await createGroupFor(demoVessels.map((item) => item.id), "Harbor Sentinel");
       setWindows(new Set(["fleet", "assistant-chat"]));
@@ -1976,16 +1977,16 @@ export function FleetWorkspace() {
       await refresh();
     }
     if (action === "create-ai-mission") {
-      await handleGlobalTypedMessage("Create one mission for Harbor Sentinel to patrol two nautical miles east, preserve at least thirty percent battery, maintain safe depth and separation, then hold position. Do not offer alternatives.");
-      let state = await waitForDemo(demoMissionAndPlans, (value) => Boolean(value.mission && value.plans.length));
-      if (!state.mission) {
-        const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
-        const group = snapshot.groups.find((item) => item.name.toLowerCase().includes("harbor sentinel"));
-        if (!group) throw new Error("The guided-demo group was not available for mission planning.");
-        const created = await createMissionFor(group.member_ids, "ai", "Patrol two nautical miles east, preserve at least thirty percent battery, maintain safe depth and separation, then hold position.", false);
-        if (created) await createPlans(created, created.objective, "ai_assisted", "patrol", "", true, 1, false);
-        state = await waitForDemo(demoMissionAndPlans, (value) => Boolean(value.mission && value.plans.length));
-      }
+      const intent = "Create one mission for Harbor Sentinel to patrol two nautical miles east, preserve at least thirty percent battery, maintain safe depth and separation, then hold position. Do not offer alternatives.";
+      await askWorkspaceAssistant(intent, false);
+      const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
+      const group = snapshot.groups.find((item) => item.name.toLowerCase().includes("harbor sentinel"));
+      if (!group) throw new Error("The guided-demo group was not available for mission planning.");
+      const created = await createMissionFor(group.member_ids, "ai", intent, false);
+      if (!created) throw new Error("The guided-demo mission could not be created.");
+      demoMissionID.current = created.id;
+      await createPlans(created, intent, "ai_assisted", "patrol", "", true, 1, false);
+      const state = await waitForDemo(demoMissionAndPlans, (value) => Boolean(value.mission && value.plans.length));
       if (state.mission) {
         setFleet(state.snapshot);
         setActiveMissionID(state.mission.id);
