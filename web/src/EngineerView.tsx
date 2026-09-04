@@ -2,9 +2,9 @@ import { useState } from "react";
 import { api, KeelMeshError, requestID } from "./api";
 import type { AgentSnapshot, EvalCandidate, EvalRun, InvestigationRun, MemorySnapshotV1, ReplayResult } from "./types";
 
-type Props = { value: AgentSnapshot; memory:MemorySnapshotV1|null; onChange:(next:AgentSnapshot)=>void; onError:(message:string)=>void };
+type Props = { value: AgentSnapshot; memory:MemorySnapshotV1|null; onChange:(next:AgentSnapshot)=>void; onOpenSystem:()=>void; onError:(message:string)=>void };
 
-export function EngineerView({ value, memory, onChange, onError }: Props) {
+export function EngineerView({ value, memory, onChange, onOpenSystem, onError }: Props) {
   const [busy, setBusy] = useState(false);
   const incident = value.incidents[0];
   const receipts = value.investigation?.tool_receipts ?? [];
@@ -21,23 +21,25 @@ export function EngineerView({ value, memory, onChange, onError }: Props) {
   const reset = () => act(()=>api("/api/v1/scenarios/ai-tooling:reset",{method:"POST",body:JSON.stringify(mutation("reset"))}));
   const primary = !value.investigation ? {label:"Investigate incident",run:investigate} : !value.investigation.replay ? {label:"Run isolated replay",run:replay} : value.candidate?.state !== "approved" ? {label:"Approve exact candidate hash",run:approve} : !value.evaluation ? {label:"Run versioned regression",run:evaluate} : {label:"Reset AI workflow",run:reset};
 
-  return <section className="engineer-view" aria-label="Autonomy engineer workspace">
+  return <section className="engineer-view" aria-label="AI Lab workspace">
     <header className="engineer-hero">
-      <div><small>AUTONOMY ENGINEER · INCIDENT → EVALUATION</small><h1>{incident.title}</h1><p>{incident.summary}</p></div>
-      <div className={`ai-health ${value.available ? "ready" : "degraded"}`}><span />{value.available ? "Agent ready" : "AI degraded"}<small>M1–M3 independent</small></div>
+      <div><small>AI LAB · INVESTIGATE → REPLAY → EVALUATE</small><h1>{incident.title}</h1><p>{incident.summary}</p></div>
+      <button className="engineer-system-link" onClick={onOpenSystem}>View live system →</button>
+      <div className={`ai-health ${value.available ? "ready" : "degraded"}`}><span />{value.available ? "AI Lab ready" : "AI degraded"}<small>Mission authority independent</small></div>
     </header>
 
     <div className="engineer-grid">
-      <article className="engineer-card memory-card"><header><span>M11</span><div><small>DISTRIBUTED AGENT MEMORY</small><h2>Scoped context assembly</h2></div><strong>{memory?.retrieval_mode ?? "offline"}</strong></header>
-        <div className="tool-grid"><div><span>✓</span><b>{memory?.conversation_turns ?? 0} durable turns</b><small>latest 12 exact turns per assembly</small></div><div><span>✓</span><b>{memory?.committed_items ?? 0} committed memories</b><small>{memory?.pending_candidates ?? 0} awaiting review · {memory?.tombstones ?? 0} tombstones</small></div><div><span>✓</span><b>{memory?.embedding_state ?? "unavailable"} embeddings</b><small>{memory?.embedding_version ?? "keyword fallback"}</small></div></div>
-        <p>{memory?.last_context ? `${memory.last_context.estimated_tokens}/${memory.last_context.token_budget} estimated context tokens · ${memory.last_context.semantic_memories.length} semantic · ${memory.last_context.procedural_chunks.length} runbook · ${memory.last_context.operational_episodes.length} episode` : memory?.summary ?? "Memory state is unavailable; mission authority remains independent."}</p>
+      <article className="engineer-card memory-card"><header><span>M11</span><div><small>RETRIEVAL EVIDENCE</small><h2>Scoped context assembly</h2></div><strong>{memory?.retrieval_mode ?? "offline"}</strong></header>
+        <div className="memory-evidence-strip"><div><small>EXACT TURNS</small><b>{memory?.last_context?.recent_turns.length??0}</b></div><div><small>SEMANTIC</small><b>{memory?.last_context?.semantic_memories.length??0}</b></div><div><small>RUNBOOK</small><b>{memory?.last_context?.procedural_chunks.length??0}</b></div><div><small>EPISODES</small><b>{memory?.last_context?.operational_episodes.length??0}</b></div></div>
+        <div className="memory-hit-list">{(memory?.last_receipt?.hits??[]).slice(0,3).map(hit=><div key={hit.item_id}><span className={hit.trust}>{hit.trust}</span><b>{hit.kind.replaceAll("_"," ")}</b><em>{hit.scope.kind} · {Math.round(hit.combined_score*100)}%</em></div>)}{!memory?.last_receipt?.hits.length&&<p>No retrieval receipt yet. Run the investigation to assemble cited context.</p>}</div>
+        <p>{memory?.last_context ? `${memory.last_context.estimated_tokens}/${memory.last_context.token_budget} estimated tokens · receipt ${memory.last_context.retrieval_receipt_id.slice(0,12)}` : "No context has been assembled for this investigation yet."}</p>
       </article>
       <article className="engineer-card evidence-card"><header><span>01</span><div><small>IMMUTABLE INCIDENT</small><h2>Bounded evidence</h2></div><code>{incident.state_checksum.slice(7,19)}</code></header>
         <div className="incident-track">{incident.evidence.map((item)=><div key={item.id}><b>{item.tick ?? "—"}</b><i/><span><strong>{item.kind}</strong>{item.summary}</span></div>)}</div>
         <footer><span>Seed {incident.scenario_seed}</span><span>{incident.classification}</span><span>fixture provenance</span></footer>
       </article>
 
-      <article className="engineer-card provider-card"><header><span>02</span><div><small>ADAPTIVE PROVIDER ROUTER</small><h2>Cloud → local → mock</h2></div></header>
+      <article className="engineer-card provider-card"><header><span>02</span><div><small>PROVIDER EVIDENCE</small><h2>Accepted response and failover</h2></div></header>
         <div className="provider-route"><div className="route-node cloud"><b>OPENROUTER</b><span>{value.provider.models.length} ranked free models</span></div><i>→</i><div className="route-node"><b>LOCAL</b><span>{value.provider.local_enabled ? "configured" : "standby"}</span></div><i>→</i><div className="route-node mock"><b>MOCK</b><span>deterministic</span></div></div>
         <div className="fault-row"><button disabled={busy} onClick={()=>fault("fail_cloud_next")}>Fail cloud next</button><button disabled={busy} onClick={()=>fault("fail_local_next")}>Fail local next</button></div>
         <div className="attempt-list">{attempts.map((attempt,index)=><div key={`${attempt.provider}-${attempt.model}-${index}`} className={attempt.state}><b>{attempt.provider}</b><span>{attempt.model}</span><em>{attempt.state} · {attempt.latency_ms} ms</em></div>)}{attempts.length === 0 && <p>No provider request yet. Evidence collection happens first.</p>}</div>
