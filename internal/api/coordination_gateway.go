@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"sort"
@@ -19,7 +20,9 @@ import (
 
 func (s *Server) coordinationMutationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.coordGateway == nil || s.coordGateway.Mode() == coordination.ModeSimulated || !requiresCoordination(r.Method, r.URL.Path) {
+		gatewayActive := s.coordGateway != nil && s.coordGateway.Mode() != coordination.ModeSimulated
+		nodeActive := s.coordination != nil && s.coordination.Mode() != coordination.ModeSimulated
+		if (!gatewayActive && !nodeActive) || !requiresCoordination(r.Method, r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -49,14 +52,18 @@ func (s *Server) coordinationMutationMiddleware(next http.Handler) http.Handler 
 		}
 		expectedVersion := int64Field(metadata, "expected_version")
 		cells := s.mutationCells(r, metadata)
-		payload := map[string]any{"method": r.Method, "path": r.URL.Path, "body": json.RawMessage(body)}
+		if nodeActive && !gatewayActive && len(cells) > 1 {
+			writeCoordinationPublicError(w, fmt.Errorf("CROSS_CELL_PREPARE_FAILED: cross-cell mutations must use the VM 214 gateway"))
+			return
+		}
+		payload := map[string]any{"method": r.Method, "path": r.URL.Path, "body": json.RawMessage(body), "expanded_targets": s.expandedMutationTargets(r, metadata)}
 		digest := sha256.Sum256([]byte(r.Method + "\n" + r.URL.Path + "\n" + string(body)))
 		baseCommandID := "http-" + hex.EncodeToString(digest[:12])
 		kind := mutationKind(r.Method, r.URL.Path)
 		entityID := mutationEntityID(r.URL.Path)
 		var coordinationErr error
 		proofIDs := make([]string, 0, len(cells))
-		if len(cells) > 1 {
+		if gatewayActive && len(cells) > 1 {
 			activation := time.Now().UTC().Add(1500 * time.Millisecond).Truncate(time.Second).Add(time.Second)
 			operationID := baseCommandID + "-cross"
 			ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
@@ -82,38 +89,73 @@ func (s *Server) coordinationMutationMiddleware(next http.Handler) http.Handler 
 				break
 			}
 			commandID := baseCommandID + "-" + strings.ToLower(cellID)
-			command, commandErr := s.coordGateway.CanonicalCommand(cellID, commandID, requestID, idempotencyKey+":"+strings.ToLower(cellID), actor, kind, entityID, expectedVersion, payload, nil)
+			var command domain.ReplicatedCommandV1
+			var commandErr error
+			if gatewayActive {
+				command, commandErr = s.coordGateway.CanonicalCommand(cellID, commandID, requestID, idempotencyKey+":"+strings.ToLower(cellID), actor, kind, entityID, expectedVersion, payload, nil)
+			} else {
+				command, commandErr = nodeCanonicalCommand(cellID, commandID, requestID, idempotencyKey+":"+strings.ToLower(cellID), actor, kind, entityID, expectedVersion, payload)
+			}
 			if commandErr != nil {
 				coordinationErr = commandErr
 				break
 			}
 			ctx, cancel := context.WithTimeout(r.Context(), 9*time.Second)
-			_, proof, commitErr := s.coordGateway.Commit(ctx, command)
+			var proof domain.QuorumCommitProofV1
+			var commitErr error
+			if gatewayActive {
+				_, proof, commitErr = s.coordGateway.Commit(ctx, command)
+			} else if cellID != s.coordination.CellID() {
+				commitErr = fmt.Errorf("CELL_MEMBERSHIP_DENIED: node %s cannot coordinate cell %s", s.coordination.CellID(), cellID)
+			} else {
+				_, proof, commitErr = s.coordination.Commit(ctx, command)
+			}
 			cancel()
 			if commitErr != nil {
 				coordinationErr = commitErr
 				break
 			}
-			if acceptErr := s.coordGateway.AcceptEffect(proof); acceptErr != nil {
-				coordinationErr = acceptErr
-				break
+			if gatewayActive {
+				if acceptErr := s.coordGateway.AcceptEffect(proof); acceptErr != nil {
+					coordinationErr = acceptErr
+					break
+				}
 			}
 			proofIDs = append(proofIDs, proof.CommandID)
 		}
 		if coordinationErr != nil {
-			if s.coordGateway.Mode() == coordination.ModeRaft {
+			if s.coordinationMode() == coordination.ModeRaft {
 				writeCoordinationPublicError(w, coordinationErr)
 				return
 			}
 			s.logger.Warn("shadow coordination comparison failed", "method", r.Method, "path", r.URL.Path, "error", coordinationErr)
 			w.Header().Set("X-KeelMesh-Coordination-State", "shadow-diverged")
 		} else {
-			w.Header().Set("X-KeelMesh-Coordination-State", string(s.coordGateway.Mode())+"-committed")
+			w.Header().Set("X-KeelMesh-Coordination-State", string(s.coordinationMode())+"-committed")
 			w.Header().Set("X-KeelMesh-Coordination-Proofs", strings.Join(proofIDs, ","))
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) coordinationMode() coordination.Mode {
+	if s.coordGateway != nil {
+		return s.coordGateway.Mode()
+	}
+	if s.coordination != nil {
+		return s.coordination.Mode()
+	}
+	return coordination.ModeSimulated
+}
+
+func nodeCanonicalCommand(cellID, commandID, requestID, idempotencyKey, actor, kind, entityID string, expectedVersion int64, payload any) (domain.ReplicatedCommandV1, error) {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return domain.ReplicatedCommandV1{}, err
+	}
+	digest := sha256.Sum256(encoded)
+	return domain.ReplicatedCommandV1{SchemaVersion: 1, CommandID: commandID, RequestID: requestID, IdempotencyKey: idempotencyKey, ActorIdentity: actor, CellID: cellID, Kind: kind, EntityID: entityID, ExpectedVersion: expectedVersion, Payload: encoded, PayloadHash: hex.EncodeToString(digest[:]), IssuedAt: time.Now().UTC()}, nil
 }
 
 func requiresCoordination(method, path string) bool {
@@ -127,25 +169,7 @@ func requiresCoordination(method, path string) bool {
 }
 
 func (s *Server) mutationCells(r *http.Request, metadata map[string]any) []string {
-	targets := stringSliceField(metadata, "target_ids")
-	targets = append(targets, stringSliceField(metadata, "member_ids")...)
-	if vesselID := stringField(metadata, "vessel_id"); vesselID != "" {
-		targets = append(targets, vesselID)
-	}
-	pathID := mutationEntityID(r.URL.Path)
-	if s.fleetops != nil && pathID != "" {
-		snapshot := s.fleetops.Snapshot()
-		for _, mission := range snapshot.Missions {
-			if mission.ID == pathID {
-				targets = append(targets, mission.TargetIDs...)
-			}
-		}
-		for _, group := range snapshot.Groups {
-			if group.ID == pathID {
-				targets = append(targets, group.MemberIDs...)
-			}
-		}
-	}
+	targets := s.expandedMutationTargets(r, metadata)
 	set := map[string]bool{}
 	if s.fleetops != nil {
 		for _, vessel := range s.fleetops.Snapshot().Vessels {
@@ -166,6 +190,40 @@ func (s *Server) mutationCells(r *http.Request, metadata map[string]any) []strin
 	result := make([]string, 0, len(set))
 	for cellID := range set {
 		result = append(result, cellID)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func (s *Server) expandedMutationTargets(r *http.Request, metadata map[string]any) []string {
+	targets := stringSliceField(metadata, "target_ids")
+	targets = append(targets, stringSliceField(metadata, "member_ids")...)
+	if vesselID := stringField(metadata, "vessel_id"); vesselID != "" {
+		targets = append(targets, vesselID)
+	}
+	pathID := mutationEntityID(r.URL.Path)
+	if s.fleetops != nil && pathID != "" {
+		snapshot := s.fleetops.Snapshot()
+		for _, mission := range snapshot.Missions {
+			if mission.ID == pathID {
+				targets = append(targets, mission.TargetIDs...)
+			}
+		}
+		for _, group := range snapshot.Groups {
+			if group.ID == pathID {
+				targets = append(targets, group.MemberIDs...)
+			}
+		}
+	}
+	set := map[string]bool{}
+	for _, target := range targets {
+		if target != "" {
+			set[target] = true
+		}
+	}
+	result := make([]string, 0, len(set))
+	for target := range set {
+		result = append(result, target)
 	}
 	sort.Strings(result)
 	return result

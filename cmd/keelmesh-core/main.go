@@ -124,6 +124,24 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	reloadSignals := make(chan os.Signal, 1)
+	signal.Notify(reloadSignals, syscall.SIGHUP)
+	defer signal.Stop(reloadSignals)
+	go func() {
+		for range reloadSignals {
+			var reloadErr error
+			if coordinationManager != nil {
+				reloadErr = coordinationManager.ReloadCredentials()
+			} else if coordinationGateway != nil {
+				reloadErr = coordinationGateway.ReloadCredentials()
+			}
+			if reloadErr != nil {
+				logger.Error("coordination credential reload rejected", "error", reloadErr)
+			} else {
+				logger.Info("coordination credentials reloaded")
+			}
+		}
+	}()
 	serverAPI := api.New(engine, logger, webRoot, platformManager, agentManager, fleetManager, arenaManager, memoryManager, coordinationManager, coordinationGateway)
 
 	server := &http.Server{

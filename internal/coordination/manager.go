@@ -1,6 +1,7 @@
 package coordination
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,19 +25,25 @@ import (
 )
 
 type Manager struct {
-	cfg        Config
-	logger     *slog.Logger
-	fsm        *stateMachine
-	raft       *raft.Raft
-	transport  *raft.NetworkTransport
-	store      io.Closer
-	signKey    ed25519.PrivateKey
-	refereeKey ed25519.PublicKey
-	ready      atomic.Bool
-	closed     atomic.Bool
-	mu         sync.RWMutex
-	server     *http.Server
-	startedAt  time.Time
+	cfg             Config
+	logger          *slog.Logger
+	fsm             *stateMachine
+	raft            *raft.Raft
+	transport       *raft.NetworkTransport
+	raftTLS         *tlsConfigSwitcher
+	managementTLS   *tlsConfigSwitcher
+	store           io.Closer
+	signKey         ed25519.PrivateKey
+	refereeKey      ed25519.PublicKey
+	ready           atomic.Bool
+	closed          atomic.Bool
+	elections       atomic.Uint64
+	electionStarted atomic.Int64
+	lastElectionMS  atomic.Int64
+	mu              sync.RWMutex
+	server          *http.Server
+	client          *http.Client
+	startedAt       time.Time
 }
 
 func NewManager(cfg Config, logger *slog.Logger) (*Manager, error) {
@@ -58,11 +66,12 @@ func NewManager(cfg Config, logger *slog.Logger) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	stream, err := newTLSStreamLayer(cfg.RaftAddress, serverTLS, clientTLS)
+	raftTLS := newTLSConfigSwitcher(serverTLS, clientTLS)
+	stream, err := newTLSStreamLayer(cfg.RaftAddress, raftTLS)
 	if err != nil {
 		return nil, fmt.Errorf("listen on Raft radio address: %w", err)
 	}
-	transport := raft.NewNetworkTransport(stream, 3, 3*time.Second, io.Discard)
+	transport := raft.NewNetworkTransport(stream, 3, 3*time.Second, os.Stderr)
 	store, err := raftboltdb.NewBoltStore(filepath.Join(cfg.DataDir, "raft.db"))
 	if err != nil {
 		_ = transport.Close()
@@ -79,7 +88,7 @@ func NewManager(cfg Config, logger *slog.Logger) (*Manager, error) {
 	raftConfig.SnapshotThreshold = cfg.SnapshotThreshold
 	raftConfig.SnapshotInterval = cfg.SnapshotInterval
 	raftConfig.NotifyCh = leadership
-	raftConfig.LogOutput = io.Discard
+	raftConfig.LogOutput = os.Stderr
 	fsm := newStateMachine()
 	existing, err := raft.HasExistingState(store, store, snapshots)
 	if err != nil {
@@ -114,7 +123,7 @@ func NewManager(cfg Config, logger *slog.Logger) (*Manager, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("load referee signing public key: %w", err)
 	}
-	manager := &Manager{cfg: cfg, logger: logger, fsm: fsm, raft: nodeRaft, transport: transport, store: store, signKey: signKey, refereeKey: refereeKey, startedAt: nowUTC()}
+	manager := &Manager{cfg: cfg, logger: logger, fsm: fsm, raft: nodeRaft, transport: transport, raftTLS: raftTLS, store: store, signKey: signKey, refereeKey: refereeKey, startedAt: nowUTC()}
 	go manager.watchLeadership(leadership)
 	return manager, nil
 }
@@ -136,7 +145,12 @@ func (m *Manager) watchLeadership(ch <-chan bool) {
 	for leader := range ch {
 		m.ready.Store(false)
 		if !leader || m.closed.Load() {
+			m.electionStarted.Store(time.Now().UnixNano())
 			continue
+		}
+		m.elections.Add(1)
+		if started := m.electionStarted.Swap(0); started > 0 {
+			m.lastElectionMS.Store(time.Since(time.Unix(0, started)).Milliseconds())
 		}
 		go m.advanceEpoch()
 	}
@@ -188,6 +202,114 @@ func (m *Manager) Propose(ctx context.Context, command domain.ReplicatedCommandV
 	default:
 	}
 	return m.apply(command)
+}
+
+func (m *Manager) Mode() Mode { return m.cfg.Mode }
+
+func (m *Manager) CellID() string { return m.cfg.Identity.CellID }
+
+// ProposeOrForward commits locally when this node is leader and otherwise forwards
+// the exact canonical command to the current same-cell leader over management mTLS.
+func (m *Manager) ProposeOrForward(ctx context.Context, command domain.ReplicatedCommandV1) (domain.AppliedCommandReceiptV1, error) {
+	if m.raft == nil {
+		return domain.AppliedCommandReceiptV1{}, fmt.Errorf("QUORUM_UNAVAILABLE: Raft coordination is disabled")
+	}
+	if m.raft.State() == raft.Leader {
+		return m.Propose(ctx, command)
+	}
+	_, leaderID := m.raft.LeaderWithID()
+	if leaderID == "" {
+		return domain.AppliedCommandReceiptV1{}, fmt.Errorf("LEADER_NOT_READY: no current leader")
+	}
+	member, ok := m.member(string(leaderID))
+	if !ok {
+		return domain.AppliedCommandReceiptV1{}, fmt.Errorf("CELL_MEMBERSHIP_DENIED: elected leader is not in the signed manifest")
+	}
+	if m.client == nil {
+		return domain.AppliedCommandReceiptV1{}, fmt.Errorf("LEADER_NOT_READY: management forwarding client is unavailable")
+	}
+	var receipt domain.AppliedCommandReceiptV1
+	if err := m.requestManagementJSON(ctx, http.MethodPost, "https://"+member.ManagementAddress+"/internal/v1/coordination/commands:propose", command, &receipt); err != nil {
+		return receipt, err
+	}
+	return receipt, nil
+}
+
+func (m *Manager) Commit(ctx context.Context, command domain.ReplicatedCommandV1) (domain.AppliedCommandReceiptV1, domain.QuorumCommitProofV1, error) {
+	receipt, err := m.ProposeOrForward(ctx, command)
+	if err != nil {
+		return receipt, domain.QuorumCommitProofV1{}, err
+	}
+	proof := domain.QuorumCommitProofV1{SchemaVersion: 1, CommandID: receipt.CommandID, CellID: receipt.CellID, Term: receipt.Term, LogIndex: receipt.LogIndex, AuthorityEpoch: receipt.AuthorityEpoch, CommandHash: receipt.CommandHash, ResultingStateHash: receipt.ResultingStateHash, Required: m.cfg.Manifest.Quorum, State: "collecting"}
+	seen := map[string]bool{}
+	for {
+		for _, peer := range m.cfg.Manifest.Members {
+			if seen[peer.NodeID] {
+				continue
+			}
+			var acknowledgement domain.SignedNodeAcknowledgementV1
+			attemptCtx, cancel := context.WithTimeout(ctx, 600*time.Millisecond)
+			err := m.requestManagementJSON(attemptCtx, http.MethodGet, "https://"+peer.ManagementAddress+"/internal/v1/coordination/proofs/"+receipt.CommandID, nil, &acknowledgement)
+			cancel()
+			if err != nil || verifyAcknowledgement(m.cfg.Manifest, receipt, acknowledgement) != nil {
+				continue
+			}
+			seen[acknowledgement.NodeID] = true
+			proof.Acknowledgements = append(proof.Acknowledgements, acknowledgement)
+		}
+		if len(proof.Acknowledgements) >= proof.Required {
+			sort.Slice(proof.Acknowledgements, func(i, j int) bool { return proof.Acknowledgements[i].NodeID < proof.Acknowledgements[j].NodeID })
+			proof.State = "verified"
+			proof.CompletedAt = nowUTC()
+			return receipt, proof, nil
+		}
+		select {
+		case <-ctx.Done():
+			return receipt, proof, fmt.Errorf("COMMIT_PROOF_INVALID: only %d of %d acknowledgements were verified", len(proof.Acknowledgements), proof.Required)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+func (m *Manager) member(nodeID string) (domain.CoordinationCellMemberV1, bool) {
+	for _, member := range m.cfg.Manifest.Members {
+		if member.NodeID == nodeID {
+			return member, true
+		}
+	}
+	return domain.CoordinationCellMemberV1{}, false
+}
+
+func (m *Manager) requestManagementJSON(ctx context.Context, method, url string, body any, destination any) error {
+	var reader io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(encoded)
+	}
+	request, err := http.NewRequestWithContext(ctx, method, url, reader)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := m.client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		var apiErr domain.APIError
+		if json.NewDecoder(io.LimitReader(response.Body, maxCoordinationBody)).Decode(&apiErr) == nil && apiErr.Code != "" {
+			return fmt.Errorf("%s: %s", apiErr.Code, apiErr.Message)
+		}
+		return fmt.Errorf("QUORUM_UNAVAILABLE: management peer returned %s", response.Status)
+	}
+	if destination == nil {
+		return nil
+	}
+	return json.NewDecoder(io.LimitReader(response.Body, maxCoordinationBody)).Decode(destination)
 }
 
 func (m *Manager) apply(command domain.ReplicatedCommandV1) (domain.AppliedCommandReceiptV1, error) {
@@ -246,8 +368,7 @@ func advertisementPayload(value domain.CoordinatorAdvertisementV1) ([]byte, erro
 
 func (m *Manager) Snapshot() domain.CoordinationCellSnapshotV1 {
 	epoch, stateVersion, stateHash, latest := m.fsm.summary()
-	value := domain.CoordinationCellSnapshotV1{SchemaVersion: 1, CellID: m.cfg.Identity.CellID, ClusterID: m.cfg.Manifest.ClusterID, Mode: string(m.cfg.Mode), LocalNodeID: m.cfg.Identity.NodeID, State: "disabled", AuthorityEpoch: epoch, StateHash: stateHash, QuorumRequired: m.cfg.Manifest.Quorum, LatestReceipt: latest, UpdatedAt: nowUTC()}
-	_ = stateVersion
+	value := domain.CoordinationCellSnapshotV1{SchemaVersion: 1, CellID: m.cfg.Identity.CellID, ClusterID: m.cfg.Manifest.ClusterID, Mode: string(m.cfg.Mode), LocalNodeID: m.cfg.Identity.NodeID, State: "disabled", AuthorityEpoch: epoch, StateVersion: stateVersion, StateHash: stateHash, QuorumRequired: m.cfg.Manifest.Quorum, LatestReceipt: latest, UpdatedAt: nowUTC(), ElectionCount: m.elections.Load(), LastElectionMS: m.lastElectionMS.Load()}
 	if m.raft == nil {
 		return value
 	}
@@ -263,13 +384,18 @@ func (m *Manager) Snapshot() domain.CoordinationCellSnapshotV1 {
 	value.State = strings.ToLower(m.raft.State().String())
 	if value.State == "leader" && !m.ready.Load() {
 		value.State = "electing"
+	} else if value.State == "leader" {
+		value.ReachableVoters = m.cfg.Manifest.Quorum
+	} else if value.LeaderNodeID != "" && !m.raft.LastContact().IsZero() {
+		value.ReachableVoters = 2
 	}
 	for _, member := range m.cfg.Manifest.Members {
 		role := "follower"
 		if member.NodeID == value.LeaderNodeID {
 			role = "leader"
 		}
-		value.Peers = append(value.Peers, domain.CoordinationPeerV1{NodeID: member.NodeID, Host: member.Host, Role: role, Reachable: member.NodeID == m.cfg.Identity.NodeID, AppliedIndex: value.AppliedIndex})
+		reachable := member.NodeID == m.cfg.Identity.NodeID || (member.NodeID == value.LeaderNodeID && !m.raft.LastContact().IsZero())
+		value.Peers = append(value.Peers, domain.CoordinationPeerV1{NodeID: member.NodeID, Host: member.Host, Role: role, Reachable: reachable, AppliedIndex: value.AppliedIndex})
 	}
 	return value
 }

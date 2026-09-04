@@ -6,15 +6,17 @@ import (
 )
 
 type CoordinationCellMemberV1 struct {
-	NodeID              string `json:"node_id"`
-	Faction             string `json:"faction"`
-	VMID                int    `json:"vm_id"`
-	Host                string `json:"host"`
-	ManagementAddress   string `json:"management_address"`
-	RadioAddress        string `json:"radio_address"`
-	RaftTLSSerial       string `json:"raft_tls_serial,omitempty"`
-	ManagementTLSSerial string `json:"management_tls_serial,omitempty"`
-	SigningPublicKey    string `json:"signing_public_key,omitempty"`
+	NodeID                       string   `json:"node_id"`
+	Faction                      string   `json:"faction"`
+	VMID                         int      `json:"vm_id"`
+	Host                         string   `json:"host"`
+	ManagementAddress            string   `json:"management_address"`
+	RadioAddress                 string   `json:"radio_address"`
+	RaftTLSSerial                string   `json:"raft_tls_serial,omitempty"`
+	ManagementTLSSerial          string   `json:"management_tls_serial,omitempty"`
+	PreviousRaftTLSSerials       []string `json:"previous_raft_tls_serials,omitempty"`
+	PreviousManagementTLSSerials []string `json:"previous_management_tls_serials,omitempty"`
+	SigningPublicKey             string   `json:"signing_public_key,omitempty"`
 }
 
 type CoordinationCellManifestV1 struct {
@@ -137,6 +139,7 @@ type CoordinationCellSnapshotV1 struct {
 	State           string                   `json:"state"`
 	Term            uint64                   `json:"term"`
 	AuthorityEpoch  uint64                   `json:"authority_epoch"`
+	StateVersion    int64                    `json:"state_version"`
 	CommitIndex     uint64                   `json:"commit_index"`
 	AppliedIndex    uint64                   `json:"applied_index"`
 	LastLogIndex    uint64                   `json:"last_log_index"`
@@ -148,6 +151,7 @@ type CoordinationCellSnapshotV1 struct {
 	Peers           []CoordinationPeerV1     `json:"peers"`
 	LatestReceipt   *AppliedCommandReceiptV1 `json:"latest_receipt,omitempty"`
 	UpdatedAt       time.Time                `json:"updated_at"`
+	LastError       string                   `json:"last_error,omitempty"`
 }
 
 type CrossCellOperationV1 struct {

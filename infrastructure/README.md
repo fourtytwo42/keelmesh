@@ -53,3 +53,27 @@ its generated URL is temporary and must not be treated as a release hostname.
 No M7 VM snapshots were created. Thin-pool allocation remains over-provisioned;
 all future snapshots still require a fresh storage inspection and explicit user
 authorization.
+
+## M12 consensus rollout
+
+`infrastructure/m12-target-topology.json` records the desired 2/2/2 placement
+for each six-voter cell. Its state remains `target-not-yet-migrated` until fresh
+Proxmox CPU, RAM, thin-pool data/metadata, physical-headroom, VM, snapshot, and
+target-storage checks pass. M12 never faults the management/default-route NIC.
+
+Generate production PKI only on VM 214 into a new mode-0700 directory. The
+initializer refuses to overwrite a non-empty authority. Rotation is staged into
+a second directory with old/new trust overlap and preserved application-signing
+identities; deploy the combined trust/manifests to all peers before switching
+leaf certificates, then invoke `systemctl reload keelmesh-node`.
+
+Run the software-only two-cell proof before deployment:
+
+```bash
+scripts/keelmesh m12-local-verify
+```
+
+It starts twelve isolated loopback node processes, proves two four-vote cells,
+leader replacement, a four-voter whole-host-loss shape, 3/3 write rejection,
+cross-cell future activation, and convergence. It does not contact or modify the
+vessel VMs.
