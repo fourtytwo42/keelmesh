@@ -149,6 +149,17 @@ function commandSceneSessionID() {
   return value;
 }
 
+export function restorableCommandScenes(scenes: CommandSceneV1[]) {
+  const newestReplaceable = scenes.find(
+    (scene) => scene.state === "active" && !scene.pinned && !scene.critical && !scene.pending_approval,
+  );
+  return scenes.filter(
+    (scene) =>
+      scene.pinned ||
+      (scene.state === "active" && (scene.critical || scene.pending_approval || scene.id === newestReplaceable?.id)),
+  );
+}
+
 export function FleetWorkspace() {
   const sceneSessionID = useRef(commandSceneSessionID()).current;
   const [fleet, setFleet] = useState<FleetSnapshotV2 | null>(null),
@@ -297,7 +308,7 @@ export function FleetWorkspace() {
       api<MemorySnapshotV1>("/api/v5/memory").then(setMemory),
       api<CoordinationOverviewV1>("/api/v6/coordination/cells").then(setCoordination),
       api<{ scenes: CommandSceneV1[]; turns?: ConversationTurnV1[] }>(`/api/v4/assistant/history?actor_identity=demo-operator&session_id=${encodeURIComponent(sceneSessionID)}`).then((value) => {
-        const visible = value.scenes.filter((scene) => scene.state === "active" || scene.pinned);
+        const visible = restorableCommandScenes(value.scenes);
         setCommandScenes(value.scenes);
         setAssistantTurns(value.turns ?? []);
         if (visible[0]) focusCommandScene(visible[0].id);
