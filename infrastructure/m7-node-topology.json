@@ -9,14 +9,14 @@
   "nodes": [
     {"id":"node-a-01","faction":"A","vmid":220,"host":"fourtyfour"},
     {"id":"node-a-02","faction":"A","vmid":221,"host":"fourtyfour"},
-    {"id":"node-a-03","faction":"A","vmid":222,"host":"fourtyfour"},
-    {"id":"node-a-04","faction":"A","vmid":223,"host":"fourtyfour"},
-    {"id":"node-a-05","faction":"A","vmid":224,"host":"fourtyfour"},
+    {"id":"node-a-03","faction":"A","vmid":222,"host":"mini42"},
+    {"id":"node-a-04","faction":"A","vmid":223,"host":"mini43"},
+    {"id":"node-a-05","faction":"A","vmid":224,"host":"mini43"},
     {"id":"node-a-06","faction":"A","vmid":225,"host":"mini42"},
-    {"id":"node-b-01","faction":"B","vmid":229,"host":"mini42"},
+    {"id":"node-b-01","faction":"B","vmid":229,"host":"fourtyfour"},
     {"id":"node-b-02","faction":"B","vmid":231,"host":"mini42"},
     {"id":"node-b-03","faction":"B","vmid":232,"host":"mini42"},
-    {"id":"node-b-04","faction":"B","vmid":233,"host":"mini43"},
+    {"id":"node-b-04","faction":"B","vmid":233,"host":"fourtyfour"},
     {"id":"node-b-05","faction":"B","vmid":234,"host":"mini43"},
     {"id":"node-b-06","faction":"B","vmid":236,"host":"mini43"}
   ]
