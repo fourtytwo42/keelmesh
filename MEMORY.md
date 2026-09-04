@@ -4,9 +4,9 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: make spoken entity resolution tolerate the STT transcription `C. Robin` for the canonical contact `FV Sea Robin` without broad model guessing.
+- Current task: the STT-tolerant `C. Robin` entity-resolution fix is complete, deployed, and browser-verified.
 - Last meaningful change: informational questions and mission contact targeting now apply narrow punctuation/homophone normalization, require a unique visible match, and answer generic contact questions from verified fleet state before contacting a language provider.
-- Next step: deploy and browser-verify the Sea Robin fix, then preserve the guided-demo, AI-chat mission path, and `simulated|shadow|raft` rollback/comparison modes.
+- Next step: preserve the verified guided-demo, AI-chat mission path, entity-resolution regression, and `simulated|shadow|raft` rollback/comparison modes.
 - Blockers: none for M12. Thin-pool auto-extension remains disabled and aggregate virtual allocation remains overcommitted, so snapshots and storage changes still require a fresh reviewed preflight.
 
 ### 2026-09-04 - STT-tolerant Sea Robin resolution
@@ -14,9 +14,9 @@ Durable project context lives here. Update this file whenever information should
 - Context: the browser STT transcribed the operator's spoken `Sea Robin` as `C. Robin`; the exact alias resolver therefore missed `FV Sea Robin` / `SEA ROBIN` / `NPC-4108`, and the language model responded with an unnecessary clarification and invented the prefix `SV`.
 - Decision: normalize punctuation and only the narrow whole-token homophones `C` and `see` to `sea`, then accept the result only when it uniquely identifies one visible vessel or contact. Apply the same normalization to informational assistant turns and mission contact resolution. Answer generic contact-information questions from current fleet state before invoking a model.
 - Files: `internal/agent/manager.go`, `internal/agent/manager_test.go`, `internal/fleetops/manager.go`, and `internal/fleetops/manager_test.go`.
-- Commands/tests: focused agent/fleetops tests plus the complete Go test suite and vet passed in the VM 214 Go 1.27 build environment.
-- Result: local and VM 214 build-stage verification resolve `Tell me about C. Robin` to canonical `FV Sea Robin` and resolve `follow C. Robin` to `surface-08` without provider guessing.
-- Follow-up: deploy the verified core/node binary and prove the exact STT transcript through the in-app browser.
+- Commands/tests: focused agent/fleetops tests, complete Go test suite and vet in the VM 214 Go 1.27 build environment, exact in-app-browser transcript test, direct node-220 assistant test, all twelve node health checks, and live `verify_m12.py`.
+- Result: commit `f49e525` is deployed on VM 214 as `keelmesh/core:main-f49e525`; all twelve vessel nodes are healthy on binary SHA-256 `ffb9ada3f01d203343b3370fff10de0c1f60dfb13e3e6c8925d0e00a0d123ad7`. Both the browser and node 220 resolve `Tell me about C. Robin.` to canonical `FV Sea Robin`, Boat ID `NPC-4108`, and current verified contact state. Cell A reconverged at term 16/epoch 14/index 792 and Cell B at term 15/epoch 13/index 332. No GitHub-hosted workflow, Proxmox migration, or snapshot ran.
+- Follow-up: preserve the exact `C. Robin` and contact-mission tests when extending speech normalization.
 
 ### 2026-09-04 - Natural-cadence guided interview demo deployed
 
