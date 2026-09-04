@@ -1,0 +1,12 @@
+services:
+  core:
+    environment:
+      KEELMESH_COORDINATION_MODE: ${KEELMESH_COORDINATION_MODE:-shadow}
+      KEELMESH_COORDINATION_REFEREE_PKI_DIR: /etc/keelmesh/coordination/referee
+      KEELMESH_COORDINATION_CELL_A_MANIFEST: /etc/keelmesh/coordination/cells/a/manifest.json
+      KEELMESH_COORDINATION_CELL_B_MANIFEST: /etc/keelmesh/coordination/cells/b/manifest.json
+      KEELMESH_COORDINATION_GATEWAY_STATE: /var/lib/keelmesh/coordination-gateway/state.json
+    volumes:
+      - /etc/keelmesh/coordination-runtime/referee:/etc/keelmesh/coordination/referee:ro
+      - /etc/keelmesh/coordination-runtime/cells:/etc/keelmesh/coordination/cells:ro
+      - /var/lib/keelmesh/coordination-gateway:/var/lib/keelmesh/coordination-gateway
