@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="96" viewBox="0 0 760 96" role="img" aria-labelledby="title description">
+  <title id="title">Play the complete KeelMesh demo on YouTube</title>
+  <desc id="description">A large red play symbol followed by Play Complete Demo and Opens on YouTube.</desc>
+  <rect x="1.5" y="1.5" width="757" height="93" rx="14" fill="#151b1a" stroke="#e8a62f" stroke-width="3"/>
+  <rect x="22" y="18" width="104" height="60" rx="14" fill="#ff0033"/>
+  <path d="M65 32 L65 64 L94 48 Z" fill="#ffffff"/>
+  <text x="154" y="43" fill="#f5f0e6" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" letter-spacing="1">PLAY COMPLETE DEMO</text>
+  <text x="154" y="68" fill="#b7b2a8" font-family="Arial, Helvetica, sans-serif" font-size="15" letter-spacing="2">VOICE AI · MISSIONS · RESILIENCE · PIRATE MODE</text>
+  <text x="700" y="54" fill="#e8a62f" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">›</text>
+</svg>
