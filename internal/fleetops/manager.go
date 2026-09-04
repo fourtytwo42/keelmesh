@@ -32,6 +32,7 @@ type Mutation struct {
 	RequestID       string `json:"request_id"`
 	IdempotencyKey  string `json:"idempotency_key"`
 	ExpectedVersion int64  `json:"expected_version"`
+	ActorIdentity   string `json:"actor_identity,omitempty"`
 }
 type SimulationRateRequest struct {
 	Mutation

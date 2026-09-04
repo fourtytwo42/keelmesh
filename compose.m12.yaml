@@ -1,5 +1,6 @@
 services:
   core:
+    image: ${KEELMESH_CORE_IMAGE:-keelmesh/core:m12-shadow}
     environment:
       KEELMESH_COORDINATION_MODE: ${KEELMESH_COORDINATION_MODE:-shadow}
       KEELMESH_COORDINATION_REFEREE_PKI_DIR: /etc/keelmesh/coordination/referee
