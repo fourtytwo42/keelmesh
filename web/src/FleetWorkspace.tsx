@@ -1822,6 +1822,19 @@ export function FleetWorkspace() {
   }
 
   async function resetGuidedDemo() {
+    const history = await api<{ scenes: CommandSceneV1[] }>(`/api/v4/assistant/history?actor_identity=demo-operator&session_id=${encodeURIComponent(sceneSessionID)}`).catch(() => ({ scenes: [] }));
+    for (const scene of history.scenes.filter((item) => item.state === "active" && !item.pinned && !item.pending_approval)) {
+      await api(`/api/v4/scenes/${scene.id}:dismiss`, {
+        method: "POST",
+        body: JSON.stringify({
+          request_id: requestID("demo-dismiss-scene"),
+          idempotency_key: requestID("demo-dismiss-scene-key"),
+          actor_identity: "demo-operator",
+          session_id: sceneSessionID,
+          workspace_version: scene.workspace_version,
+        }),
+      }).catch(() => undefined);
+    }
     const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
     const id = requestID("guided-demo-reset");
     const reset = await api<FleetSnapshotV2>("/api/v2/scenarios/fleet-operations:reset", {
