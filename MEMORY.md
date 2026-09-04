@@ -4,10 +4,19 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: AI-only operational acceptance is complete across five progressively complex mission tiers; keep `main`, VM 214, and all vessel nodes synchronized.
-- Last meaningful change: conversational grounding now handles exact vessel sets, live spatial/reserve questions, structured formation/spacing/speed/reserve constraints, loop intent, persisted plans, safe mission-management commands, stable scene replacement, and cross-cell mission execution without canned pre-planner claims.
-- Next step: record only new product work or post-interview hardening; preserve the verified AI-chat mission path and `simulated|shadow|raft` rollback/comparison modes.
+- Current task: the natural-cadence hands-off interview demo is complete, pushed to `main`, deployed to VM 214 and all twelve vessel nodes, and reset to a clean Navy baseline.
+- Last meaningful change: the centered Start/Stop Demo control now drives one 13-beat live tour with prerecorded Jarvis or Captain Barbossa narration, typed AI/group/mission actions, exact approval, execution, manual authoring, resilience, Raft/mTLS, data, AI Lab, memory, and an honest boundary statement.
+- Next step: rehearse presentation delivery only; preserve the verified guided-demo, AI-chat mission path, and `simulated|shadow|raft` rollback/comparison modes.
 - Blockers: none for M12. Thin-pool auto-extension remains disabled and aggregate virtual allocation remains overcommitted, so snapshots and storage changes still require a fresh reviewed preflight.
+
+### 2026-09-04 - Natural-cadence guided interview demo deployed
+
+- Context: the operator requested a fully hands-off technical tour launched from a centered Start Demo control, with Jarvis narration in Navy mode and a flamboyant Captain Barbossa version in Pirate mode. The initial five-minute cut was intentionally accelerated and was rejected as too fast.
+- Decision: preserve both cloned voices at their natural cadence and allow the complete technical walkthrough to run about seven minutes. Use prerecorded, repository-bundled audio only; run live UI and API actions beneath narration; keep Start/Stop immediate; and use one identical action sequence for both personas. The director pins exact vessel/group/mission IDs for deterministic rehearsal while still making real assistant turns and passing every effect through the normal preview, hash, approval, lease, Raft, and execution boundaries.
+- Files: `web/src/guidedDemo.ts`, `web/src/guidedDemo.test.ts`, `web/src/FleetWorkspace.tsx`, `web/src/app.css`, `scripts/generate_demo_narration.py`, `web/public/assets/demo/{navy,pirate}/`, and `README.md`.
+- Commands/tests: strict TypeScript, 15 Vitest assertions, Vite production build, full Go tests and vet on VM 214, read-only `verify_m12.py`, one complete live `/browser` Jarvis rehearsal, Pirate start/stop verification, all twelve node health checks, and post-restart cell convergence checks.
+- Result: Jarvis audio is 416.3 seconds and Barbossa audio is 313.0 seconds at natural synthesized cadence. The full Jarvis run completed all 13 beats without intervention; the assistant visibly resolved Gannet, correctly described creation of Harbor Sentinel, and produced the grounded mission response. The exact plan authorized and executed at 100x, a separate manual draft showed area/exclusion/waypoint/hold authoring, resilience ran, and System/AI Lab displayed actual two-cell Raft, mTLS, Kafka/PostgreSQL, MCP/RAG/evaluation, and memory state. Commit `27e892b` is pushed to `main`; VM 214 runs `keelmesh/core:main-27e892b`; all twelve nodes are healthy on binary SHA-256 `19ce682958b2d7bae5c8e382c783191e8c6754ca2436e55221f80b857c29fa4b`. Cell A reconverged at term 15/epoch 13/index 789 and Cell B at term 14/epoch 12/index 329, each with one state hash and a 4/4 leader. Fleet Operations was reset to twelve unassigned vessels, zero groups, zero missions, and 20x; historical demo windows were closed and Navy mode restored. No hosted workflow, Proxmox snapshot, or VM migration ran.
+- Follow-up: if narration text changes, rerun `scripts/generate_demo_narration.py` against VM 214 and repeat the full browser rehearsal before deployment.
 
 ### 2026-09-04 - Five-tier AI chat operational acceptance
 
