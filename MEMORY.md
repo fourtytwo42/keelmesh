@@ -4,10 +4,27 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: unsaved mission-draft reuse is complete.
-- Last meaningful change: Mission and `+` now reopen the active or newest unsaved draft instead of creating duplicates; an explicit Save draft action releases the creator, and a started mission also no longer blocks new creation.
-- Next step: none for this change; continue normal product iteration.
-- Blockers: none. No snapshot is authorized.
+- Current task: M12 real node consensus, quorum failover, and mTLS implementation.
+- Last meaningful change: integrated the M12 gateway into VM 214's newer live application tree, rejected malformed requests before Raft append, and switched Player B discovery to signed authority-ready leader advertisements. A live B-cell leader stop moved both API and ingress to `node-b-04` in about 2.5 seconds; all six voters then converged at term 6, epoch 5, index 23, and one state hash.
+- Next step: finish repository integration, complete frontend/full compatibility verification, securely remove temporary deployment bundles, and resolve mini43 storage/snapshot preflight before deciding whether the requested VM rebalance is safe.
+- Blockers: mini43 has only about 5.34 GiB host RAM free and its thin-pool detail and target-VM snapshot inventories are incomplete. No migration or snapshot is authorized until those checks are resolved.
+
+### 2026-09-04 - M12 local consensus and production shadow deployment
+
+- Context: M12 replaces the central coordinator simulation with two fixed six-voter Hashicorp Raft cells and four-vote effect proofs while preserving `simulated|shadow|raft` rollback modes.
+- Decision: use separate Ed25519 radio and management certificates, root-signed fixed manifests, independent application signatures, durable BoltDB FSM state, follower forwarding, leader epoch advancement, and VM 214 proof/cross-cell deduplication state. Cross-cell mutations prepare in both cells and commit one referee-signed future-activation certificate in both.
+- Files: `internal/coordination/`, `internal/domain/coordination.go`, `internal/api/coordination*.go`, `cmd/keelmesh-{pki,coordination-node,coordination-check}/`, `scripts/verify_m12{,_local}.py`, `compose.m12.yaml`, and M12 infrastructure/docs files.
+- Commands/tests: full Go tests/vet, strict TypeScript/Vitest/Vite build, twelve-process two-cell election/restart/4-2/3-3/cross-cell/TLS tests, then production shadow deployment to all twelve vessel VMs.
+- Result: both real production cells elect and replicate over the radio plane; same-cell management mTLS succeeds, cross-cell and plaintext fail, follower forwarding returns signed proofs, and a cross-cell operation reached armed. Node binary SHA-256 is `ef7fc7590471cc2260d6e7b82154d274a8e26285c47b42ed48d8e7720ae615e4`. No VM migration, hosted workflow, or Proxmox snapshot ran.
+
+### 2026-09-04 - M12 gateway validation and signed ingress
+
+- Context: live shadow testing found that the generic coordination middleware appended a canonical command before endpoint-specific strict JSON decoding rejected an unknown field.
+- Decision: perform route-specific strict decoding before canonicalization/append, accept the v2 `actor_identity` and existing v3 `actor_id` contracts, and drive v3 faction ingress from verified, unexpired, authority-ready signed Raft leader advertisements.
+- Files: `internal/api/coordination_gateway.go`, `internal/api/coordination_gateway_test.go`, `internal/api/arena.go`, `internal/fleetops/manager.go`, and `compose.m12.yaml`.
+- Commands/tests: integrated full Go test/vet passed on VM 214; a malformed group create returned `400 INVALID_REQUEST` while Cell A remained at index 31; a B-cell leader stop elected `node-b-04` and changed both discovery API and Player B ingress in about 2.5 seconds.
+- Result: all six B voters converged at term 6, epoch 5, applied index 23, and state hash `fb401c5e90c2c35fb5b62a9c093c0cd9973de37401ae30ef3ede4f96f6b73e86`. VM 214 is healthy on `keelmesh/core:m12-shadow-2`. No VM migration, hosted workflow, or Proxmox snapshot ran.
+- Follow-up: merge the tested VM 214 integration tree into `m11-memory`, run remaining compatibility/UI gates, and resolve mini43 migration safety checks before any host move.
 
 ## Current State
 
