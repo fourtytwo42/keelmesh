@@ -132,6 +132,14 @@ const reservePercent = (reserve: number) => {
 const energyTone = (state?: VesselProfileV2["telemetry"]["energy_state"]) =>
   state === "charging" ? "energy-charging" : state === "discharging" ? "energy-discharging" : "energy-neutral";
 const signedPower = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)} kW`;
+const GitHubMark = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      fill="currentColor"
+      d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.4 11.4 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3Z"
+    />
+  </svg>
+);
 const formatSimulationTime = (tickMS: number) => {
   const totalSeconds = 8 * 60 * 60 + Math.max(0, Math.floor(tickMS / 1000));
   const day = Math.floor(totalSeconds / 86400) + 1;
@@ -2502,6 +2510,16 @@ export function FleetWorkspace() {
             <span>{words.cutaway}</span>
           </button>
         </nav>
+        <a
+          className="github-link"
+          href="https://github.com/fourtytwo42/keelmesh"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="View KeelMesh on GitHub"
+          title="View source code and documentation on GitHub"
+        >
+          <GitHubMark />
+        </a>
         <button
           className="theme-toggle"
           aria-label={pirate ? "Return to navy mode" : "Enter pirate mode"}
