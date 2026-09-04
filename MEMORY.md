@@ -4,8 +4,8 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: touch map interaction is corrected and deployed to VM 214 and all twelve vessel nodes without GitHub-hosted workflows or snapshots.
-- Last meaningful change: a short touch on open water is inert, a short touch on a controlled vessel selects it and opens its independent detail window, a short touch on a neutral contact opens its detail window, and a deliberate vessel long press opens the existing context menu. The touch timer is cancelled on pointer-up and synthetic mobile context-menu/click events are suppressed so one gesture cannot trigger multiple actions.
+- Current task: enterprise-grade GitHub documentation and a current product screenshot are complete and ready to publish without GitHub-hosted workflows or snapshots.
+- Last meaningful change: README is now an executive entry point with linked navigation, architecture, quick start, operating workflow, engineering principles, repository map, verification policy, and scope boundaries. `docs/` provides role-based operator, architecture, AI/memory, operations, security, verification, API/reference, and status guides; all relative links and the 1440×900 VM 214 screenshot were validated locally.
 - Next step: only broader M7 physical mesh replication remains a separate architecture follow-up; do not describe the current memory bundles as real radio-plane replication until that transport exists.
 - Blockers: none for the delivered central/node-local M11 slice. No snapshot is authorized.
 
@@ -162,6 +162,14 @@ When sources conflict, use this order:
 - Superseded target-topology note: the earlier edge-to-AWS split was too linear. Current decision is an offline-first peer-node fabric in which edge nodes own execution, safety, PNT, local state, and delay-tolerant communication; AWS/Kubernetes is an optional capacity, coordination, analytics, and archival domain.
 
 ## Verification Ledger
+
+### 2026-09-03 - Enterprise documentation portal
+
+- Context: the root README stopped at M7, described superseded Mission chat controls, lacked a documentation index, and had no current product image or consolidated operating/security/reference material.
+- Decision: replace README with a concise executive entry point and add a role-based `docs/` portal covering operator behavior, architecture, AI/memory, operations, security, verification, API/repository reference, and honest delivery status. Capture the live 1440×900 VM 214 operations workspace rather than using a mockup.
+- Files: `README.md`, `docs/README.md`, `docs/OPERATOR_GUIDE.md`, `docs/ARCHITECTURE.md`, `docs/AI_AND_MEMORY.md`, `docs/OPERATIONS.md`, `docs/SECURITY.md`, `docs/VERIFICATION.md`, `docs/REFERENCE.md`, `docs/STATUS.md`, and `docs/assets/keelmesh-operations.png`.
+- Commands/tests: live Playwright screenshot capture; `git diff --check`; local relative-link validation across all ten Markdown entry points; secret-pattern review; and image existence/dimension inspection.
+- Result: documentation is GitHub/offline-clone navigable, separates implemented/simulated/planned claims, records the current test migration debt, and contains no credentials. No GitHub-hosted workflow or Proxmox snapshot ran.
 
 ### 2026-09-03 - Intentional phone map gestures
 
