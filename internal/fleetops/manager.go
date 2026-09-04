@@ -3158,6 +3158,23 @@ func (m *Manager) tickStepLocked() {
 	// configuration. Keeping their 5 Hz cadence out of fleetVersion prevents
 	// ordinary group/mission writes from racing continuous station keeping.
 	m.tickIdleGroupsLocked()
+	m.tickUnassignedVesselsLocked()
+}
+
+// tickUnassignedVesselsLocked advances the energy model for vessels that are
+// neither executing a mission nor managed by an operational group. Grouped
+// vessels are advanced by tickIdleGroupsLocked and mission vessels above; the
+// separate pass prevents double charging while ensuring the default VM-backed
+// fleet still consumes station-keeping load and collects daylight solar.
+func (m *Manager) tickUnassignedVesselsLocked() {
+	for id, vessel := range m.vessels {
+		if vessel.GroupID != "" || vessel.Telemetry.MissionID != "" {
+			continue
+		}
+		vessel.Telemetry.Reserve = m.advanceEnergy(vessel, vessel.Telemetry.SpeedMPS, m.simTickMS/1000, .2)
+		vessel.Telemetry.Environment = environmentAt(vessel.Telemetry.Position, float64(m.simTickMS/1000))
+		m.vessels[id] = vessel
+	}
 }
 
 // refreshContinuousFollowLocked materializes a fresh, signed future revision
@@ -4388,6 +4405,7 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 			}
 		}
 	}
+	m.reconcileOrphanedMissionVesselsLocked()
 	for id, group := range m.groups {
 		group.ColorName = nearestWaypointColor(group.Color)
 		if group.RouteMode == "" {
@@ -4427,6 +4445,28 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 	}
 	m.deduplicateMissionNamesLocked()
 	m.persistAsync()
+}
+
+// reconcileOrphanedMissionVesselsLocked removes stale execution bindings left
+// by an interrupted delete/reset or an older persisted profile. A vessel may
+// only remain in mission mode when that mission still exists in the registry.
+func (m *Manager) reconcileOrphanedMissionVesselsLocked() {
+	for id, vessel := range m.vessels {
+		missionID := vessel.Telemetry.MissionID
+		if missionID == "" {
+			continue
+		}
+		if _, exists := m.missions[missionID]; exists {
+			continue
+		}
+		vessel.Telemetry.MissionID = ""
+		vessel.Telemetry.Route = nil
+		vessel.Telemetry.SpeedMPS = 0
+		vessel.Telemetry.TapeDepthSeconds = 0
+		vessel.Telemetry.Mode = "station_keep"
+		vessel.Telemetry.ProjectedReserve = vessel.Telemetry.Reserve
+		m.vessels[id] = vessel
+	}
 }
 
 var _ = errors.New

@@ -1799,3 +1799,70 @@ func TestNominalRangeAndDaylightSolarRecharge(t *testing.T) {
 		t.Fatalf("default planning envelope does not expose configured endurance: %#v", constraints)
 	}
 }
+
+func TestUnassignedVesselsRechargeWithAcceleratedSimulation(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	m := New("", slog.Default())
+	var vesselID string
+	for id, vessel := range m.vessels {
+		if vessel.GroupID == "" && vessel.Telemetry.MissionID == "" {
+			vesselID = id
+			vessel.Telemetry.Reserve = .10
+			vessel.Telemetry.SpeedMPS = 0
+			m.vessels[id] = vessel
+			break
+		}
+	}
+	if vesselID == "" {
+		t.Fatal("expected an unassigned VM-backed vessel")
+	}
+
+	// The simulation starts at 08:00; four simulated hours places this check at
+	// peak solar. Compare one 1x wall tick with one 500x wall tick.
+	m.simTickMS = 4 * 60 * 60 * 1000
+	m.simulationRate = 1
+	m.tick()
+	oneXDelta := m.vessels[vesselID].Telemetry.Reserve - .10
+	if oneXDelta <= 0 {
+		t.Fatalf("unassigned vessel did not recharge at 1x: %.8f", oneXDelta)
+	}
+	vessel := m.vessels[vesselID]
+	vessel.Telemetry.Reserve = .10
+	m.vessels[vesselID] = vessel
+	m.simTickMS = 4 * 60 * 60 * 1000
+	m.simulationRate = 500
+	m.tick()
+	fiveHundredXDelta := m.vessels[vesselID].Telemetry.Reserve - .10
+	if fiveHundredXDelta < oneXDelta*400 {
+		t.Fatalf("500x charge delta %.8f did not accelerate 1x delta %.8f", fiveHundredXDelta, oneXDelta)
+	}
+}
+
+func TestReconcileOrphanedMissionVesselsClearsOnlyMissingMission(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	m := New("", slog.Default())
+	ids := make([]string, 0, len(m.vessels))
+	for id := range m.vessels {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	orphaned, retained := m.vessels[ids[0]], m.vessels[ids[1]]
+	orphaned.Telemetry.MissionID = "mission-missing"
+	orphaned.Telemetry.Mode = "mission"
+	orphaned.Telemetry.SpeedMPS = 1.6
+	orphaned.Telemetry.Route = []domain.GeoPointV2{orphaned.Telemetry.Position, {-71.3, 41.2}}
+	retained.Telemetry.MissionID = "mission-live"
+	retained.Telemetry.Mode = "mission"
+	m.vessels[ids[0]], m.vessels[ids[1]] = orphaned, retained
+	m.missions["mission-live"] = domain.MissionWorkspaceV2{ID: "mission-live"}
+
+	m.reconcileOrphanedMissionVesselsLocked()
+
+	cleared := m.vessels[ids[0]]
+	if cleared.Telemetry.MissionID != "" || cleared.Telemetry.Mode != "station_keep" || cleared.Telemetry.SpeedMPS != 0 || len(cleared.Telemetry.Route) != 0 {
+		t.Fatalf("orphaned mission state was not cleared: %#v", cleared.Telemetry)
+	}
+	if m.vessels[ids[1]].Telemetry.MissionID != "mission-live" || m.vessels[ids[1]].Telemetry.Mode != "mission" {
+		t.Fatalf("live mission binding was changed: %#v", m.vessels[ids[1]].Telemetry)
+	}
+}
