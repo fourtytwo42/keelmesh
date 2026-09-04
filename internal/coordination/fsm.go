@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,8 +26,14 @@ type fsmState struct {
 	AuthorityEpoch uint64                                    `json:"authority_epoch"`
 	StateVersion   int64                                     `json:"state_version"`
 	Receipts       map[string]domain.AppliedCommandReceiptV1 `json:"receipts"`
-	Idempotency    map[string]string                         `json:"idempotency"`
+	Idempotency    map[string]idempotencyBinding             `json:"idempotency"`
+	Projections    map[string]json.RawMessage                `json:"projections"`
 	Latest         *domain.AppliedCommandReceiptV1           `json:"latest,omitempty"`
+}
+
+type idempotencyBinding struct {
+	CommandID string `json:"command_id"`
+	Hash      string `json:"hash"`
 }
 
 type stateMachine struct {
@@ -35,7 +42,7 @@ type stateMachine struct {
 }
 
 func newStateMachine() *stateMachine {
-	return &stateMachine{state: fsmState{SchemaVersion: 1, AuthorityEpoch: 0, StateVersion: 1, Receipts: map[string]domain.AppliedCommandReceiptV1{}, Idempotency: map[string]string{}}}
+	return &stateMachine{state: fsmState{SchemaVersion: 1, AuthorityEpoch: 0, StateVersion: 1, Receipts: map[string]domain.AppliedCommandReceiptV1{}, Idempotency: map[string]idempotencyBinding{}, Projections: map[string]json.RawMessage{}}}
 }
 
 func (f *stateMachine) Apply(log *raft.Log) interface{} {
@@ -48,11 +55,11 @@ func (f *stateMachine) Apply(log *raft.Log) interface{} {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if existingHash, ok := f.state.Idempotency[command.IdempotencyKey]; ok {
-		if existingHash != command.PayloadHash {
+	if binding, ok := f.state.Idempotency[command.IdempotencyKey]; ok {
+		if binding.Hash != command.PayloadHash || binding.CommandID != command.CommandID {
 			return applyResult{err: fmt.Errorf("IDEMPOTENCY_CONFLICT: key already binds different content")}
 		}
-		if receipt, found := f.state.Receipts[command.CommandID]; found {
+		if receipt, found := f.state.Receipts[binding.CommandID]; found {
 			return applyResult{receipt: receipt}
 		}
 	}
@@ -67,6 +74,7 @@ func (f *stateMachine) Apply(log *raft.Log) interface{} {
 	} else if command.AuthorityEpoch != f.state.AuthorityEpoch {
 		return applyResult{err: fmt.Errorf("AUTHORITY_EPOCH_STALE: command %d current %d", command.AuthorityEpoch, f.state.AuthorityEpoch)}
 	}
+	f.applyProjectionLocked(command)
 	f.state.StateVersion++
 	stateHash := f.hashLocked(command.CommandID, command.PayloadHash, log.Term, log.Index)
 	receipt := domain.AppliedCommandReceiptV1{
@@ -76,7 +84,7 @@ func (f *stateMachine) Apply(log *raft.Log) interface{} {
 		AppliedAt: command.IssuedAt.UTC(), State: "committed",
 	}
 	f.state.Receipts[command.CommandID] = receipt
-	f.state.Idempotency[command.IdempotencyKey] = command.PayloadHash
+	f.state.Idempotency[command.IdempotencyKey] = idempotencyBinding{CommandID: command.CommandID, Hash: command.PayloadHash}
 	f.state.Latest = &receipt
 	return applyResult{receipt: receipt}
 }
@@ -112,7 +120,10 @@ func (f *stateMachine) Restore(reader io.ReadCloser) error {
 		restored.Receipts = map[string]domain.AppliedCommandReceiptV1{}
 	}
 	if restored.Idempotency == nil {
-		restored.Idempotency = map[string]string{}
+		restored.Idempotency = map[string]idempotencyBinding{}
+	}
+	if restored.Projections == nil {
+		restored.Projections = map[string]json.RawMessage{}
 	}
 	f.mu.Lock()
 	f.state = restored
@@ -120,11 +131,41 @@ func (f *stateMachine) Restore(reader io.ReadCloser) error {
 	return nil
 }
 
+func (f *stateMachine) applyProjectionLocked(command domain.ReplicatedCommandV1) {
+	resource := command.Kind
+	if separator := strings.IndexByte(resource, '.'); separator >= 0 {
+		resource = resource[:separator]
+	}
+	key := resource
+	if command.EntityID != "" {
+		key += ":" + command.EntityID
+	}
+	if strings.HasSuffix(command.Kind, ".delete") || strings.HasSuffix(command.Kind, ".complete") || strings.HasSuffix(command.Kind, ".terminate") {
+		delete(f.state.Projections, key)
+		return
+	}
+	f.state.Projections[key] = append(json.RawMessage(nil), command.Payload...)
+}
+
 func (f *stateMachine) receipt(id string) (domain.AppliedCommandReceiptV1, bool) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	receipt, ok := f.state.Receipts[id]
 	return receipt, ok
+}
+
+func (f *stateMachine) receipts(limit int) []domain.AppliedCommandReceiptV1 {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	values := make([]domain.AppliedCommandReceiptV1, 0, len(f.state.Receipts))
+	for _, receipt := range f.state.Receipts {
+		values = append(values, receipt)
+	}
+	sort.Slice(values, func(i, j int) bool { return values[i].LogIndex > values[j].LogIndex })
+	if limit > 0 && len(values) > limit {
+		values = values[:limit]
+	}
+	return values
 }
 
 func (f *stateMachine) summary() (uint64, int64, string, *domain.AppliedCommandReceiptV1) {
@@ -147,6 +188,12 @@ func (f *stateMachine) hashLocked(commandID, commandHash string, term, index uin
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	projectionKeys := make([]string, 0, len(f.state.Projections))
+	for key, value := range f.state.Projections {
+		digest := sha256.Sum256(value)
+		projectionKeys = append(projectionKeys, key+":"+hex.EncodeToString(digest[:]))
+	}
+	sort.Strings(projectionKeys)
 	view := struct {
 		Epoch       uint64   `json:"epoch"`
 		Version     int64    `json:"version"`
@@ -155,7 +202,8 @@ func (f *stateMachine) hashLocked(commandID, commandHash string, term, index uin
 		CommandHash string   `json:"command_hash,omitempty"`
 		Term        uint64   `json:"term,omitempty"`
 		Index       uint64   `json:"index,omitempty"`
-	}{f.state.AuthorityEpoch, f.state.StateVersion, ids, commandID, commandHash, term, index}
+		Projections []string `json:"projections"`
+	}{f.state.AuthorityEpoch, f.state.StateVersion, ids, commandID, commandHash, term, index, projectionKeys}
 	encoded, _ := json.Marshal(view)
 	digest := sha256.Sum256(encoded)
 	return hex.EncodeToString(digest[:])

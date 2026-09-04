@@ -16,6 +16,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/fourtytwo42/keelmesh/internal/agent"
 	"github.com/fourtytwo42/keelmesh/internal/arena"
+	"github.com/fourtytwo42/keelmesh/internal/coordination"
 	"github.com/fourtytwo42/keelmesh/internal/core"
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 	"github.com/fourtytwo42/keelmesh/internal/fleetops"
@@ -35,6 +36,8 @@ type Server struct {
 	fleetops       *fleetops.Manager
 	arena          *arena.Manager
 	memory         *memory.Manager
+	coordination   *coordination.Manager
+	coordGateway   *coordination.Gateway
 	speechURL      string
 	metricsHandler http.Handler
 }
@@ -45,6 +48,8 @@ func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...any) *
 	var fleetManager *fleetops.Manager
 	var arenaManager *arena.Manager
 	var memoryManager *memory.Manager
+	var coordinationManager *coordination.Manager
+	var coordinationGateway *coordination.Gateway
 	for _, value := range managers {
 		switch typed := value.(type) {
 		case *platform.Manager:
@@ -57,9 +62,13 @@ func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...any) *
 			arenaManager = typed
 		case *memory.Manager:
 			memoryManager = typed
+		case *coordination.Manager:
+			coordinationManager = typed
+		case *coordination.Gateway:
+			coordinationGateway = typed
 		}
 	}
-	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager, agent: agentManager, fleetops: fleetManager, arena: arenaManager, memory: memoryManager, speechURL: strings.TrimRight(os.Getenv("KEELMESH_SPEECH_URL"), "/")}
+	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager, agent: agentManager, fleetops: fleetManager, arena: arenaManager, memory: memoryManager, coordination: coordinationManager, coordGateway: coordinationGateway, speechURL: strings.TrimRight(os.Getenv("KEELMESH_SPEECH_URL"), "/")}
 	if manager != nil {
 		registry := prometheus.NewRegistry()
 		gauges := []struct {
@@ -195,8 +204,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v5/memory/replays", s.memoryReplayV5)
 	mux.HandleFunc("GET /api/v5/memory/replays/{id}", s.memoryReplayResultV5)
 	mux.HandleFunc("POST /api/v5/scenarios/memory:reset", s.memoryResetV5)
+	mux.HandleFunc("GET /api/v6/coordination/cells", s.coordinationCellsV6)
+	mux.HandleFunc("GET /api/v6/coordination/cells/{id}", s.coordinationCellV6)
+	mux.HandleFunc("GET /api/v6/coordination/cells/{id}/log", s.coordinationLogV6)
+	mux.HandleFunc("GET /api/v6/coordination/commands/{id}/proof", s.coordinationProofV6)
+	mux.HandleFunc("GET /api/v6/coordination/cross-cell/{id}", s.crossCellV6)
+	mux.HandleFunc("GET /api/v6/coordination/security", s.coordinationSecurityV6)
 	mux.Handle("GET /", spaHandler(s.web))
-	return requestLog(s.logger, mux)
+	return requestLog(s.logger, s.coordinationMutationMiddleware(mux))
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {

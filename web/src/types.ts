@@ -1189,3 +1189,64 @@ export type ArenaSnapshotV1 = {
   provisioning_state: string;
   provisioning_blockers: string[];
 };
+
+export type CoordinationCellMemberV1 = {
+  node_id: string; faction: string; vm_id: number; host: string;
+  management_address: string; radio_address: string; raft_tls_serial?: string; management_tls_serial?: string; signing_public_key?: string;
+};
+export type CoordinationCellManifestV1 = {
+  schema_version: number; cell_id: string; cluster_id: string; quorum: number;
+  members: CoordinationCellMemberV1[]; issued_at: string; expires_at: string;
+  trust_version: number; revoked_serials?: string[]; checksum: string; signature?: string;
+};
+export type NodeIdentityV2 = {
+  schema_version: number; node_id: string; cell_id: string; faction: string; vm_id: number;
+  management_ip: string; radio_ip: string; raft_certificate_serial?: string; management_certificate_serial?: string; certificate_expires_at?: string;
+};
+export type ReplicatedCommandV1 = {
+  schema_version: number; command_id: string; request_id: string; idempotency_key: string;
+  actor_identity: string; cell_id: string; term?: number; authority_epoch: number; kind: string;
+  entity_id?: string; expected_version?: number; payload?: unknown; payload_hash: string; issued_at: string;
+  future_activation_at?: string; parent_operation_id?: string;
+};
+export type AppliedCommandReceiptV1 = {
+  schema_version: number; command_id: string; cell_id: string; term: number; log_index: number;
+  authority_epoch: number; command_hash: string; resulting_state_hash: string; applied_at: string; state: string;
+};
+export type SignedNodeAcknowledgementV1 = {
+  node_id: string; cell_id: string; term: number; log_index: number; authority_epoch: number;
+  command_hash: string; resulting_state_hash: string; signature: string;
+};
+export type QuorumCommitProofV1 = {
+  schema_version: number; command_id: string; cell_id: string; term: number; log_index: number;
+  authority_epoch: number; command_hash: string; resulting_state_hash: string; required: number;
+  acknowledgements: SignedNodeAcknowledgementV1[]; state: string; completed_at?: string;
+};
+export type CoordinatorAdvertisementV1 = {
+  schema_version: number; cell_id: string; node_id: string; term: number; authority_epoch: number;
+  management_url: string; commit_index: number; issued_at: string; expires_at: string; signature: string; state: string;
+};
+export type CoordinationPeerV1 = {
+  node_id: string; host: string; role: string; reachable: boolean; applied_index: number;
+  lag: number; last_contact?: string;
+};
+export type CoordinationCellSnapshotV1 = {
+  schema_version: number; cell_id: string; cluster_id: string; mode: string; local_node_id?: string;
+  leader_node_id?: string; leader_address?: string; state: string; term: number; authority_epoch: number;
+  commit_index: number; applied_index: number; last_log_index: number; quorum_required: number;
+  reachable_voters: number; state_hash: string; election_count: number; last_election_ms?: number;
+  peers: CoordinationPeerV1[]; latest_receipt?: AppliedCommandReceiptV1; updated_at: string;
+};
+export type CrossCellActivationCertificateV1 = {
+  schema_version: number; operation_id: string; command_hash: string; activation_at: string;
+  prepare_proofs: Record<string, QuorumCommitProofV1>; issued_at: string; issuer: string; signature: string;
+};
+export type CrossCellOperationV1 = {
+  schema_version: number; id: string; command_hash: string; state: string; activation_at: string;
+  prepare_proofs?: Record<string, QuorumCommitProofV1>; certificate?: CrossCellActivationCertificateV1;
+  created_at: string; updated_at: string;
+};
+export type PeerTLSStateV1 = {
+  node_id: string; cell_id: string; serial: string; expires_at: string; trusted: boolean;
+  last_error?: string; last_verified?: string;
+};

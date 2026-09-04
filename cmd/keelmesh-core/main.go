@@ -16,6 +16,7 @@ import (
 	"github.com/fourtytwo42/keelmesh/internal/agent"
 	"github.com/fourtytwo42/keelmesh/internal/api"
 	"github.com/fourtytwo42/keelmesh/internal/arena"
+	"github.com/fourtytwo42/keelmesh/internal/coordination"
 	"github.com/fourtytwo42/keelmesh/internal/core"
 	"github.com/fourtytwo42/keelmesh/internal/fleetops"
 	"github.com/fourtytwo42/keelmesh/internal/memory"
@@ -94,7 +95,36 @@ func main() {
 	fleetManager := fleetops.New(fleetDatabaseURL, logger)
 	memoryManager := memory.New(memory.ConfigFromEnv(fleetDatabaseURL, cfg.Brokers), logger)
 	arenaManager := arena.NewFromEnv()
-	serverAPI := api.New(engine, logger, webRoot, platformManager, agentManager, fleetManager, arenaManager, memoryManager)
+	coordinationConfig, err := coordination.ConfigFromEnv()
+	if err != nil {
+		logger.Error("coordination configuration failed", "error", err)
+		os.Exit(1)
+	}
+	var coordinationManager *coordination.Manager
+	var coordinationGateway *coordination.Gateway
+	if strings.TrimSpace(os.Getenv("KEELMESH_NODE_ID")) != "" && coordinationConfig.Mode != coordination.ModeSimulated {
+		coordinationManager, err = coordination.NewManager(coordinationConfig, logger)
+		if err != nil {
+			logger.Error("coordination node startup failed", "error", err)
+			os.Exit(1)
+		}
+		if err := coordinationManager.StartManagement(ctx); err != nil {
+			logger.Error("coordination management startup failed", "error", err)
+			os.Exit(1)
+		}
+	} else if strings.TrimSpace(os.Getenv("KEELMESH_NODE_ID")) == "" {
+		gatewayConfig, gatewayErr := coordination.GatewayConfigFromEnv()
+		if gatewayErr != nil {
+			logger.Error("coordination gateway configuration failed", "error", gatewayErr)
+			os.Exit(1)
+		}
+		coordinationGateway, err = coordination.NewGateway(gatewayConfig)
+		if err != nil {
+			logger.Error("coordination gateway startup failed", "error", err)
+			os.Exit(1)
+		}
+	}
+	serverAPI := api.New(engine, logger, webRoot, platformManager, agentManager, fleetManager, arenaManager, memoryManager, coordinationManager, coordinationGateway)
 
 	server := &http.Server{
 		Addr:              ":8080",
@@ -124,6 +154,9 @@ func main() {
 			logger.Error("graceful shutdown", "error", shutdownErr)
 		}
 		_ = privateServer.Shutdown(contextWithTimeout)
+		if coordinationManager != nil {
+			_ = coordinationManager.Close(contextWithTimeout)
+		}
 	}()
 
 	logger.Info("keelmesh core listening", "address", server.Addr)
