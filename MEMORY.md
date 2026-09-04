@@ -5,8 +5,8 @@ Durable project context lives here. Update this file whenever information should
 ## Active Handoff
 
 - Current task: M12 real node consensus, quorum failover, and mTLS implementation.
-- Last meaningful change: added the initial M12 domain contracts, deterministic Raft FSM/snapshot logic, custom TLS stream-layer validation, and pinned Hashicorp Raft dependencies on branch `m11-memory`.
-- Next step: complete the node coordination manager, private management API, PKI generator, quorum-proof gateway, tests, and only then begin shadow deployment.
+- Last meaningful change: completed the first M12 software checkpoint: durable six-voter Raft manager/FSM, private management service, separate radio/management mTLS profiles, offline PKI generator, signed quorum-proof gateway, cross-cell prepare/certify flow, `/api/v6` reads, compatibility mutation middleware, mirrored contracts, and local security/partition tests.
+- Next step: add the real two-cell process harness, certificate reload/rotation, follower forwarding and observability polish; then build the identical binary and begin shadow deployment only after software gates pass.
 - Blockers: Proxmox VM migration remains gated on fresh host/storage preflight. No snapshot is authorized.
 
 ### 2026-09-03 - Non-destructive repository cleanup
@@ -14,6 +14,15 @@ Durable project context lives here. Update this file whenever information should
 - Context: the root checkout was 47 commits behind `origin/main`, contained 1,194 tracked changes (mostly missing generated map/UI assets), and retained large deployment/test artifacts; the M12 worktree also had intentional uncommitted foundation code.
 - Decision: committed the M12 foundation on `m11-memory`, preserved every tracked root-checkout change on `codex/repository-recovery-20260903` at `f991826`, then fast-forwarded the root `main` checkout to `origin/main`. Local binaries, bundles, screenshots, test output, and the nested worktree remain physically intact but are hidden from status through `.git/info/exclude`.
 - Result: both registered worktrees are clean after dedicated commits; no files, snapshots, branches, or hosted workflows were deleted or run.
+
+### 2026-09-03 - M12 coordination software checkpoint
+
+- Context: M12 replaces the centralized coordinator simulation with two fixed six-voter Hashicorp Raft cells and four-vote effect proofs.
+- Decision: keep `simulated|shadow|raft`; use separate Ed25519 radio and management certificates, root-signed fixed manifests, independent application signatures, durable BoltDB FSM state, and VM 214 proof/cross-cell deduplication state. Cross-cell mutations prepare in both cells, commit one referee-signed future-activation certificate in both, and wait for the activation tick before the compatibility effect runs.
+- Files: `internal/coordination/`, `internal/domain/coordination.go`, `internal/api/coordination*.go`, `cmd/keelmesh-pki/`, `cmd/keelmesh-core/main.go`, `contracts/fixtures/coordination-v1.json`, and `web/src/types.ts`.
+- Commands/tests: VM-local cached Go 1.27 container tests for coordination/API/domain/PKI; strict TypeScript; six-voter majority-election and 3/3 rejection tests; canonical hashing/idempotency/snapshot tests; same-cell, wrong-cell, revoked, expired, and plaintext TLS tests.
+- Result: checkpoint tests pass. No production PKI was generated, no node was switched from simulated mode, no VM was migrated, and no GitHub-hosted workflow or Proxmox snapshot ran.
+- Follow-up: process-level two-cell test, SIGHUP certificate rotation, follower forwarding, complete build/full-suite verification, then guarded Proxmox preflight and shadow rollout.
 
 ## Current State
 

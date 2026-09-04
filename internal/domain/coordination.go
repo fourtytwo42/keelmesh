@@ -6,38 +6,42 @@ import (
 )
 
 type CoordinationCellMemberV1 struct {
-	NodeID            string `json:"node_id"`
-	Faction           string `json:"faction"`
-	VMID              int    `json:"vm_id"`
-	Host              string `json:"host"`
-	ManagementAddress string `json:"management_address"`
-	RadioAddress      string `json:"radio_address"`
-	TLSSerial         string `json:"tls_serial,omitempty"`
-	SigningPublicKey  string `json:"signing_public_key,omitempty"`
+	NodeID              string `json:"node_id"`
+	Faction             string `json:"faction"`
+	VMID                int    `json:"vm_id"`
+	Host                string `json:"host"`
+	ManagementAddress   string `json:"management_address"`
+	RadioAddress        string `json:"radio_address"`
+	RaftTLSSerial       string `json:"raft_tls_serial,omitempty"`
+	ManagementTLSSerial string `json:"management_tls_serial,omitempty"`
+	SigningPublicKey    string `json:"signing_public_key,omitempty"`
 }
 
 type CoordinationCellManifestV1 struct {
-	SchemaVersion int                        `json:"schema_version"`
-	CellID        string                     `json:"cell_id"`
-	ClusterID     string                     `json:"cluster_id"`
-	Quorum        int                        `json:"quorum"`
-	Members       []CoordinationCellMemberV1 `json:"members"`
-	IssuedAt      time.Time                  `json:"issued_at"`
-	ExpiresAt     time.Time                  `json:"expires_at"`
-	Checksum      string                     `json:"checksum"`
-	Signature     string                     `json:"signature,omitempty"`
+	SchemaVersion  int                        `json:"schema_version"`
+	CellID         string                     `json:"cell_id"`
+	ClusterID      string                     `json:"cluster_id"`
+	Quorum         int                        `json:"quorum"`
+	Members        []CoordinationCellMemberV1 `json:"members"`
+	IssuedAt       time.Time                  `json:"issued_at"`
+	ExpiresAt      time.Time                  `json:"expires_at"`
+	TrustVersion   int                        `json:"trust_version"`
+	RevokedSerials []string                   `json:"revoked_serials,omitempty"`
+	Checksum       string                     `json:"checksum"`
+	Signature      string                     `json:"signature,omitempty"`
 }
 
 type NodeIdentityV2 struct {
-	SchemaVersion int       `json:"schema_version"`
-	NodeID        string    `json:"node_id"`
-	CellID        string    `json:"cell_id"`
-	Faction       string    `json:"faction"`
-	VMID          int       `json:"vm_id"`
-	ManagementIP  string    `json:"management_ip"`
-	RadioIP       string    `json:"radio_ip"`
-	Certificate   string    `json:"certificate_serial,omitempty"`
-	ExpiresAt     time.Time `json:"certificate_expires_at,omitempty"`
+	SchemaVersion         int       `json:"schema_version"`
+	NodeID                string    `json:"node_id"`
+	CellID                string    `json:"cell_id"`
+	Faction               string    `json:"faction"`
+	VMID                  int       `json:"vm_id"`
+	ManagementIP          string    `json:"management_ip"`
+	RadioIP               string    `json:"radio_ip"`
+	RaftCertificate       string    `json:"raft_certificate_serial,omitempty"`
+	ManagementCertificate string    `json:"management_certificate_serial,omitempty"`
+	ExpiresAt             time.Time `json:"certificate_expires_at,omitempty"`
 }
 
 type ReplicatedCommandV1 struct {
