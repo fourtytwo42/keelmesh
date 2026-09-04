@@ -18,8 +18,6 @@ KeelMesh demonstrates how one operator can plan, authorize, observe, and adapt m
 
 The recording opens with live voice-assistant questions and AI-assisted mission creation, continues through the hands-off technical tour of fleet operations and resilient infrastructure, and concludes with the complete Pirate-mode demonstration.
 
-> GitHub does not permit an embedded YouTube player in repository READMEs. Both the preview and play control open the video on YouTube.
-
 ## On this page
 
 - [Watch the demo](#watch-the-demo)
