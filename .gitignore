@@ -36,3 +36,11 @@ secrets/
 *.token
 *.credentials.json
 .keelmesh-models/
+
+# Local worktrees and one-off deployment/test artifacts belong outside the repo.
+/.m11-worktree/
+/test-results/
+/*.bundle
+/*.png
+/drag-error.md
+/keelmesh-node-*

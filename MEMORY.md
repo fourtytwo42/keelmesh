@@ -4,10 +4,19 @@ Durable project context lives here. Update this file whenever information should
 
 ## Active Handoff
 
-- Current task: M12 real node consensus, quorum failover, and mTLS implementation.
-- Last meaningful change: M12 is integrated and committed on `m11-memory`; both six-voter production cells run in shadow mode. Live compatibility testing fixed observational Arena/Fleet telemetry invalidating authority versions. M6, M7, and M12 then passed twice consecutively.
-- Next step: resolve mini43 migration headroom and thin-pool metadata before performing the requested five-VM rebalance or changing `KEELMESH_COORDINATION_MODE` from `shadow` to `raft`.
-- Blockers: mini43 has only about 5.34 GiB host RAM free. The required migration order temporarily adds two 2 GiB VMs before VM 233 leaves, reducing nominal free RAM to about 1.34 GiB on a host already using swap. Thin data is 64.04% used, but exact metadata utilization is not yet available. No migration or snapshot is authorized until those checks are safe.
+- Current task: complete M12 production Raft rollout after fixing leader epoch advancement, then leave `main` clean and published.
+- Last meaningful change: M12 is merged on `main`; the five stopped migrations completed safely in a RAM-aware order and both cells are now distributed 2/2/2. Cell A promotion exposed a persistent epoch-command idempotency collision after leader restart; the local fix barriers before reading FSM state and gives each Raft term a deterministic command identity.
+- Next step: run the full Go suite, build and deploy the fixed binary, prove Cell A restart/failover, then promote and verify Cell B and the VM 214 gateway.
+- Blockers: Cell A currently elects a leader but remains `electing` on the deployed pre-fix binary. Cell B and VM 214 remain in `shadow`; no active missions exist, so the authoritative central path is preserved while the fix is validated.
+
+### 2026-09-04 - M12 topology rebalance and epoch failover diagnosis
+
+- Context: the original ID-ordered migration sequence temporarily overcommitted mini43 RAM even though the final 2/2/2 topology fit.
+- Decision: move VM 233 off mini43 before moving VMs 223 and 224 onto it; keep the mathematically required 2/2/2 distribution because a 3/2/1 cell would lose quorum after failure of the three-voter host.
+- Files: `infrastructure/m12-target-topology.json`, `infrastructure/README.md`, `internal/coordination/manager.go`, and `internal/coordination/manager_test.go`.
+- Commands/tests: fresh Proxmox checks found thin-pool metadata at 2-3%; migrations 222, 229, 233, 223, and 224 ran one at a time with restart/NIC/service/checksum verification. Focused coordination test and vet pass in the VM 214 Go 1.27 build environment.
+- Result: Cell A and Cell B are each distributed 2/2/2 across `fourtyfour`, `mini42`, and `mini43`; no snapshot was created. A Cell A leader restart revealed `IDEMPOTENCY_CONFLICT` during `coordination.epoch_advance`. The fix adds a leader barrier and term-scoped deterministic epoch identity; production redeployment is pending.
+- Follow-up: prove the fix under live leader restart before any Cell B or gateway promotion. Thin-pool auto-extension remains disabled and aggregate virtual volumes remain overcommitted; do not alter storage or create snapshots without a separate reviewed change.
 
 ### 2026-09-04 - M12 local consensus and production shadow deployment
 
@@ -993,7 +1002,7 @@ When sources conflict, use this order:
 - Complete M8D automatic node-agent interruption escalation. The deployed controller already performs bounded deterministic collision/energy correction and an operator can request a live AI replan that becomes a future exact revision, but a complex out-of-envelope encounter does not yet autonomously invoke the node OpenAI route. Add a typed asynchronous proposal queue, bounded context, deterministic corridor/path validation, provider timeout/fallback, and approval only when authority expands.
 - Extend M9 from the deployed election/MCP vertical slice to signed group proposals, all-affected arming, synchronized future activation, simulated decision-node loss/re-election, and executable pre-authorized signal-seek/return-home corridors. Add expiring observer/operator-assistant/diagnostic MCP identities, rotation, per-tool budgets, and security fuzzing before exposing `/mcp/control` through an authenticated management ingress.
 - When all generated strategies are prohibited, keep the cards visible but add a concise constraint explanation and a bounded revision action. The verified 15 nm outbound-plus-return request is 55.56 km, so the current 25 km route limit and energy model correctly prohibit all three strategies rather than silently shortening the operator's order.
-- Complete the M12 authority rollout after safe Proxmox placement: obtain exact mini43 thin-pool metadata and safe RAM headroom, perform the five stopped migrations only if safe, verify the final 2/2/2 layout, then promote Cell A and Cell B from shadow to Raft with the documented 4/2, 3/3, leader-loss, convergence, and cross-cell certificate gates.
+- Complete the M12 authority rollout after validating the term-scoped leader epoch fix: redeploy Cell A, prove leader restart and the documented 4/2 and 3/3 gates, then promote Cell B and VM 214, verify cross-cell certificates, and run the full suite twice.
 - Package and benchmark the independent Python agent, Pocket TTS, and node-local STT roles on every vessel VM. The current nodes run the same complete Go/API/UI binary and have provider credentials, but they do not yet run twelve separate Python/speech services or physical GPUs.
 - Reuse MetaCog's architectural patterns—not its complete application—for the next KeelMesh agent harness: typed tool schemas, lease-bound capability sets, durable turn checkpoints, idempotent requests, approval pauses, immutable receipts, and provider/tool evidence. The agent may operate UI presentation and draft map/mission state, but movement authority and fictional game effects still require deterministic Go validation and the configured human/ROE gate.
 - The user explicitly selected one OpenRouter key installed independently on all twelve nodes. It is root-owned mode `0400` and excluded from Git, images, cloud-init, logs, APIs, and evidence. Rotate toward per-node revocable credentials later; disconnected safety and cached execution must never depend on cloud inference.

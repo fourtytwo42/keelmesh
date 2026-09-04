@@ -56,10 +56,13 @@ authorization.
 
 ## M12 consensus rollout
 
-`infrastructure/m12-target-topology.json` records the desired 2/2/2 placement
-for each six-voter cell. Its state remains `target-not-yet-migrated` until fresh
+`infrastructure/m12-target-topology.json` records the active 2/2/2 placement
+for each six-voter cell. The five migrations completed on 2026-09-04 after fresh
 Proxmox CPU, RAM, thin-pool data/metadata, physical-headroom, VM, snapshot, and
-target-storage checks pass. M12 never faults the management/default-route NIC.
+target-storage checks passed. M12 never faults the management/default-route NIC.
+VM 233 moved off mini43 before VMs 223 and 224 arrived, preventing the temporary
+two-VM RAM spike that an ID-ordered rollout would create. Each guest was stopped,
+moved, restarted, and verified before the next migration. No snapshot was made.
 
 Generate production PKI only on VM 214 into a new mode-0700 directory. The
 initializer refuses to overwrite a non-empty authority. Rotation is staged into

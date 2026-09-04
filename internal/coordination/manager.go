@@ -157,18 +157,42 @@ func (m *Manager) watchLeadership(ch <-chan bool) {
 }
 
 func (m *Manager) advanceEpoch() {
-	if m.raft == nil || m.raft.State() != raft.Leader {
+	for m.raft != nil && m.raft.State() == raft.Leader && !m.closed.Load() {
+		term := parseUint(m.raft.Stats()["term"])
+		// A newly elected leader can be announced before its restored FSM has
+		// applied every committed entry.  Read the epoch only after a barrier so
+		// the next epoch is derived from committed state, never startup state.
+		if err := m.raft.Barrier(m.cfg.ApplyTimeout).Error(); err != nil {
+			m.logger.Warn("coordination leader barrier pending", "cell", m.cfg.Identity.CellID, "term", term, "error", err)
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		if m.raft.State() != raft.Leader || parseUint(m.raft.Stats()["term"]) != term {
+			continue
+		}
+		epoch, _, _, _ := m.fsm.summary()
+		command := m.epochAdvanceCommand(epoch, term, nowUTC())
+		if _, err := m.apply(command); err != nil {
+			m.logger.Error("coordination leader epoch advance failed", "cell", m.cfg.Identity.CellID, "term", term, "error", err)
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		if m.raft.State() == raft.Leader && parseUint(m.raft.Stats()["term"]) == term {
+			m.ready.Store(true)
+		}
 		return
 	}
-	epoch, _, _, _ := m.fsm.summary()
-	payload, hash, _ := canonicalPayload(map[string]any{"term": parseUint(m.raft.Stats()["term"]), "leader": m.cfg.Identity.NodeID})
-	command := domain.ReplicatedCommandV1{SchemaVersion: 1, CommandID: fmt.Sprintf("epoch-%s-%d", m.cfg.Identity.NodeID, epoch+1), RequestID: fmt.Sprintf("leadership-%d", epoch+1), IdempotencyKey: fmt.Sprintf("epoch-%s-%d", m.cfg.Manifest.ClusterID, epoch+1), ActorIdentity: "coordination-runtime", CellID: m.cfg.Identity.CellID, Term: parseUint(m.raft.Stats()["term"]), AuthorityEpoch: epoch + 1, Kind: "coordination.epoch_advance", EntityID: m.cfg.Manifest.ClusterID, Payload: payload, PayloadHash: hash, IssuedAt: nowUTC()}
-	if _, err := m.apply(command); err != nil {
-		m.logger.Error("coordination leader epoch advance failed", "cell", m.cfg.Identity.CellID, "error", err)
-		return
-	}
-	if m.raft.State() == raft.Leader {
-		m.ready.Store(true)
+}
+
+func (m *Manager) epochAdvanceCommand(epoch, term uint64, issuedAt time.Time) domain.ReplicatedCommandV1 {
+	payload, hash, _ := canonicalPayload(map[string]any{"term": term, "leader": m.cfg.Identity.NodeID})
+	identity := fmt.Sprintf("epoch-%s-term-%d-%s", m.cfg.Manifest.ClusterID, term, m.cfg.Identity.NodeID)
+	return domain.ReplicatedCommandV1{
+		SchemaVersion: 1, CommandID: identity, RequestID: "leadership-" + identity,
+		IdempotencyKey: identity, ActorIdentity: "coordination-runtime",
+		CellID: m.cfg.Identity.CellID, Term: term, AuthorityEpoch: epoch + 1,
+		Kind: "coordination.epoch_advance", EntityID: m.cfg.Manifest.ClusterID,
+		Payload: payload, PayloadHash: hash, IssuedAt: issuedAt.UTC(),
 	}
 }
 

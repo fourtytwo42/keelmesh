@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "state": "target-not-yet-migrated",
+  "state": "migrated-raft-rollout-in-progress",
   "quorum": 4,
   "planes": {
     "management": "192.168.50.0/24 tcp/7444",
@@ -11,11 +11,11 @@
     "mini42": ["node-a-03/222", "node-a-06/225", "node-b-02/231", "node-b-03/232"],
     "mini43": ["node-a-04/223", "node-a-05/224", "node-b-05/234", "node-b-06/236"]
   },
-  "required_stopped_migrations": [
+  "completed_stopped_migrations": [
     {"vmid": 222, "from": "fourtyfour", "to": "mini42"},
-    {"vmid": 223, "from": "fourtyfour", "to": "mini43"},
-    {"vmid": 224, "from": "fourtyfour", "to": "mini43"},
     {"vmid": 229, "from": "mini42", "to": "fourtyfour"},
-    {"vmid": 233, "from": "mini43", "to": "fourtyfour"}
+    {"vmid": 233, "from": "mini43", "to": "fourtyfour"},
+    {"vmid": 223, "from": "fourtyfour", "to": "mini43"},
+    {"vmid": 224, "from": "fourtyfour", "to": "mini43"}
   ]
 }
