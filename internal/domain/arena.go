@@ -33,6 +33,11 @@ type ArenaNodeV1 struct {
 	Class               string     `json:"class"`
 	Equipment           []string   `json:"equipment"`
 	TapeDepthSeconds    int        `json:"tape_depth_seconds"`
+	PNTIntegrity        string     `json:"pnt_integrity"`
+	NavigationSource    string     `json:"navigation_source"`
+	GNSSState           string     `json:"gnss_state"`
+	GNSSAccepted        bool       `json:"gnss_accepted"`
+	UncertaintyM        float64    `json:"uncertainty_m"`
 }
 
 type CoordinatorV1 struct {

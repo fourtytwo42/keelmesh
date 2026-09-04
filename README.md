@@ -41,7 +41,7 @@ Product and design records remain available in the [PRD](PRD.md), [implementatio
 
 ## What KeelMesh demonstrates
 
-- A map-first command workspace with 48 persistent named simulated vessels, operational groups, neutral contacts, environmental fixtures, and concurrent missions.
+- A map-first command workspace with twelve persistent named vessels mapped one-to-one to the twelve provisioned VM nodes, optional operator-created groups, neutral contacts, environmental fixtures, and concurrent missions.
 - Manual mission authoring that remains usable with every AI provider offline.
 - Optional AI refinement and a global voice/text assistant grounded in current fleet state and bounded memory.
 - Exact-plan preview, policy validation, hash-bound authorization, signed trajectory programs, and a rolling execution buffer.

@@ -66,6 +66,7 @@ import {
   Save,
   Search,
   Send,
+  Server,
   ShieldCheck,
   Ship,
   Skull,
@@ -2487,6 +2488,7 @@ function vesselFleetHelp(vessel: VesselProfileV2) {
     `${telemetry.mode.replaceAll("_", " ")} · ${telemetry.speed_mps.toFixed(1)} m/s · heading ${Math.round(telemetry.heading_deg)}°`,
     `Reserve ${reservePercent(telemetry.reserve)}% · projected ${reservePercent(telemetry.projected_reserve)}%`,
     `PNT ${telemetry.pnt_integrity} ±${Math.round(telemetry.uncertainty_m)} m · ${telemetry.health}`,
+    vessel.node_id ? `${vessel.node_id.toUpperCase()} · VM ${vessel.vm_id} · ${vessel.node_status} · ${vessel.radio_state}` : "Logical vessel",
     `Group ${group}`,
   ].join("\n");
 }
@@ -3202,7 +3204,7 @@ function VesselInspector({
         <div className="vessel-portrait" style={{ "--vessel-color": vessel.group_color } as CSSProperties}><img src={vesselAsset(vessel.class.id, pirate)} /><i /></div>
         <div>
           <span style={{ color: vessel.group_color }}>
-            {vessel.group_code} · {vessel.group_color_name.toUpperCase()} TEAM · {vessel.class.name.toUpperCase()}
+            {vessel.group_code ? `${vessel.group_code} · ${vessel.group_color_name.toUpperCase()} TEAM · ` : "UNASSIGNED · "}{vessel.class.name.toUpperCase()}
           </span>
           <EditableTitle
             value={vessel.callsign}
@@ -3216,6 +3218,7 @@ function VesselInspector({
           <div className="vessel-state-chips"><b className={t.health === "nominal" ? "nominal" : "warning"}><Activity />{t.health}</b><b><Navigation />{t.mode.replaceAll("_", " ")}</b></div>
         </div>
       </div>
+      {vessel.node_id && <div className="vessel-node-strip"><Server /><span><b>{vessel.node_id.toUpperCase()} · VM {vessel.vm_id}</b><small>{vessel.node_host} · {vessel.management_ip}</small></span><i className={vessel.node_status === "healthy" ? "good" : "warn"}>{vessel.node_status}</i><i className={vessel.radio_state === "connected" ? "good" : "warn"}>{vessel.radio_state}</i></div>}
       <div className="vessel-readiness">
         <div className="reserve-ring" style={{ "--reserve-angle": `${reserveValue * 3.6}deg`, "--ring-color": reserveValue < 30 ? "#cf6d62" : "#70b88f" } as CSSProperties}>
           <span><BatteryCharging /><strong>{reservePercent(t.reserve)}%</strong><small>ENERGY</small></span>
@@ -3232,7 +3235,7 @@ function VesselInspector({
       <div className="vessel-nav-grid">
         <Insight icon={<Gauge />} label="SPEED" value={`${t.speed_mps.toFixed(1)} m/s`} detail={`${vessel.class.max_speed_mps.toFixed(1)} max`} />
         <Insight icon={<Compass />} label="HEADING" value={`${Math.round(t.heading_deg)}°`} detail="true" />
-        <Insight icon={<Satellite />} label="PNT" value={t.pnt_integrity} detail={`±${t.uncertainty_m.toFixed(0)} m`} tone={t.pnt_integrity === "trusted" ? "good" : "warn"} />
+        <Insight icon={<Satellite />} label="PNT" value={t.pnt_integrity} detail={`${vessel.gnss_state || "GNSS"} · ±${t.uncertainty_m.toFixed(0)} m`} tone={t.pnt_integrity === "trusted" ? "good" : "warn"} />
         <Insight icon={<Sun />} label="SOLAR" value={`${vessel.class.solar_peak_kw.toFixed(1)} kW`} detail="peak" />
       </div>
       <h3 className="insight-heading"><Waves /> LOCAL CONDITIONS <span>NOAA-DERIVED FIXTURE</span></h3>
@@ -3259,14 +3262,14 @@ function VesselInspector({
         />
       </div>
       <h3 className="insight-heading"><Network /> REACHABLE SWARM <span>
-          {(reachability?.direct_peers.length ?? 0) +
-            (reachability?.relayed_peers.length ?? 0)}
+          {(reachability?.direct_peers?.length ?? 0) +
+            (reachability?.relayed_peers?.length ?? 0)}
         </span></h3>
       <div className="peer-list">
-        {reachability?.direct_peers.map((p) => (
+        {reachability?.direct_peers?.map((p) => (
           <Peer key={p.vessel_id} p={p} lookup={lookup} />
         ))}
-        {reachability?.relayed_peers.map((p) => (
+        {reachability?.relayed_peers?.map((p) => (
           <Peer key={p.vessel_id} p={p} lookup={lookup} />
         ))}
       </div>

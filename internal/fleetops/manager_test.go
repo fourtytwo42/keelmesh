@@ -15,6 +15,39 @@ import (
 	"github.com/fourtytwo42/keelmesh/internal/trajectory"
 )
 
+func TestMain(m *testing.M) {
+	_ = os.Setenv("KEELMESH_FLEET_PROFILE", "legacy48")
+	os.Exit(m.Run())
+}
+
+func TestVMFleetProfileBindsTwelveUnassignedDispersedNodes(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	m := New("", slog.Default())
+	s := m.Snapshot()
+	land := testLandPolygons(t)
+	if len(s.Vessels) != 12 || len(s.Groups) != 0 || len(s.Collections) != 0 {
+		t.Fatalf("vm fleet = %d vessels, %d groups, %d collections", len(s.Vessels), len(s.Groups), len(s.Collections))
+	}
+	seenNodes, seenVMs := map[string]bool{}, map[int]bool{}
+	for i, vessel := range s.Vessels {
+		if vessel.GroupID != "" || vessel.GroupColorName != "unassigned" {
+			t.Fatalf("%s unexpectedly assigned to %q", vessel.ID, vessel.GroupID)
+		}
+		if vessel.NodeID == "" || vessel.VMID == 0 || vessel.ManagementIP == "" || seenNodes[vessel.NodeID] || seenVMs[vessel.VMID] {
+			t.Fatalf("invalid or duplicate node binding: %#v", vessel)
+		}
+		seenNodes[vessel.NodeID], seenVMs[vessel.VMID] = true, true
+		if pointOnLand(vessel.Telemetry.Position, land) || distanceToShore(vessel.Telemetry.Position, land) < .004 {
+			t.Fatalf("%s was not seeded safely in open water at %v", vessel.DisplayName, vessel.Telemetry.Position)
+		}
+		for j := 0; j < i; j++ {
+			if routeDistance([]domain.GeoPointV2{vessel.Telemetry.Position, s.Vessels[j].Telemetry.Position}) < 3 {
+				t.Fatalf("%s and %s were seeded less than 3 km apart", vessel.ID, s.Vessels[j].ID)
+			}
+		}
+	}
+}
+
 func TestMissionLoopDefaultsOffAndRestartsFromFinalPose(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -242,6 +275,20 @@ func TestReachabilityIgnoresEmptyExternalGroups(t *testing.T) {
 }
 
 func TestSeededVesselsAreInWaterWithShorelineMargin(t *testing.T) {
+	land := testLandPolygons(t)
+	m := New("", slog.Default())
+	for _, vessel := range m.Snapshot().Vessels {
+		if pointOnLand(vessel.Telemetry.Position, land) {
+			t.Fatalf("%s spawned on land at %v", vessel.DisplayName, vessel.Telemetry.Position)
+		}
+		if distanceToShore(vessel.Telemetry.Position, land) < .004 {
+			t.Fatalf("%s spawned too close to the rendered shoreline at %v", vessel.DisplayName, vessel.Telemetry.Position)
+		}
+	}
+}
+
+func testLandPolygons(t *testing.T) [][][]domain.GeoPointV2 {
+	t.Helper()
 	type geometry struct {
 		Type        string          `json:"type"`
 		Coordinates json.RawMessage `json:"coordinates"`
@@ -281,15 +328,7 @@ func TestSeededVesselsAreInWaterWithShorelineMargin(t *testing.T) {
 			land = append(land, polygons...)
 		}
 	}
-	m := New("", slog.Default())
-	for _, vessel := range m.Snapshot().Vessels {
-		if pointOnLand(vessel.Telemetry.Position, land) {
-			t.Fatalf("%s spawned on land at %v", vessel.DisplayName, vessel.Telemetry.Position)
-		}
-		if distanceToShore(vessel.Telemetry.Position, land) < .004 {
-			t.Fatalf("%s spawned too close to the rendered shoreline at %v", vessel.DisplayName, vessel.Telemetry.Position)
-		}
-	}
+	return land
 }
 
 func TestKnownLegacySpawnIsMigratedWithoutMovingAnOperatedVessel(t *testing.T) {

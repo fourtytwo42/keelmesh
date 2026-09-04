@@ -46,20 +46,31 @@ type VesselTelemetryV2 struct {
 }
 
 type VesselProfileV2 struct {
-	SchemaVersion   int               `json:"schema_version"`
-	ID              string            `json:"id"`
-	Designation     string            `json:"designation"`
-	Callsign        string            `json:"callsign"`
-	DisplayName     string            `json:"display_name"`
-	Class           VesselClassV2     `json:"class"`
-	GroupID         string            `json:"group_id"`
-	GroupCode       string            `json:"group_code"`
-	GroupColor      string            `json:"group_color"`
-	GroupColorName  string            `json:"group_color_name"`
-	GroupPattern    string            `json:"group_pattern"`
-	Available       bool              `json:"available"`
-	DecisionCapable bool              `json:"decision_capable"`
-	Telemetry       VesselTelemetryV2 `json:"telemetry"`
+	SchemaVersion    int               `json:"schema_version"`
+	ID               string            `json:"id"`
+	Designation      string            `json:"designation"`
+	Callsign         string            `json:"callsign"`
+	DisplayName      string            `json:"display_name"`
+	Class            VesselClassV2     `json:"class"`
+	GroupID          string            `json:"group_id"`
+	GroupCode        string            `json:"group_code"`
+	GroupColor       string            `json:"group_color"`
+	GroupColorName   string            `json:"group_color_name"`
+	GroupPattern     string            `json:"group_pattern"`
+	Available        bool              `json:"available"`
+	DecisionCapable  bool              `json:"decision_capable"`
+	NodeID           string            `json:"node_id,omitempty"`
+	NodeFaction      string            `json:"node_faction,omitempty"`
+	VMID             int               `json:"vm_id,omitempty"`
+	ManagementIP     string            `json:"management_ip,omitempty"`
+	NodeHost         string            `json:"node_host,omitempty"`
+	NodeStatus       string            `json:"node_status,omitempty"`
+	RadioState       string            `json:"radio_state,omitempty"`
+	InferenceState   string            `json:"inference_state,omitempty"`
+	NavigationSource string            `json:"navigation_source,omitempty"`
+	GNSSState        string            `json:"gnss_state,omitempty"`
+	GNSSAccepted     bool              `json:"gnss_accepted"`
+	Telemetry        VesselTelemetryV2 `json:"telemetry"`
 }
 
 type OperationalGroupV2 struct {

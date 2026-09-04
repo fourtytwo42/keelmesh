@@ -596,6 +596,18 @@ export type VesselProfileV2 = {
   group_color_name: string;
   group_pattern: string;
   available: boolean;
+  decision_capable: boolean;
+  node_id?: string;
+  node_faction?: string;
+  vm_id?: number;
+  management_ip?: string;
+  node_host?: string;
+  node_status?: string;
+  radio_state?: string;
+  inference_state?: string;
+  navigation_source?: string;
+  gnss_state?: string;
+  gnss_accepted: boolean;
   telemetry: {
     position: Point;
     heading_deg: number;
@@ -1083,6 +1095,11 @@ export type ArenaNodeV1 = {
   class: string;
   equipment: string[];
   tape_depth_seconds: number;
+  pnt_integrity: string;
+  navigation_source: string;
+  gnss_state: string;
+  gnss_accepted: boolean;
+  uncertainty_m: number;
 };
 export type CoordinatorV1 = {
   faction: string;

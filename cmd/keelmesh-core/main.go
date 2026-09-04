@@ -108,6 +108,19 @@ func main() {
 	go agentManager.Run(ctx)
 	go fleetManager.Run(ctx)
 	go memoryManager.Run(ctx)
+	go arenaManager.Run(ctx)
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			fleetManager.SyncNodeTopology(arenaManager.InfrastructureSnapshot())
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 	privateServer := &http.Server{Addr: ":8081", Handler: privateHandler(agentManager, fleetManager, arenaManager, memoryManager), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	go func() {
 		logger.Info("keelmesh private AI boundary listening", "address", privateServer.Addr)

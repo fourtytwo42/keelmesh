@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -150,6 +151,7 @@ type Manager struct {
 	simTickMS             int64
 	simulationEpochMS     int64
 	simulationRate        int
+	fleetProfile          string
 }
 
 var callsigns = []string{"Gannet", "Osprey", "Tern", "Petrel", "Shearwater", "Cormorant", "Harrier", "Kite", "Merlin", "Plover", "Skua", "Fulmar", "Albatross", "Razorbill", "Puffin", "Heron", "Kittiwake", "Curlew", "Jaeger", "Avocet", "Sanderling", "Grebe", "Dunlin", "Egret", "Bittern", "Sandpiper", "Stormbird", "Kingfisher", "Loon", "Murre", "Nighthawk", "Pelican", "Rail", "Sparrowhawk", "Turnstone", "Whimbrel", "Auk", "Bunting", "Caspian", "Diver", "Eider", "Frigate", "Godwit", "Hobby", "Ibis", "Junco", "Lapwing", "Merganser"}
@@ -262,7 +264,11 @@ func (m *Manager) surfaceContactsLocked() []domain.SurfaceContactV2 {
 }
 
 func New(databaseURL string, logger *slog.Logger) *Manager {
-	m := &Manager{logger: logger, databaseURL: databaseURL, secret: []byte("keelmesh-m6-runtime-authority"), fleetVersion: 1, vessels: map[string]domain.VesselProfileV2{}, groups: map[string]domain.OperationalGroupV2{}, collections: map[string]domain.SavedCollectionV2{}, missions: map[string]domain.MissionWorkspaceV2{}, drafts: map[string]domain.CommandDraftV2{}, plans: map[string]domain.FleetPlanV2{}, leases: map[string]domain.FleetLeaseV2{}, idempotency: map[string]string{}, startedPlans: map[string]string{}, programs: map[string]domain.TrajectoryProgramV1{}, simulationEpochMS: time.Now().UnixMilli(), simulationRate: 20}
+	profile := strings.ToLower(strings.TrimSpace(os.Getenv("KEELMESH_FLEET_PROFILE")))
+	if profile == "" {
+		profile = "vm12"
+	}
+	m := &Manager{logger: logger, databaseURL: databaseURL, secret: []byte("keelmesh-m6-runtime-authority"), fleetVersion: 1, vessels: map[string]domain.VesselProfileV2{}, groups: map[string]domain.OperationalGroupV2{}, collections: map[string]domain.SavedCollectionV2{}, missions: map[string]domain.MissionWorkspaceV2{}, drafts: map[string]domain.CommandDraftV2{}, plans: map[string]domain.FleetPlanV2{}, leases: map[string]domain.FleetLeaseV2{}, idempotency: map[string]string{}, startedPlans: map[string]string{}, programs: map[string]domain.TrajectoryProgramV1{}, simulationEpochMS: time.Now().UnixMilli(), simulationRate: 20, fleetProfile: profile}
 	m.seed()
 	return m
 }
@@ -296,6 +302,32 @@ func classFor(slot int) domain.VesselClassV2 {
 }
 
 func (m *Manager) seed() {
+	if m.fleetProfile != "legacy48" {
+		m.seedVMFleet()
+		return
+	}
+	m.seedLegacyFleet()
+}
+
+func (m *Manager) seedVMFleet() {
+	for index, spec := range domain.VMFleetSpecs() {
+		class := classFor(spec.ClassSlot)
+		env := environmentAt(spec.Position, float64(index))
+		m.vessels[spec.VesselID] = domain.VesselProfileV2{
+			SchemaVersion: 2, ID: spec.VesselID, Designation: fmt.Sprintf("KM-%03d", spec.VMID), Callsign: spec.Callsign,
+			DisplayName: fmt.Sprintf("%s (KM-%03d)", spec.Callsign, spec.VMID), Class: class,
+			GroupColor: "#737973", GroupColorName: "unassigned", GroupPattern: "unassigned",
+			Available: true, DecisionCapable: true, NodeID: spec.NodeID, NodeFaction: spec.Faction, VMID: spec.VMID,
+			ManagementIP: spec.ManagementIP, NodeHost: spec.Host, NodeStatus: "probing", RadioState: "connected",
+			InferenceState: "connected", NavigationSource: "GNSS + INS + peer corroboration", GNSSState: "nominal", GNSSAccepted: true,
+			Telemetry: domain.VesselTelemetryV2{Position: spec.Position, HeadingDeg: spec.HeadingDeg, SpeedMPS: 0,
+				Reserve: .92 - float64(index%4)*.025, ProjectedReserve: .86 - float64(index%4)*.025, Mode: "station_keep",
+				Health: "nominal", PNTIntegrity: "trusted", UncertaintyM: 4 + float64(index%3), TapeDepthSeconds: 60, Environment: env},
+		}
+	}
+}
+
+func (m *Manager) seedLegacyFleet() {
 	for g := 0; g < 8; g++ {
 		gid := fmt.Sprintf("group-%02d", g+1)
 		members := make([]string, 0, 6)
@@ -320,6 +352,44 @@ func (m *Manager) seed() {
 	}
 	sort.Strings(all)
 	m.collections["collection-relays"] = domain.SavedCollectionV2{SchemaVersion: 2, ID: "collection-relays", Name: "Atlas relay watch", MemberIDs: filterIDs(all, func(v domain.VesselProfileV2) bool { return v.Class.ID == "atlas" }, m.vessels), Revision: 1}
+}
+
+// SyncNodeTopology projects actual VM reachability and simulated mission-plane
+// state onto the corresponding operating vessels without coupling mission
+// authority to the observability path.
+func (m *Manager) SyncNodeTopology(snapshot domain.ArenaSnapshotV1) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	changed := false
+	byNode := make(map[string]domain.ArenaNodeV1, len(snapshot.Nodes))
+	for _, node := range snapshot.Nodes {
+		byNode[node.ID] = node
+	}
+	for id, vessel := range m.vessels {
+		node, ok := byNode[vessel.NodeID]
+		if !ok || vessel.NodeID == "" {
+			continue
+		}
+		status := node.Status
+		if !node.ManagementConnected {
+			status = "unreachable"
+		}
+		inference := "connected"
+		if !node.InferenceConnected {
+			inference = "unavailable"
+		}
+		if vessel.NodeStatus != status || vessel.RadioState != node.RadioState || vessel.InferenceState != inference || vessel.GNSSState != node.GNSSState || vessel.GNSSAccepted != node.GNSSAccepted || vessel.Telemetry.PNTIntegrity != node.PNTIntegrity || vessel.Telemetry.UncertaintyM != node.UncertaintyM {
+			changed = true
+		}
+		vessel.NodeStatus, vessel.RadioState, vessel.InferenceState = status, node.RadioState, inference
+		vessel.NavigationSource, vessel.GNSSState, vessel.GNSSAccepted = node.NavigationSource, node.GNSSState, node.GNSSAccepted
+		vessel.Telemetry.PNTIntegrity, vessel.Telemetry.UncertaintyM = node.PNTIntegrity, node.UncertaintyM
+		vessel.Available = node.ManagementConnected
+		m.vessels[id] = vessel
+	}
+	if changed {
+		m.fleetVersion++
+	}
 }
 
 func spawnPoint(centers []domain.GeoPointV2, group, slot int, longitudeStep, latitudeStep float64) domain.GeoPointV2 {
@@ -557,10 +627,30 @@ func (m *Manager) Reachability(id string) (domain.ReachabilityV2, error) {
 	if !ok {
 		return domain.ReachabilityV2{}, &Error{"VESSEL_NOT_FOUND", "Vessel not found."}
 	}
-	r := domain.ReachabilityV2{SchemaVersion: 2, VesselID: id, Authority: "mission-scoped authority"}
+	r := domain.ReachabilityV2{
+		SchemaVersion: 2,
+		VesselID:      id,
+		Authority:     "mission-scoped authority",
+		DirectPeers:   []domain.ReachabilityPathV2{},
+		RelayedPeers:  []domain.ReachabilityPathV2{},
+		Unreachable:   []string{},
+		ExternalPeers: []domain.ReachabilityPathV2{},
+	}
 	g, grouped := m.groups[v.GroupID]
 	if !grouped {
-		r.Authority = "unassigned · no group movement authority"
+		r.Authority = "unassigned · individual mission authority only"
+		for _, peer := range m.vessels {
+			if peer.ID == id || peer.NodeFaction == "" || peer.NodeFaction != v.NodeFaction || !peer.Available {
+				continue
+			}
+			underlay := []string{"starlink", "halow"}
+			latency := 24.0
+			if v.RadioState == "halow-only" || peer.RadioState == "halow-only" {
+				underlay, latency = []string{"halow"}, 38
+			}
+			r.DirectPeers = append(r.DirectPeers, domain.ReachabilityPathV2{VesselID: peer.ID, State: "reachable", Hops: []string{id, peer.ID}, Underlay: underlay, LatencyMS: latency})
+		}
+		sort.Slice(r.DirectPeers, func(i, j int) bool { return r.DirectPeers[i].VesselID < r.DirectPeers[j].VesselID })
 		return r, nil
 	}
 	for i, peer := range g.MemberIDs {
@@ -1055,8 +1145,9 @@ func (m *Manager) CreateMission(req CreateMissionRequest) (domain.MissionWorkspa
 	return mission, nil
 }
 
-// ResetOperations clears transient command authority while preserving persistent
-// vessel identities, primary groups, and saved collections.
+// ResetOperations clears transient command authority. The VM-backed release
+// profile also returns to its explicit unassigned-vessel baseline; operators
+// may create new groups after reset.
 func (m *Manager) ResetOperations(req Mutation) (domain.FleetSnapshotV2, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1070,16 +1161,37 @@ func (m *Manager) ResetOperations(req Mutation) (domain.FleetSnapshotV2, error) 
 	m.startedPlans = map[string]string{}
 	m.programs = map[string]domain.TrajectoryProgramV1{}
 	m.simulationRate = 20
+	vmSpecs := map[string]domain.NodeFleetSpec{}
+	if m.fleetProfile == "vm12" {
+		m.groups = map[string]domain.OperationalGroupV2{}
+		m.collections = map[string]domain.SavedCollectionV2{}
+		for _, spec := range domain.VMFleetSpecs() {
+			vmSpecs[spec.VesselID] = spec
+		}
+	}
 	for id, vessel := range m.vessels {
 		vessel.Telemetry.MissionID = ""
 		vessel.Telemetry.Route = nil
-		vessel.Telemetry.Mode = "patrol"
-		vessel.Telemetry.SpeedMPS = 0.4
+		if m.fleetProfile == "vm12" {
+			clearVesselGroup(&vessel)
+			if spec, ok := vmSpecs[id]; ok {
+				vessel.Telemetry.Position = spec.Position
+				vessel.Telemetry.HeadingDeg = spec.HeadingDeg
+			}
+			vessel.Telemetry.Mode = "station_keep"
+			vessel.Telemetry.SpeedMPS = 0
+		} else {
+			vessel.Telemetry.Mode = "patrol"
+			vessel.Telemetry.SpeedMPS = 0.4
+		}
 		m.vessels[id] = vessel
 	}
 	m.fleetVersion++
 	m.persistAsync()
 	m.clearMissionPersistenceAsync()
+	if m.fleetProfile == "vm12" {
+		m.clearOrganizationPersistenceAsync()
+	}
 	return m.snapshotLocked(), nil
 }
 func (m *Manager) PatchMission(id string, req PatchMissionRequest) (domain.MissionWorkspaceV2, error) {
@@ -3887,6 +3999,24 @@ func (m *Manager) clearMissionPersistenceAsync() {
 	}()
 }
 
+func (m *Manager) clearOrganizationPersistenceAsync() {
+	if m.databaseURL == "" {
+		return
+	}
+	go func() {
+		m.persistenceMu.Lock()
+		defer m.persistenceMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		pool, err := pgxpool.New(ctx, m.databaseURL)
+		if err != nil {
+			return
+		}
+		defer pool.Close()
+		_, _ = pool.Exec(ctx, `TRUNCATE operational_groups, saved_collections`)
+	}()
+}
+
 // deleteMissionPersistence makes workspace deletion durable. Previously the
 // in-memory mission disappeared but its PostgreSQL row survived and was loaded
 // again after a core restart.
@@ -3954,6 +4084,16 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 		return
 	}
 	defer pool.Close()
+	if m.fleetProfile == "vm12" {
+		var retired int
+		if pool.QueryRow(ctx, `SELECT count(*) FROM fleet_vessels WHERE id NOT LIKE 'vm-vessel-%'`).Scan(&retired) == nil && retired > 0 {
+			// One-time profile migration: old 48-vessel missions and groups cannot
+			// safely retain authority after their target identities are retired.
+			_, _ = pool.Exec(ctx, `TRUNCATE trajectory_programs, mission_command_drafts, fleet_plans, mission_workspaces, operational_groups, saved_collections`)
+			_, _ = pool.Exec(ctx, `DELETE FROM fleet_vessels WHERE id NOT LIKE 'vm-vessel-%'`)
+			m.logger.Info("migrated operating fleet to twelve VM-backed vessels", "retired_vessels", retired)
+		}
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	load := func(query string, apply func([]byte)) {
@@ -3978,6 +4118,9 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 				// than operator identity. Refresh them when older persisted profiles
 				// load so range and solar behavior cannot remain on stale constants.
 				v.Class = seeded.Class
+				v.NodeID, v.NodeFaction, v.VMID, v.ManagementIP, v.NodeHost = seeded.NodeID, seeded.NodeFaction, seeded.VMID, seeded.ManagementIP, seeded.NodeHost
+			} else if m.fleetProfile == "vm12" {
+				return
 			}
 			// Current simulated nodes all expose an inference route. Future physical
 			// deployments may persist false for nodes without a GPU/provider.

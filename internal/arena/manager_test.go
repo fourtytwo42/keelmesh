@@ -69,6 +69,52 @@ func TestCoordinatorFailoverKeepsQuorumAndInference(t *testing.T) {
 	}
 }
 
+func TestStarlinkFallsBackToHaLowWithoutTouchingManagementOrInference(t *testing.T) {
+	m := New()
+	s, err := m.Fault(FaultRequest{ArenaMutationV1: mutation(m.Snapshot("A").StateVersion, "starlink"), Faction: "A", Kind: "fail_starlink"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.RadioPlane != "HaLow-only" {
+		t.Fatalf("radio plane = %q", s.RadioPlane)
+	}
+	for _, node := range s.Nodes {
+		if node.RadioState != "halow-only" || !node.ManagementConnected || !node.InferenceConnected {
+			t.Fatalf("bad failover state: %#v", node)
+		}
+	}
+}
+
+func TestGNSSSpoofAndJamAreRejectedWithoutMovingFusedPosition(t *testing.T) {
+	m := New()
+	before := m.Snapshot("A").Nodes[0]
+	spoofed, err := m.Fault(FaultRequest{ArenaMutationV1: mutation(m.Snapshot("A").StateVersion, "spoof"), Faction: "A", NodeID: before.ID, Kind: "spoof_gnss"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var node domain.ArenaNodeV1
+	for _, candidate := range spoofed.Nodes {
+		if candidate.ID == before.ID {
+			node = candidate
+		}
+	}
+	if node.Position != before.Position || node.GNSSAccepted || node.GNSSState != "spoof rejected" || node.PNTIntegrity != "suspect" || !strings.Contains(node.NavigationSource, "INS") {
+		t.Fatalf("spoof was not safely rejected: %#v", node)
+	}
+	jammed, err := m.Fault(FaultRequest{ArenaMutationV1: mutation(spoofed.StateVersion, "jam"), Faction: "A", NodeID: before.ID, Kind: "jam_gnss"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range jammed.Nodes {
+		if candidate.ID == before.ID {
+			node = candidate
+		}
+	}
+	if node.Position != before.Position || node.GNSSAccepted || node.GNSSState != "jammed" || node.PNTIntegrity != "degraded" || node.UncertaintyM <= before.UncertaintyM {
+		t.Fatalf("jam fallback was not bounded: %#v", node)
+	}
+}
+
 func TestPiratePersonaChangesVoiceWithoutExpandingAuthority(t *testing.T) {
 	m := New()
 	s := m.Snapshot("A")

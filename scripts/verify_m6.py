@@ -45,10 +45,11 @@ call(
     mutation("reset", fleet["fleet_version"]),
 )
 fleet = call("/api/v2/fleet")
-assert len(fleet["vessels"]) == 48
-assert len(fleet["groups"]) >= 8
-assert len({v["id"] for v in fleet["vessels"]}) == 48
-assert len({v["callsign"] for v in fleet["vessels"]}) == 48
+assert len(fleet["vessels"]) == 12
+assert len(fleet["groups"]) == 0
+assert len({v["id"] for v in fleet["vessels"]}) == 12
+assert len({v["callsign"] for v in fleet["vessels"]}) == 12
+assert all(v["node_id"] and v["vm_id"] and not v["group_id"] for v in fleet["vessels"])
 assert fleet["environment"]["label"] == "NOAA-derived simulation fixture"
 contacts = fleet["surface_contacts"]
 assert len(contacts) == 16
@@ -58,13 +59,24 @@ assert {contact["class"] for contact in contacts} == {"container", "tanker", "fe
 contact = call(f"/api/v2/surface-contacts/{contacts[0]['id']}")
 assert contact["boat_id"] == "NPC-4101" and contact["looping"] and len(contact["route"]) >= 2
 
+group_specs = [
+    ("North Watch", "#e9a93f", fleet["vessels"][0:4]),
+    ("Sound Watch", "#62c5a8", fleet["vessels"][4:8]),
+    ("South Watch", "#d86f5f", fleet["vessels"][8:12]),
+]
+groups = []
+for index, (name, color, vessels) in enumerate(group_specs, 1):
+    current = call("/api/v2/fleet")
+    groups.append(call("/api/v2/groups", {**mutation(f"group-{index}", current["fleet_version"]), "name": name, "color": color, "pattern": "solid", "member_ids": [v["id"] for v in vessels]}, 201))
+
+fleet = call("/api/v2/fleet")
 follow_mission = call(
     "/api/v2/missions",
     {
         **mutation("follow-mission", fleet["fleet_version"]),
         "name": "Surface Contact Watch",
         "objective": "Follow a selected fictional contact",
-        "target_ids": fleet["groups"][0]["member_ids"],
+        "target_ids": groups[0]["member_ids"],
     },
     201,
 )
@@ -88,21 +100,16 @@ call(
 )
 fleet = call("/api/v2/fleet")
 
-for group in fleet["groups"][:8]:
-    members = [v for v in fleet["vessels"] if v["id"] in group["member_ids"]]
-    mix = {name: sum(v["class"]["id"] == name for v in members) for name in ("kestrel", "mariner", "atlas")}
-    assert mix == {"kestrel": 3, "mariner": 2, "atlas": 1}, (group["id"], mix)
-
 first = fleet["vessels"][0]
 reach = call(f"/api/v2/vessels/{first['id']}/reachability")
 assert reach["vessel_id"] == first["id"]
-assert len(reach["direct_peers"]) + len(reach["relayed_peers"]) == 5
-assert reach["authority"] and reach["reachable_outside_group"]
+assert len(reach["direct_peers"]) + len(reach["relayed_peers"]) == 3
+assert reach["authority"]
 
 collection_payload = {
     **mutation("collection-create", fleet["fleet_version"]),
     "name": "Interview watch",
-    "member_ids": [fleet["groups"][0]["member_ids"][0], fleet["groups"][1]["member_ids"][0]],
+    "member_ids": [groups[0]["member_ids"][0], groups[1]["member_ids"][0]],
 }
 collection = call("/api/v2/collections", collection_payload, 201)
 collection = call(
@@ -117,7 +124,7 @@ collection = call(
 assert collection["name"] == "Interview relay watch" and collection["revision"] == 2
 
 missions = []
-for index, group in enumerate(fleet["groups"][:3], 1):
+for index, group in enumerate(groups, 1):
     current = call("/api/v2/fleet")
     mission = call(
         "/api/v2/missions",
@@ -148,9 +155,9 @@ geometry = call(
     f"/api/v2/missions/{mission['id']}/geometry",
     {
         **mutation("geometry", mission["version"]),
-        "included_areas": [[[-71.43, 41.45], [-71.30, 41.45], [-71.30, 41.34], [-71.43, 41.34], [-71.43, 41.45]]],
-        "exclusion_areas": [[[-71.38, 41.40], [-71.36, 41.40], [-71.36, 41.38], [-71.38, 41.38], [-71.38, 41.40]]],
-        "waypoints": [[-71.41, 41.43], [-71.33, 41.36]],
+        "included_areas": [[[-71.55, 41.08], [-71.15, 41.08], [-71.15, 41.16], [-71.55, 41.16], [-71.55, 41.08]]],
+        "exclusion_areas": [[[-71.37, 41.11], [-71.35, 41.11], [-71.35, 41.10], [-71.37, 41.10], [-71.37, 41.11]]],
+        "waypoints": [[-71.34, 41.12], [-71.32, 41.14]],
         "pois": [],
     },
 )
@@ -218,13 +225,18 @@ assert next(v for v in voices if v["id"] == "barbossa")["name"] == "Captain Barb
 speech = call("/api/v2/speech/capabilities")
 assert speech["tts_engine"] == "Pocket TTS" and speech["transcription_routes"][-1] == "typed-input"
 
+final_fleet = call("/api/v2/fleet")
+call("/api/v2/scenarios/fleet-operations:reset", mutation("final-reset", final_fleet["fleet_version"]))
+final_fleet = call("/api/v2/fleet")
+assert len(final_fleet["vessels"]) == 12 and len(final_fleet["groups"]) == 0 and len(final_fleet["missions"]) == 0
+
 print(
     json.dumps(
         {
             "status": "pass",
-            "vessels": 48,
+            "vessels": 12,
             "surface_contacts": len(contacts),
-            "primary_groups": 8,
+            "primary_groups": 0,
             "concurrent_missions": 3,
             "reachability_peers": len(reach["direct_peers"]) + len(reach["relayed_peers"]),
             "plan_options": len(plans),
