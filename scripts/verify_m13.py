@@ -73,7 +73,7 @@ def main() -> None:
     assert {item["id"] for item in summary["planes"]} == {"edge", "coordination", "data", "ai"}
     assert all("source" in item and "measured" in item for item in summary["planes"])
     duplicate_slo = next(item for item in summary["slos"] if item["id"] == "duplicate-effects")
-    assert duplicate_slo["measured"] is False or any(item["outcome"] == "pass" for item in drills["drills"])
+    assert duplicate_slo["measured"] is False or any(item["outcome"] == "passed" for item in drills["drills"])
     assert capacity["capacity"][0]["asset_count"] == 12 and capacity["capacity"][0]["evidence_class"] == "measured"
     assert all(item["evidence_class"] == "projected" for item in capacity["capacity"][1:])
     assert all(item["evidence_class"] == "projected" for item in costs["cost"])
@@ -81,7 +81,7 @@ def main() -> None:
     assert evaluation["promotion_state"] == "awaiting_privileged_human_decision"
     drill = run_worker_drill(base) if args.run_worker_drill else None
     if drill is not None:
-        assert drill["outcome"] == "pass", drill
+        assert drill["outcome"] == "passed", drill
         assert drill["evidence_hash"].startswith("sha256:")
     result = {"schema_version": 1, "verified_at": summary["sampled_at"], "base_url": base, "commit": summary["commit"], "planes": summary["planes"], "slos": summary["slos"], "capacity": capacity, "cost_model": costs, "evaluation": evaluation, "recent_trace_count": len(traces["traces"]), "latest_worker_drill": drill, "status": "pass"}
     encoded = json.dumps(result, indent=2, sort_keys=True)
