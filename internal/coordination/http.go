@@ -18,7 +18,12 @@ import (
 	"github.com/fourtytwo42/keelmesh/internal/edgeexec"
 )
 
-const maxCoordinationBody = 1 << 20
+// Complete finite M14 programs are quorum-committed as exact canonical bytes.
+// A two-hour, six-vessel program contains thousands of signed ten-second
+// segments, so the former 1 MiB mutation envelope was too small. This limit is
+// private, mTLS-authenticated, and remains bounded independently of public API
+// request limits.
+const maxCoordinationBody = 64 << 20
 
 func (m *Manager) StartManagement(ctx context.Context) error {
 	if m.cfg.Mode == ModeSimulated || m.cfg.Identity.NodeID == "" {
