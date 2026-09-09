@@ -66,7 +66,7 @@ try:
     plans, _ = call(f"/api/v2/missions/{mission_id}/plans", {**mutation("plans", mission["version"]), "draft_id": draft["id"]}, 201, "POST")
     plan = next(candidate for candidate in plans["plans"] if candidate["policy_status"] != "prohibited")
     mission, _ = call(f"/api/v2/missions/{mission_id}")
-    lease, _ = call(f"/api/v2/missions/{mission_id}/plans/{plan['id']}:authorize", {**mutation("authorize", mission["version"]), "plan_hash": plan["content_hash"], "operator_id": "m14-verifier"}, 201, "POST")
+    lease, _ = call(f"/api/v2/missions/{mission_id}/plans/{plan['id']}:authorize", {**mutation("authorize", mission["version"]), "plan_hash": plan["content_hash"], "operator_id": "demo-operator"}, 201, "POST")
     mission, _ = call(f"/api/v2/missions/{mission_id}")
     started, _ = call(f"/api/v2/missions/{mission_id}/plans/{plan['id']}:start", {**mutation("start", mission["version"]), "plan_hash": plan["content_hash"], "lease_id": lease["id"]}, method="POST")
     assert started["status"] == "executing"
