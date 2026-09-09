@@ -21,6 +21,7 @@ import (
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 	"github.com/fourtytwo42/keelmesh/internal/fleetops"
 	"github.com/fourtytwo42/keelmesh/internal/memory"
+	"github.com/fourtytwo42/keelmesh/internal/observability"
 	"github.com/fourtytwo42/keelmesh/internal/platform"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -38,6 +39,7 @@ type Server struct {
 	memory         *memory.Manager
 	coordination   *coordination.Manager
 	coordGateway   *coordination.Gateway
+	tracer         *observability.Tracer
 	speechURL      string
 	metricsHandler http.Handler
 }
@@ -50,6 +52,7 @@ func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...any) *
 	var memoryManager *memory.Manager
 	var coordinationManager *coordination.Manager
 	var coordinationGateway *coordination.Gateway
+	var tracer *observability.Tracer
 	for _, value := range managers {
 		switch typed := value.(type) {
 		case *platform.Manager:
@@ -66,9 +69,11 @@ func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...any) *
 			coordinationManager = typed
 		case *coordination.Gateway:
 			coordinationGateway = typed
+		case *observability.Tracer:
+			tracer = typed
 		}
 	}
-	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager, agent: agentManager, fleetops: fleetManager, arena: arenaManager, memory: memoryManager, coordination: coordinationManager, coordGateway: coordinationGateway, speechURL: strings.TrimRight(os.Getenv("KEELMESH_SPEECH_URL"), "/")}
+	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager, agent: agentManager, fleetops: fleetManager, arena: arenaManager, memory: memoryManager, coordination: coordinationManager, coordGateway: coordinationGateway, tracer: tracer, speechURL: strings.TrimRight(os.Getenv("KEELMESH_SPEECH_URL"), "/")}
 	if manager != nil {
 		registry := prometheus.NewRegistry()
 		gauges := []struct {
@@ -78,6 +83,9 @@ func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...any) *
 		for _, g := range gauges {
 			g := g
 			registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: g.name, Help: g.help}, func() float64 { return g.value(manager.Snapshot().Metrics) }))
+		}
+		if tracer != nil {
+			registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "keelmesh_trace_export_dropped_total", Help: "Trace spans dropped because the bounded exporter queue or private collector was unavailable."}, func() float64 { return float64(tracer.Dropped()) }))
 		}
 		server.metricsHandler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	}
@@ -116,6 +124,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/retrieval/similar", s.retrieval)
 	mux.HandleFunc("GET /api/v1/evidence/{run_id}", s.evidence)
 	mux.HandleFunc("POST /api/v1/scenarios/scale-lab:reset", s.resetPlatform)
+	mux.HandleFunc("GET /api/v6/platform/traces/{trace_id}", s.platformTraceV6)
+	mux.HandleFunc("GET /api/v6/platform/summary", s.platformSummaryV6)
+	mux.HandleFunc("GET /api/v6/platform/slo", s.platformSLOV6)
+	mux.HandleFunc("GET /api/v6/platform/traces", s.platformTracesV6)
+	mux.HandleFunc("GET /api/v6/platform/capacity", s.platformCapacityV6)
+	mux.HandleFunc("GET /api/v6/platform/cost-model", s.platformCostV6)
+	mux.HandleFunc("GET /api/v6/platform/drills", s.platformDrillsV6)
+	mux.HandleFunc("POST /api/v6/platform/drills", s.startPlatformDrillV6)
+	mux.HandleFunc("GET /api/v6/platform/drills/{drill_id}", s.platformDrillV6)
+	mux.HandleFunc("POST /api/v6/platform/drills/{action}", s.abortPlatformDrillV6)
+	mux.HandleFunc("GET /api/v6/platform/evidence/{evidence_id}", s.platformEvidenceV6)
+	mux.HandleFunc("GET /api/v6/platform/evaluations/{episode_id}", s.platformEvaluationV6)
 	mux.HandleFunc("GET /api/v1/ai", s.aiSnapshot)
 	mux.HandleFunc("GET /api/v1/incidents", s.incidents)
 	mux.HandleFunc("GET /api/v1/incidents/{id}", s.incident)
@@ -208,15 +228,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v6/coordination/cells", s.coordinationCellsV6)
 	mux.HandleFunc("GET /api/v6/coordination/cells/{id}", s.coordinationCellV6)
 	mux.HandleFunc("GET /api/v6/coordination/cells/{id}/log", s.coordinationLogV6)
+	mux.HandleFunc("POST /api/v6/coordination/cells/{id}/barriers", s.coordinationBarrierV6)
 	mux.HandleFunc("GET /api/v6/coordination/commands/{id}/proof", s.coordinationProofV6)
 	mux.HandleFunc("GET /api/v6/coordination/cross-cell/{id}", s.crossCellV6)
 	mux.HandleFunc("GET /api/v6/coordination/security", s.coordinationSecurityV6)
 	mux.Handle("GET /", spaHandler(s.web))
-	return requestLog(s.logger, s.coordinationMutationMiddleware(mux))
+	handler := requestLog(s.logger, s.coordinationMutationMiddleware(mux))
+	if s.tracer != nil {
+		handler = s.tracer.Middleware(handler)
+	}
+	return handler
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m12", "started_at": s.startedAt.Format(time.RFC3339)})
+	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m13", "started_at": s.startedAt.Format(time.RFC3339)})
 }
 func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
@@ -429,6 +454,28 @@ func (s *Server) aiSnapshot(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.agent.Snapshot())
+}
+
+func (s *Server) platformTraceV6(w http.ResponseWriter, r *http.Request) {
+	if s.platform == nil {
+		writeJSON(w, http.StatusServiceUnavailable, domain.APIError{Code: "PLATFORM_UNAVAILABLE", Message: "Platform telemetry is disabled."})
+		return
+	}
+	trace, err := s.platform.Trace(r.Context(), r.PathValue("trace_id"))
+	if err != nil {
+		var platformErr *platform.Error
+		if errors.As(err, &platformErr) {
+			status := http.StatusNotFound
+			if platformErr.Code == "PLATFORM_UNAVAILABLE" {
+				status = http.StatusServiceUnavailable
+			}
+			writeJSON(w, status, domain.APIError{Code: platformErr.Code, Message: platformErr.Message})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, domain.APIError{Code: "PLATFORM_UNAVAILABLE", Message: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, trace)
 }
 func (s *Server) incidents(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"incidents": s.agent.Incidents()})

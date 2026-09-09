@@ -164,6 +164,7 @@ type PlatformSnapshotV1 struct {
 	Quarantine    []QuarantineRecordV1    `json:"quarantine"`
 	Replay        *ReplayRunV1            `json:"replay,omitempty"`
 	SelectedTrace []TraceStageV1          `json:"selected_trace"`
+	RealTrace     *TraceSnapshotV1        `json:"real_trace,omitempty"`
 	Retrieval     []RetrievalHitV1        `json:"retrieval"`
 	Summary       string                  `json:"summary"`
 }

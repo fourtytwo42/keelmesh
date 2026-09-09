@@ -5,7 +5,9 @@ import platformJSON from "../../contracts/fixtures/platform-snapshot-v1.json";
 import agentJSON from "../../contracts/fixtures/agent-snapshot-v1.json";
 import quietFleetJSON from "../../contracts/fixtures/quiet-fleet-snapshot-v1.json";
 import memoryJSON from "../../contracts/fixtures/memory-snapshot-v1.json";
-import type { AgentSnapshot, MemorySnapshotV1, MissionIntent, PlatformSnapshot, QuietFleetSnapshot, ResilienceSnapshot } from "./types";
+import platformProofJSON from "../../contracts/fixtures/platform-proof-summary-v1.json";
+import platformDrillJSON from "../../contracts/fixtures/platform-drill-receipt-v1.json";
+import type { AgentSnapshot, MemorySnapshotV1, MissionIntent, PlatformDrillReceiptV1, PlatformProofSummaryV1, PlatformSnapshot, QuietFleetSnapshot, ResilienceSnapshot } from "./types";
 
 describe("shared contract fixtures", () => {
   it("reads MissionIntentV1 using the TypeScript contract", () => {
@@ -50,5 +52,14 @@ describe("shared contract fixtures", () => {
     expect(fixture.embedding_version).toBe("all-MiniLM-L6-v2-onnx-v1");
     expect(fixture.sync[0].central_watermark).toBe(42);
     expect(fixture.memory_lab.enabled).toBe(true);
+  });
+
+  it("reads M13 platform proof and drill receipts", () => {
+    const proof = platformProofJSON as PlatformProofSummaryV1;
+    const drill = platformDrillJSON as PlatformDrillReceiptV1;
+    expect(proof.planes).toHaveLength(4);
+    expect(proof.slos.find((item)=>item.id==="duplicate-effects")?.measured).toBe(false);
+    expect(drill.outcome).toBe("passed");
+    expect(drill.expected_invariants).toContain("committed edge missions continue");
   });
 });

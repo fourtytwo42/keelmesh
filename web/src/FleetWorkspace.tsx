@@ -16,6 +16,7 @@ import type {
   MissionWorkspaceV2,
   OperationalGroupV2,
   PlatformSnapshot,
+  PlatformDrillReceiptV1,
   Point,
   ReachabilityV2,
   SurfaceContactV2,
@@ -2051,6 +2052,25 @@ export function FleetWorkspace() {
       setWindows(new Set(["cutaway"]));
       open("cutaway");
     }
+    if (action === "show-data-plane") {
+      const snapshot = await api<PlatformSnapshot>("/api/v1/platform");
+      const target = snapshot.workers.find((worker) => worker.id === "worker-2" && worker.state === "running") ?? snapshot.workers.find((worker) => worker.state === "running");
+      if (!target) throw new Error("No healthy worker is available for the guided recovery proof.");
+      const receipt = await api<PlatformDrillReceiptV1>("/api/v6/platform/drills", {
+        method: "POST",
+        body: JSON.stringify({
+          request_id: requestID("guided-platform-drill"),
+          idempotency_key: requestID("guided-platform-drill-idem"),
+          expected_platform_state_version: snapshot.state_version,
+          type: "data_pipeline_worker_recovery",
+          target_id: target.id,
+          actor_identity: "guided-demo-operator",
+          confirmed: true,
+        }),
+      });
+      await waitForDemo(async () => api<PlatformDrillReceiptV1>(`/api/v6/platform/drills/${receipt.id}`), (value) => value.state !== "running", 90_000);
+      setPlatform(await api<PlatformSnapshot>("/api/v1/platform"));
+    }
     if (action === "show-ai-lab") {
       setWindows(new Set(["engineer"]));
       open("engineer");
@@ -2333,7 +2353,7 @@ export function FleetWorkspace() {
         height: Math.min(740, window.innerHeight - 146),
       },
       content: (
-        <EngineerView value={agent} memory={memory} coordination={coordination} onChange={setAgent} onOpenSystem={()=>open("cutaway")} onError={setError} />
+        <EngineerView value={agent} platform={platform} memory={memory} coordination={coordination} onChange={setAgent} onOpenSystem={()=>open("cutaway")} onError={setError} />
       ),
     });
   if (windows.has("cutaway") && platform && legacy)

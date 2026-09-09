@@ -10,7 +10,7 @@ This is the maintained documentation portal for operators, engineers, reviewers,
 | Mission operator | [Operator guide](OPERATOR_GUIDE.md) → [Operations](OPERATIONS.md) |
 | Application engineer | [Architecture](ARCHITECTURE.md) → [Reference](REFERENCE.md) → [Verification](VERIFICATION.md) |
 | AI/ML engineer | [AI and memory](AI_AND_MEMORY.md) → [Security](SECURITY.md) → [Verification](VERIFICATION.md) |
-| Platform/SRE owner | [Operations](OPERATIONS.md) → [Architecture](ARCHITECTURE.md) → [Verification](VERIFICATION.md) |
+| Platform/SRE owner | [Platform proof plan](PLATFORM_PROOF_PLAN.md) → [Platform proof operations](PLATFORM_PROOF.md) → [Operations](OPERATIONS.md) → [Architecture](ARCHITECTURE.md) → [Verification](VERIFICATION.md) |
 
 ## Catalog
 
@@ -19,9 +19,11 @@ This is the maintained documentation portal for operators, engineers, reviewers,
 - [AI and memory](AI_AND_MEMORY.md): providers, MCP, A2UI, RAG, memory, and node caches.
 - [Operations](OPERATIONS.md): secrets, deployment, health, reset, recovery, and evidence.
 - [Security](SECURITY.md): trust boundaries, authorization, networks, credentials, and abuse resistance.
+- [Platform proof operations](PLATFORM_PROOF.md): M13 evidence APIs, tracing, drill execution, and GNSS evaluation.
 - [Verification](VERIFICATION.md): test layers, gates, evidence, and known coverage debt.
 - [Reference](REFERENCE.md): APIs, service roles, ports, compatibility, and source layout.
 - [Status](STATUS.md): delivered milestones, limitations, and roadmap.
+- [M13 cloud platform proof](PLATFORM_PROOF_PLAN.md): active plan for distributed tracing, SLO-backed failure drills, the evaluation data flywheel, capacity/cost evidence, and the interview-facing platform demonstration.
 
 ## Source-of-truth hierarchy
 

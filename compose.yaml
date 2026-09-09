@@ -45,7 +45,7 @@ services:
     build: &app-build
       context: .
       dockerfile: Dockerfile
-    image: keelmesh/core:m11
+    image: keelmesh/core:m13
     command: ["--role", "migrate"]
     environment: &app-env
       KEELMESH_DATABASE_URL: postgres://keelmesh:keelmesh@postgres:5432/keelmesh?sslmode=disable
@@ -57,13 +57,16 @@ services:
       KEELMESH_MCP_SEEDER_TOKEN_FILE: /run/keelmesh-auth/seeder/token
       KEELMESH_MCP_CONTROL_TOKEN_FILE: /run/keelmesh-auth/control/token
       KEELMESH_SPEECH_URL: http://speech:8091
+      KEELMESH_OTLP_ENDPOINT: http://trace-collector:4318/v1/traces
+      KEELMESH_OTLP_TOKEN_FILE: /run/keelmesh-auth/otel/token
+      KEELMESH_PLATFORM_EVIDENCE_DIR: /var/lib/keelmesh/evidence
     depends_on:
       postgres:
         condition: service_healthy
     restart: "no"
 
   topic-init:
-    image: keelmesh/core:m11
+    image: keelmesh/core:m13
     command: ["--role", "topic-init"]
     environment: *app-env
     depends_on:
@@ -91,10 +94,11 @@ services:
         test -s /seeder/token || head -c 32 /dev/urandom | base64 > /seeder/token
         test -s /core-ai/token || head -c 32 /dev/urandom | base64 > /core-ai/token
         test -s /control/token || head -c 32 /dev/urandom | base64 > /control/token
+        test -s /otel/token || head -c 32 /dev/urandom | base64 > /otel/token
         cp /run/secrets/openrouter_api_key /openrouter/token
         cp /run/secrets/openai_api_key /openai/token
         cp /run/secrets/openai_api_key /openai-core/token
-        chmod 0444 /investigator/token /seeder/token /core-ai/token /control/token
+        chmod 0444 /investigator/token /seeder/token /core-ai/token /control/token /otel/token
         chown 10001:10001 /openrouter/token
         chown 10001:10001 /openai/token
         chown 100:101 /openai-core/token
@@ -106,6 +110,7 @@ services:
       - mcp-seeder-token:/seeder
       - core-ai-token:/core-ai
       - mcp-control-token:/control
+      - otel-token:/otel
       - openrouter-runtime:/openrouter
       - openai-runtime:/openai
       - openai-core-runtime:/openai-core
@@ -116,12 +121,14 @@ services:
 
   core:
     build: *app-build
-    image: keelmesh/core:m11
+    image: keelmesh/core:m13
     restart: unless-stopped
     environment:
       <<: *app-env
       OPENAI_API_KEY_FILE: /run/keelmesh-auth/openai/token
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
+      KEELMESH_PLATFORM_DRILLS_ENABLED: ${KEELMESH_PLATFORM_DRILLS_ENABLED:-false}
+      GIT_COMMIT: ${GIT_COMMIT:-development}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -135,6 +142,8 @@ services:
       - mcp-seeder-token:/run/keelmesh-auth/seeder:ro
       - mcp-control-token:/run/keelmesh-auth/control:ro
       - openai-core-runtime:/run/keelmesh-auth/openai:ro
+      - otel-token:/run/keelmesh-auth/otel:ro
+      - ./evidence/runtime:/var/lib/keelmesh/evidence:ro
     ports:
       - "${KEELMESH_PORT:-8080}:8080"
     healthcheck:
@@ -145,7 +154,7 @@ services:
       start_period: 5s
 
   player-b-ingress:
-    image: keelmesh/core:m11
+    image: keelmesh/core:m13
     entrypoint: ["/usr/local/bin/keelmesh-ingress"]
     environment:
       KEELMESH_CORE_URL: http://core:8080
@@ -158,11 +167,12 @@ services:
     restart: unless-stopped
 
   loadgen:
-    image: keelmesh/core:m11
+    image: keelmesh/core:m13
     command: ["--role", "loadgen"]
     environment: *app-env
     volumes:
       - loadgen-data:/data
+      - otel-token:/run/keelmesh-auth/otel:ro
     depends_on:
       topic-init:
         condition: service_completed_successfully
@@ -171,7 +181,7 @@ services:
     restart: unless-stopped
 
   worker-1: &worker
-    image: keelmesh/core:m11
+    image: keelmesh/core:m13
     command: ["--role", "worker-supervisor"]
     environment:
       <<: *app-env
@@ -179,6 +189,10 @@ services:
     depends_on:
       topic-init:
         condition: service_completed_successfully
+      trace-collector:
+        condition: service_healthy
+    volumes:
+      - otel-token:/run/keelmesh-auth/otel:ro
     restart: unless-stopped
 
   worker-2:
@@ -194,7 +208,7 @@ services:
       KEELMESH_WORKER_ID: worker-3
 
   memory-worker:
-    image: keelmesh/core:m11
+    image: keelmesh/core:m13
     command: ["--role", "memory-worker"]
     environment: *app-env
     depends_on:
@@ -202,11 +216,31 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  trace-collector:
+    image: keelmesh/core:m13
+    command: ["--role", "trace-collector"]
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      ai-auth-init:
+        condition: service_completed_successfully
+    volumes:
+      - otel-token:/run/keelmesh-auth/otel:ro
+    ports:
+      - "${KEELMESH_OTLP_BIND:-127.0.0.1}:4318:4318"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4318/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   ai-index:
     build:
       context: .
       dockerfile: Dockerfile.ai
-    image: keelmesh/ai:m11
+    image: keelmesh/ai:m13
     command: ["python", "-m", "keelmesh_ai.index"]
     depends_on:
       ai-auth-init:
@@ -220,7 +254,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ai
-    image: keelmesh/ai:m11
+    image: keelmesh/ai:m13
     restart: unless-stopped
     environment:
       OPENAI_API_KEY_FILE: /run/keelmesh-auth/openai/token
@@ -292,7 +326,7 @@ services:
       minio:
         condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
-    command: ["mc alias set memory http://minio:9000 keelmesh-memory \"$${KEELMESH_MINIO_PASSWORD}\" && mc mb --ignore-existing memory/keelmesh-memory && mc anonymous set none memory/keelmesh-memory"]
+    command: ["mc alias set memory http://minio:9000 keelmesh-memory \"$${KEELMESH_MINIO_PASSWORD}\" && mc mb --ignore-existing memory/keelmesh-memory && mc anonymous set none memory/keelmesh-memory && mc quota set memory/keelmesh-memory --size 2GiB"]
     environment:
       KEELMESH_MINIO_PASSWORD: ${KEELMESH_MINIO_PASSWORD:-keelmesh-memory-lab-only}
     restart: "no"
@@ -302,7 +336,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.memory-lab
-    image: keelmesh/memory-lab:m11
+    image: keelmesh/memory-lab:m13
     command: ["mlflow", "server", "--host", "0.0.0.0", "--port", "5000", "--allowed-hosts", "mlflow,mlflow:5000,localhost,127.0.0.1", "--backend-store-uri", "postgresql+psycopg2://keelmesh:keelmesh@postgres:5432/keelmesh", "--artifacts-destination", "s3://keelmesh-memory"]
     environment:
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
@@ -317,10 +351,13 @@ services:
 
   dagster:
     profiles: ["memory-lab"]
-    image: keelmesh/memory-lab:m11
+    image: keelmesh/memory-lab:m13
     command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000", "-f", "/opt/keelmesh-memory-lab/memorylab/definitions.py"]
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: keelmesh-memory
+      AWS_SECRET_ACCESS_KEY: ${KEELMESH_MINIO_PASSWORD:-keelmesh-memory-lab-only}
     tmpfs:
       - /tmp:size=128m
     depends_on:
@@ -339,6 +376,7 @@ volumes:
   openrouter-runtime:
   openai-runtime:
   openai-core-runtime:
+  otel-token:
   memory-artifacts:
 
 secrets:

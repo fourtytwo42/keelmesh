@@ -41,9 +41,13 @@ planes:
 - `eth1`: simulated mission radio on `10.77.0.0/24`, with no default route.
 
 `infrastructure/m7-radio-fault` may be installed as
-`/usr/local/sbin/m7-radio-fault`. It accepts `degrade`, `partition`, or
-`restore`, rejects a requested interface other than `eth1`, refuses to run if
-`eth1` is the default route, and schedules rollback before applying a fault.
+`/usr/local/sbin/m7-radio-fault`. It accepts `degrade`, full-node `partition`,
+peer-bounded `split`, or `restore`; rejects a requested interface other than
+`eth1`; validates every split peer as a different `10.77.0.0/24` address;
+refuses to run if `eth1` is the default route; and schedules rollback before
+applying a fault. The split mode uses an isolated nftables table on `eth1`, so
+M13 can prove real 4/2 and 3/3 Raft partitions without touching management or
+provider traffic.
 
 Player B traffic enters VM 214 on the private `player-b-ingress` Compose service.
 The ingress pins all `/api/v3` requests to faction B and follows the currently

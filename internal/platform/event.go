@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/observability"
 )
 
 type controlCommand struct {
@@ -39,7 +40,7 @@ func validCommand(command controlCommand, secret string) bool {
 func makeEnvelope(run domain.LoadRunV1, vesselIndex int, sequence int64, producedAt time.Time) domain.EventEnvelopeV1 {
 	vesselID := fmt.Sprintf("sim-%04d", vesselIndex+1)
 	payload, _ := json.Marshal(map[string]any{"lat": 41.8100 + float64(vesselIndex%50)*0.0001, "lon": -70.5220 + float64(vesselIndex/50)*0.0001, "heading_deg": (sequence*7 + int64(vesselIndex)) % 360, "speed_mps": 3.2, "reserve": 0.72, "padding": "keelmesh-measured-payload-000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"})
-	e := domain.EventEnvelopeV1{SchemaVersion: 1, EventID: fmt.Sprintf("%s-%s-%09d", run.ID, vesselID, sequence), LogicalKey: vesselID, FleetID: "background-fleet", VesselID: vesselID, Sequence: sequence, Type: "vessel.telemetry", PayloadSchema: 1, TraceID: fmt.Sprintf("trace-%s-%09d", run.ID, sequence), RunID: run.ID, ProducedAt: producedAt, Payload: payload}
+	e := domain.EventEnvelopeV1{SchemaVersion: 1, EventID: fmt.Sprintf("%s-%s-%09d", run.ID, vesselID, sequence), LogicalKey: vesselID, FleetID: "background-fleet", VesselID: vesselID, Sequence: sequence, Type: "vessel.telemetry", PayloadSchema: 1, TraceID: observability.NormalizeTraceID(fmt.Sprintf("trace-%s-%09d", run.ID, sequence)), RunID: run.ID, ProducedAt: producedAt, Payload: payload}
 	e.Checksum = checksumPayload(payload)
 	return e
 }

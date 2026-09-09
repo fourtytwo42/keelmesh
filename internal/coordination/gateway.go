@@ -15,11 +15,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/observability"
 )
 
 type GatewayConfig struct {
@@ -42,11 +44,12 @@ type Gateway struct {
 	proofs    map[string]domain.QuorumCommitProofV1
 	crossCell map[string]domain.CrossCellOperationV1
 	applied   map[string]bool
+	tracer    *observability.Tracer
 }
 
 func NewGateway(cfg GatewayConfig) (*Gateway, error) {
 	if cfg.Mode == ModeSimulated {
-		return &Gateway{cfg: cfg, proofs: map[string]domain.QuorumCommitProofV1{}, crossCell: map[string]domain.CrossCellOperationV1{}, applied: map[string]bool{}}, nil
+		return &Gateway{cfg: cfg, proofs: map[string]domain.QuorumCommitProofV1{}, crossCell: map[string]domain.CrossCellOperationV1{}, applied: map[string]bool{}, tracer: observability.NewTracer(observability.ConfigFromEnv("keelmesh-coordination-gateway"), nil)}, nil
 	}
 	if cfg.OperationTimeout <= 0 {
 		cfg.OperationTimeout = 8 * time.Second
@@ -65,7 +68,7 @@ func NewGateway(cfg GatewayConfig) (*Gateway, error) {
 		return nil, err
 	}
 	transport := &http.Transport{TLSClientConfig: tlsConfig, MaxIdleConns: 24, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second}
-	gateway := &Gateway{cfg: cfg, client: &http.Client{Transport: transport, Timeout: cfg.OperationTimeout}, signKey: signKey, proofs: map[string]domain.QuorumCommitProofV1{}, crossCell: map[string]domain.CrossCellOperationV1{}, applied: map[string]bool{}}
+	gateway := &Gateway{cfg: cfg, client: &http.Client{Transport: transport, Timeout: cfg.OperationTimeout}, signKey: signKey, proofs: map[string]domain.QuorumCommitProofV1{}, crossCell: map[string]domain.CrossCellOperationV1{}, applied: map[string]bool{}, tracer: observability.NewTracer(observability.ConfigFromEnv("keelmesh-coordination-gateway"), nil)}
 	if err := gateway.loadState(); err != nil {
 		return nil, err
 	}
@@ -311,6 +314,7 @@ func decodePublicKey(value string) (ed25519.PublicKey, error) {
 }
 
 func (g *Gateway) requestJSON(ctx context.Context, method, url string, input, output any) error {
+	ctx, span := g.tracer.Start(ctx, "coordination.management "+method, map[string]string{"server.address": url, "coordination.transport": "mtls-management"})
 	var body io.Reader
 	if input != nil {
 		encoded, err := json.Marshal(input)
@@ -321,15 +325,19 @@ func (g *Gateway) requestJSON(ctx context.Context, method, url string, input, ou
 	}
 	request, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
+		span.End("error", map[string]string{"error.type": "request_build"})
 		return err
 	}
+	request.Header.Set("traceparent", span.Traceparent())
 	request.Header.Set("Content-Type", "application/json")
 	response, err := g.client.Do(request)
 	if err != nil {
+		span.End("error", map[string]string{"error.type": "transport"})
 		return err
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		span.End("error", map[string]string{"http.response.status_code": strconv.Itoa(response.StatusCode)})
 		var apiError domain.APIError
 		_ = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&apiError)
 		if apiError.Code == "" {
@@ -337,7 +345,13 @@ func (g *Gateway) requestJSON(ctx context.Context, method, url string, input, ou
 		}
 		return fmt.Errorf("%s: %s", apiError.Code, apiError.Message)
 	}
-	return json.NewDecoder(io.LimitReader(response.Body, 2<<20)).Decode(output)
+	err = json.NewDecoder(io.LimitReader(response.Body, 2<<20)).Decode(output)
+	state := "completed"
+	if err != nil {
+		state = "error"
+	}
+	span.End(state, map[string]string{"http.response.status_code": strconv.Itoa(response.StatusCode)})
+	return err
 }
 
 func (g *Gateway) Proof(commandID string) (domain.QuorumCommitProofV1, bool) {

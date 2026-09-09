@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/observability"
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
 )
@@ -44,11 +45,12 @@ type Manager struct {
 	server          *http.Server
 	client          *http.Client
 	startedAt       time.Time
+	tracer          *observability.Tracer
 }
 
 func NewManager(cfg Config, logger *slog.Logger) (*Manager, error) {
 	if cfg.Mode == ModeSimulated || cfg.Identity.NodeID == "" {
-		return &Manager{cfg: cfg, logger: logger, fsm: newStateMachine(), startedAt: nowUTC()}, nil
+		return &Manager{cfg: cfg, logger: logger, fsm: newStateMachine(), startedAt: nowUTC(), tracer: observability.NewTracer(observability.ConfigFromEnv("keelmesh-coordination-node"), logger)}, nil
 	}
 	if err := validateManifest(cfg.Manifest); err != nil {
 		return nil, err
@@ -123,7 +125,7 @@ func NewManager(cfg Config, logger *slog.Logger) (*Manager, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("load referee signing public key: %w", err)
 	}
-	manager := &Manager{cfg: cfg, logger: logger, fsm: fsm, raft: nodeRaft, transport: transport, raftTLS: raftTLS, store: store, signKey: signKey, refereeKey: refereeKey, startedAt: nowUTC()}
+	manager := &Manager{cfg: cfg, logger: logger, fsm: fsm, raft: nodeRaft, transport: transport, raftTLS: raftTLS, store: store, signKey: signKey, refereeKey: refereeKey, startedAt: nowUTC(), tracer: observability.NewTracer(observability.ConfigFromEnv("keelmesh-coordination-node"), logger)}
 	go manager.watchLeadership(leadership)
 	return manager, nil
 }
@@ -225,7 +227,14 @@ func (m *Manager) Propose(ctx context.Context, command domain.ReplicatedCommandV
 		return domain.AppliedCommandReceiptV1{}, ctx.Err()
 	default:
 	}
-	return m.apply(command)
+	_, span := m.tracer.Start(ctx, "raft.propose_apply", map[string]string{"coordination.cell": command.CellID, "coordination.term": strconv.FormatUint(command.Term, 10), "coordination.epoch": strconv.FormatUint(command.AuthorityEpoch, 10), "command.id": command.CommandID, "command.kind": command.Kind, "command.hash": command.PayloadHash})
+	receipt, err := m.apply(command)
+	state := "committed"
+	if err != nil {
+		state = "error"
+	}
+	span.End(state, map[string]string{"raft.log.index": strconv.FormatUint(receipt.LogIndex, 10), "result.state_hash": receipt.ResultingStateHash})
+	return receipt, err
 }
 
 func (m *Manager) Mode() Mode { return m.cfg.Mode }
@@ -264,6 +273,7 @@ func (m *Manager) Commit(ctx context.Context, command domain.ReplicatedCommandV1
 	if err != nil {
 		return receipt, domain.QuorumCommitProofV1{}, err
 	}
+	ctx, proofSpan := m.tracer.Start(ctx, "quorum.proof_collect", map[string]string{"coordination.cell": receipt.CellID, "command.id": receipt.CommandID, "raft.log.index": strconv.FormatUint(receipt.LogIndex, 10), "quorum.required": strconv.Itoa(m.cfg.Manifest.Quorum)})
 	proof := domain.QuorumCommitProofV1{SchemaVersion: 1, CommandID: receipt.CommandID, CellID: receipt.CellID, Term: receipt.Term, LogIndex: receipt.LogIndex, AuthorityEpoch: receipt.AuthorityEpoch, CommandHash: receipt.CommandHash, ResultingStateHash: receipt.ResultingStateHash, Required: m.cfg.Manifest.Quorum, State: "collecting"}
 	seen := map[string]bool{}
 	for {
@@ -285,10 +295,12 @@ func (m *Manager) Commit(ctx context.Context, command domain.ReplicatedCommandV1
 			sort.Slice(proof.Acknowledgements, func(i, j int) bool { return proof.Acknowledgements[i].NodeID < proof.Acknowledgements[j].NodeID })
 			proof.State = "verified"
 			proof.CompletedAt = nowUTC()
+			proofSpan.End("completed", map[string]string{"quorum.acknowledgements": strconv.Itoa(len(proof.Acknowledgements))})
 			return receipt, proof, nil
 		}
 		select {
 		case <-ctx.Done():
+			proofSpan.End("error", map[string]string{"quorum.acknowledgements": strconv.Itoa(len(proof.Acknowledgements))})
 			return receipt, proof, fmt.Errorf("COMMIT_PROOF_INVALID: only %d of %d acknowledgements were verified", len(proof.Acknowledgements), proof.Required)
 		case <-time.After(100 * time.Millisecond):
 		}
@@ -305,6 +317,7 @@ func (m *Manager) member(nodeID string) (domain.CoordinationCellMemberV1, bool) 
 }
 
 func (m *Manager) requestManagementJSON(ctx context.Context, method, url string, body any, destination any) error {
+	ctx, span := m.tracer.Start(ctx, "coordination.peer "+method, map[string]string{"server.address": url, "coordination.transport": "mtls-management"})
 	var reader io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -315,15 +328,19 @@ func (m *Manager) requestManagementJSON(ctx context.Context, method, url string,
 	}
 	request, err := http.NewRequestWithContext(ctx, method, url, reader)
 	if err != nil {
+		span.End("error", map[string]string{"error.type": "request_build"})
 		return err
 	}
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("traceparent", span.Traceparent())
 	response, err := m.client.Do(request)
 	if err != nil {
+		span.End("error", map[string]string{"error.type": "transport"})
 		return err
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		span.End("error", map[string]string{"http.response.status_code": strconv.Itoa(response.StatusCode)})
 		var apiErr domain.APIError
 		if json.NewDecoder(io.LimitReader(response.Body, maxCoordinationBody)).Decode(&apiErr) == nil && apiErr.Code != "" {
 			return fmt.Errorf("%s: %s", apiErr.Code, apiErr.Message)
@@ -331,9 +348,16 @@ func (m *Manager) requestManagementJSON(ctx context.Context, method, url string,
 		return fmt.Errorf("QUORUM_UNAVAILABLE: management peer returned %s", response.Status)
 	}
 	if destination == nil {
+		span.End("completed", map[string]string{"http.response.status_code": strconv.Itoa(response.StatusCode)})
 		return nil
 	}
-	return json.NewDecoder(io.LimitReader(response.Body, maxCoordinationBody)).Decode(destination)
+	err = json.NewDecoder(io.LimitReader(response.Body, maxCoordinationBody)).Decode(destination)
+	state := "completed"
+	if err != nil {
+		state = "error"
+	}
+	span.End(state, map[string]string{"http.response.status_code": strconv.Itoa(response.StatusCode)})
+	return err
 }
 
 func (m *Manager) apply(command domain.ReplicatedCommandV1) (domain.AppliedCommandReceiptV1, error) {
@@ -430,6 +454,9 @@ func (m *Manager) Close(ctx context.Context) error {
 	}
 	if m.server != nil {
 		_ = m.server.Shutdown(ctx)
+	}
+	if m.tracer != nil {
+		m.tracer.Close(ctx)
 	}
 	if m.raft != nil {
 		err := m.raft.Shutdown().Error()

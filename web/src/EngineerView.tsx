@@ -1,11 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, KeelMeshError, requestID } from "./api";
-import type { AgentSnapshot, CoordinationOverviewV1, EvalCandidate, EvalRun, InvestigationRun, MemorySnapshotV1, ReplayResult } from "./types";
+import type { AgentSnapshot, CapacityCostEvidenceV1, CoordinationOverviewV1, EvalCandidate, EvalRun, InvestigationRun, MemorySnapshotV1, PlatformDrillReceiptV1, PlatformProofSummaryV1, PlatformSnapshot, ReplayResult } from "./types";
 
-type Props = { value: AgentSnapshot; memory:MemorySnapshotV1|null; coordination:CoordinationOverviewV1|null; onChange:(next:AgentSnapshot)=>void; onOpenSystem:()=>void; onError:(message:string)=>void };
+type Props = { value: AgentSnapshot; platform:PlatformSnapshot|null; memory:MemorySnapshotV1|null; coordination:CoordinationOverviewV1|null; onChange:(next:AgentSnapshot)=>void; onOpenSystem:()=>void; onError:(message:string)=>void };
 
-export function EngineerView({ value, memory, coordination, onChange, onOpenSystem, onError }: Props) {
+export function EngineerView({ value, platform, memory, coordination, onChange, onOpenSystem, onError }: Props) {
   const [busy, setBusy] = useState(false);
+	const [proof, setProof] = useState<PlatformProofSummaryV1|null>(null);
+	const [capacity, setCapacity] = useState<CapacityCostEvidenceV1|null>(null);
+	const [cost, setCost] = useState<CapacityCostEvidenceV1|null>(null);
+	const [drills, setDrills] = useState<PlatformDrillReceiptV1[]>([]);
+	const [drillBusy, setDrillBusy] = useState(false);
   const incident = value.incidents[0];
   const receipts = value.investigation?.tool_receipts ?? [];
   const citations = value.investigation?.citations ?? [];
@@ -21,6 +26,24 @@ export function EngineerView({ value, memory, coordination, onChange, onOpenSyst
   const reset = () => act(()=>api("/api/v1/scenarios/ai-tooling:reset",{method:"POST",body:JSON.stringify(mutation("reset"))}));
   const primary = !value.investigation ? {label:"Investigate incident",run:investigate} : !value.investigation.replay ? {label:"Run isolated replay",run:replay} : value.candidate?.state !== "approved" ? {label:"Approve exact candidate hash",run:approve} : !value.evaluation ? {label:"Run versioned regression",run:evaluate} : {label:"Reset AI workflow",run:reset};
   const cells = Object.entries(coordination?.cells ?? {}).map(([id,nodes]) => ({id,nodes,leader:nodes.find(node=>node.state==="leader")??nodes.find(node=>node.leader_node_id===node.local_node_id)}));
+	const trace = proof?.latest_trace ?? platform?.real_trace;
+	useEffect(()=>{
+		let active=true;
+		const load=()=>Promise.all([api<PlatformProofSummaryV1>("/api/v6/platform/summary"),api<CapacityCostEvidenceV1>("/api/v6/platform/capacity"),api<CapacityCostEvidenceV1>("/api/v6/platform/cost-model"),api<{drills:PlatformDrillReceiptV1[]}>("/api/v6/platform/drills")]).then(([nextProof,nextCapacity,nextCost,nextDrills])=>{if(active){setProof(nextProof);setCapacity(nextCapacity);setCost(nextCost);setDrills(nextDrills.drills)}}).catch(()=>undefined);
+		void load();
+		const timer=window.setInterval(load,10000);
+		return()=>{active=false;window.clearInterval(timer)};
+	},[]);
+	async function runWorkerRecoveryDrill(){
+		const target=platform?.workers.find(worker=>worker.id==="worker-2"&&worker.state==="running")??platform?.workers.find(worker=>worker.state==="running");
+		if(!platform||!target){onError("No healthy ingestion worker is available for the bounded recovery drill.");return}
+		if(!window.confirm(`Run the bounded data-pipeline recovery drill against ${target.id}? The worker child is stopped, its supervisor remains active, and edge mission execution is protected.`))return;
+		setDrillBusy(true);onError("");
+		try{
+			const receipt=await api<PlatformDrillReceiptV1>("/api/v6/platform/drills",{method:"POST",body:JSON.stringify({request_id:requestID("platform-drill"),idempotency_key:requestID("platform-drill-idem"),expected_platform_state_version:platform.state_version,type:"data_pipeline_worker_recovery",target_id:target.id,actor_identity:"demo-engineer",confirmed:true})});
+			setDrills(current=>[receipt,...current.filter(item=>item.id!==receipt.id)]);
+		}catch(error){onError(error instanceof Error?error.message:String(error))}finally{setDrillBusy(false)}
+	}
 
   return <section className="engineer-view" aria-label="AI Lab workspace">
     <header className="engineer-hero">
@@ -28,6 +51,9 @@ export function EngineerView({ value, memory, coordination, onChange, onOpenSyst
       <button className="engineer-system-link" onClick={onOpenSystem}>View live system →</button>
       <div className={`ai-health ${value.available ? "ready" : "degraded"}`}><span />{value.available ? "AI Lab ready" : "AI degraded"}<small>Mission authority independent</small></div>
     </header>
+	<div className="platform-proof-ribbon" aria-label="Platform plane health">{(proof?.planes??[]).map(plane=><div key={plane.id} className={plane.state}><i/><span><small>{plane.label}</small><b>{plane.state.replaceAll("_"," ")}</b><em>{plane.detail}</em></span></div>)}{!proof&&<p>Loading live platform evidence…</p>}</div>
+	<div className="platform-slo-strip" aria-label="Platform service objectives">{(proof?.slos??[]).map(item=><div key={item.id} className={item.state} title={`${item.source} · ${item.workload} · ${item.window}`}><small>{item.label}</small><b>{item.measured?`${Math.round(item.value)} ${item.unit}`:"NOT MEASURED"}</b><em>{item.comparison==="eq"?"=":"≤"} {item.objective} {item.unit}</em></div>)}</div>
+	<section className="platform-drill-runner" aria-label="Bounded platform drills"><header><div><small>CONTROLLED FAILURE</small><h2>SLO drill runner</h2></div><span>Exact target · explicit confirmation · durable receipt</span></header><div><button disabled={drillBusy||!platform?.workers.some(worker=>worker.state==="running")} onClick={runWorkerRecoveryDrill}><b>Data pipeline recovery</b><span>Stops one worker child; supervisor rollback remains armed.</span></button><article><b>Coordinator failure</b><span>Run only after signed leader preflight and node-service rollback are available.</span><em>PROTECTED</em></article><article><b>Radio quorum partition</b><span>Radio interface only; management and provider paths cannot be targets.</span><em>PROTECTED</em></article></div>{drills[0]&&<footer><b>{drills[0].type.replaceAll("_"," ")}</b><span>{drills[0].state} · {drills[0].outcome}</span><code>{drills[0].evidence_hash?.slice(0,16)??"collecting evidence"}</code></footer>}</section>
 
     <div className="engineer-grid">
       <article className="engineer-card coordination-card"><header><span>M12</span><div><small>REAL CONSENSUS</small><h2>Quorum-backed node authority</h2></div><strong>{cells.length ? `${cells.length} cells` : "offline"}</strong></header>
@@ -65,10 +91,11 @@ export function EngineerView({ value, memory, coordination, onChange, onOpenSyst
         {value.evaluation && <div className="eval-results">{value.evaluation.results.map((result)=><div key={`${result.provider}-${result.model}`}><strong>{result.provider}</strong><span>{result.model || "not configured"}</span><em className={result.state}>{result.state}</em><b>{result.passed} pass · {result.skipped} skip · {result.failed} fail</b></div>)}</div>}
       </article>
 
-      <article className="engineer-card trace-card"><header><span>06</span><div><small>TRACE CONTINUITY</small><h2>OpenTelemetry waterfall</h2></div><code>{value.trace?.trace_id.slice(0,12) ?? "waiting"}</code></header>
-        <div className="waterfall">{(value.trace?.spans ?? []).map((span,index)=><div key={span.span_id}><span>{span.service}</span><b>{span.name}</b><i style={{marginLeft:`${Math.min(index*7,28)}%`,width:`${Math.max(12,Math.min(72,span.duration_ms/20))}%`}}/><em>{Math.round(span.duration_ms)} ms</em></div>)}{!value.trace && <p>The waterfall is populated from investigation and tool events, never a canned animation.</p>}</div>
+      <article className="engineer-card trace-card"><header><span>06</span><div><small>REAL CROSS-PROCESS TRACE</small><h2>OTLP telemetry waterfall</h2></div><code>{trace?.trace_id.slice(0,12) ?? "waiting"}</code></header>
+        <div className="waterfall">{(trace?.spans ?? []).map((span,index)=><div key={span.span_id}><span>{span.service}</span><b>{span.name}</b><i style={{marginLeft:`${Math.min(index*7,28)}%`,width:`${Math.max(12,Math.min(72,span.duration_ms/20))}%`}}/><em>{Math.round(span.duration_ms)} ms</em></div>)}{!trace && <p>Waiting for backend OTLP spans. Collection is private and non-blocking.</p>}</div>
       </article>
     </div>
+	<details className="platform-capacity-drawer"><summary>Capacity and cost evidence <span>12 measured · 100 / 1,000 projected</span></summary><div><section><h3>Capacity</h3>{(capacity?.capacity??[]).map(item=><p key={item.asset_count}><b>{item.asset_count} assets</b><span className={item.evidence_class}>{item.evidence_class}</span><em>{Math.round(item.events_per_second)} events/s · {item.worker_count} workers · lag {item.consumer_lag}</em></p>)}</section><section><h3>Monthly planning model</h3>{(cost?.cost??[]).map(item=><p key={item.asset_count}><b>{item.asset_count} assets</b><span className="projected">projected</span><em>${item.estimated_monthly_usd.toFixed(0)} · assumptions visible in API receipt</em></p>)}</section></div></details>
     <div className="engineer-action"><div><small>CURRENT PHASE</small><strong>{value.phase.replaceAll("_"," ")}</strong><span>{value.summary}</span></div><button disabled={busy || (!value.available && !value.investigation)} onClick={primary.run}>{busy ? "Working…" : primary.label}</button></div>
   </section>;
 }

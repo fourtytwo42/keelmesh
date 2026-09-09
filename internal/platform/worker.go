@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/observability"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -103,6 +104,12 @@ func RunWorkerSupervisor(ctx context.Context, cfg Config, logger *slog.Logger) e
 }
 
 func RunWorkerChild(ctx context.Context, cfg Config, logger *slog.Logger) error {
+	tracer := observability.NewTracer(observability.ConfigFromEnv("keelmesh-"+cfg.WorkerID), logger)
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		tracer.Close(closeCtx)
+	}()
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
@@ -182,6 +189,21 @@ func RunWorkerChild(ctx context.Context, cfg Config, logger *slog.Logger) error 
 			batchStarted := time.Now()
 			accepted, duplicates, outOfOrder, quarantined, err := ingestBatch(ctx, pool, batch, cfg.WorkerID)
 			dbWriteMS := float64(time.Since(batchStarted).Microseconds()) / 1000
+			for _, record := range batch {
+				var event domain.EventEnvelopeV1
+				if json.Unmarshal(record.Value, &event) == nil && event.Sequence%100 == 1 {
+					traceContext := observability.ContextWithParent(ctx, event.TraceID, "")
+					if traceID, parentID, ok := observability.ParseTraceparent(recordHeader(record, "traceparent")); ok {
+						traceContext = observability.ContextWithParent(ctx, traceID, parentID)
+					}
+					_, span := tracer.Start(traceContext, "telemetry.consume", map[string]string{"worker.id": cfg.WorkerID, "run.id": event.RunID, "vessel.id": event.VesselID, "event.id": event.EventID, "messaging.kafka.partition": strconv.Itoa(int(record.Partition))})
+					state := "completed"
+					if err != nil {
+						state = "error"
+					}
+					span.End(state, map[string]string{"db.write_ms": fmt.Sprintf("%.3f", dbWriteMS)})
+				}
+			}
 			if err != nil {
 				logger.Warn("ingest batch failed; offsets retained", "error", err)
 				time.Sleep(250 * time.Millisecond)
@@ -201,6 +223,15 @@ func RunWorkerChild(ctx context.Context, cfg Config, logger *slog.Logger) error 
 		}
 	}
 	return nil
+}
+
+func recordHeader(record *kgo.Record, key string) string {
+	for _, header := range record.Headers {
+		if header.Key == key {
+			return string(header.Value)
+		}
+	}
+	return ""
 }
 
 type validRecord struct {

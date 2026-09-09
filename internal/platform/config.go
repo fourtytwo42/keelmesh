@@ -12,11 +12,12 @@ type Config struct {
 	ControlSecret string
 	WorkerID      string
 	HTTPAddress   string
+	EvidenceDir   string
 }
 
 func ConfigFromEnv() Config {
 	brokers := strings.Split(env("KEELMESH_KAFKA_BROKERS", "kafka:9092"), ",")
-	return Config{Brokers: brokers, DatabaseURL: env("KEELMESH_DATABASE_URL", "postgres://keelmesh:keelmesh@postgres:5432/keelmesh?sslmode=disable"), ControlSecret: env("KEELMESH_CONTROL_SECRET", "development-only-control-key"), WorkerID: env("KEELMESH_WORKER_ID", "worker-1"), HTTPAddress: env("KEELMESH_PLATFORM_HTTP", ":8090")}
+	return Config{Brokers: brokers, DatabaseURL: env("KEELMESH_DATABASE_URL", "postgres://keelmesh:keelmesh@postgres:5432/keelmesh?sslmode=disable"), ControlSecret: env("KEELMESH_CONTROL_SECRET", "development-only-control-key"), WorkerID: env("KEELMESH_WORKER_ID", "worker-1"), HTTPAddress: env("KEELMESH_PLATFORM_HTTP", ":8090"), EvidenceDir: strings.TrimSpace(os.Getenv("KEELMESH_PLATFORM_EVIDENCE_DIR"))}
 }
 
 func env(key, fallback string) string {

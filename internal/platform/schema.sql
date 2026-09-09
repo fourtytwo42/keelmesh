@@ -58,6 +58,17 @@ CREATE TABLE IF NOT EXISTS eval_candidates (id text PRIMARY KEY, investigation_i
 CREATE TABLE IF NOT EXISTS eval_runs (id text PRIMARY KEY, candidate_id text NOT NULL, suite_version text NOT NULL, state text NOT NULL, payload jsonb NOT NULL, started_at timestamptz NOT NULL, completed_at timestamptz);
 CREATE TABLE IF NOT EXISTS otel_spans (trace_id text NOT NULL, span_id text NOT NULL, parent_span_id text NOT NULL DEFAULT '', service text NOT NULL, name text NOT NULL, state text NOT NULL, started_at timestamptz NOT NULL, duration_ms double precision NOT NULL, attributes jsonb NOT NULL DEFAULT '{}', PRIMARY KEY(trace_id,span_id));
 CREATE INDEX IF NOT EXISTS otel_spans_started_idx ON otel_spans(started_at);
+CREATE TABLE IF NOT EXISTS platform_drills (
+  id text PRIMARY KEY,
+  drill_type text NOT NULL,
+  target_id text NOT NULL,
+  state text NOT NULL,
+  payload jsonb NOT NULL,
+  evidence_hash text NOT NULL DEFAULT '',
+  started_at timestamptz NOT NULL,
+  completed_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS platform_drills_started_idx ON platform_drills(started_at DESC);
 CREATE TABLE IF NOT EXISTS ai_security_events (id bigserial PRIMARY KEY, kind text NOT NULL, reason text NOT NULL, trace_id text NOT NULL DEFAULT '', created_at timestamptz NOT NULL DEFAULT now());
 
 -- M6 fleet operations workspace. These records persist operator organization and

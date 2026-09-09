@@ -8,7 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -182,6 +185,12 @@ func (m *Manager) refresh(ctx context.Context) {
 		}
 		traceRows.Close()
 	}
+	var latestTraceID string
+	if pool.QueryRow(ctx, `SELECT trace_id FROM otel_spans ORDER BY started_at DESC LIMIT 1`).Scan(&latestTraceID) == nil {
+		if trace, traceErr := readTrace(ctx, pool, latestTraceID); traceErr == nil {
+			sample.RealTrace = &trace
+		}
+	}
 	_ = pool.QueryRow(ctx, `SELECT COALESCE(percentile_cont(.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM(received_at-produced_at))*1000),0),COALESCE(percentile_cont(.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM(received_at-produced_at))*1000),0),COALESCE(percentile_cont(.99) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM(received_at-produced_at))*1000),0) FROM telemetry_events WHERE received_at>now()-interval '60 seconds'`).Scan(&sample.Metrics.LatencyP50MS, &sample.Metrics.LatencyP95MS, &sample.Metrics.LatencyP99MS)
 	_ = pool.QueryRow(ctx, `SELECT COALESCE(percentile_cont(.95) WITHIN GROUP (ORDER BY db_write_ms),0) FROM benchmark_samples WHERE sampled_at>now()-interval '60 seconds'`).Scan(&sample.Metrics.DBWriteP95MS)
 	m.mu.RLock()
@@ -272,6 +281,90 @@ func (m *Manager) refresh(ctx context.Context) {
 		}
 	}
 }
+
+func (m *Manager) Trace(ctx context.Context, traceID string) (domain.TraceSnapshotV1, error) {
+	if strings.TrimSpace(traceID) == "" {
+		return domain.TraceSnapshotV1{}, platformError("TRACE_NOT_FOUND", "Trace ID is required.")
+	}
+	if err := m.connect(ctx); err != nil {
+		return domain.TraceSnapshotV1{}, platformError("PLATFORM_UNAVAILABLE", "Trace storage is unavailable.")
+	}
+	m.mu.RLock()
+	pool := m.pool
+	m.mu.RUnlock()
+	trace, err := readTrace(ctx, pool, traceID)
+	if err != nil {
+		return trace, platformError("TRACE_NOT_FOUND", "Trace was not found.")
+	}
+	return trace, nil
+}
+
+func (m *Manager) RecentTraces(ctx context.Context, limit int) ([]domain.TraceSummaryV1, error) {
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	if err := m.connect(ctx); err != nil {
+		return nil, platformError("PLATFORM_UNAVAILABLE", "Trace storage is unavailable.")
+	}
+	m.mu.RLock()
+	pool := m.pool
+	m.mu.RUnlock()
+	rows, err := pool.Query(ctx, `SELECT trace_id,min(started_at),max(started_at + duration_ms * interval '1 millisecond'),count(*),array_agg(DISTINCT service ORDER BY service),bool_or(state NOT IN ('ok','accepted','completed')) FROM otel_spans GROUP BY trace_id ORDER BY min(started_at) DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []domain.TraceSummaryV1{}
+	for rows.Next() {
+		var item domain.TraceSummaryV1
+		var endedAt time.Time
+		var failed bool
+		if err := rows.Scan(&item.TraceID, &item.StartedAt, &endedAt, &item.SpanCount, &item.Services, &failed); err != nil {
+			return nil, err
+		}
+		item.DurationMS = endedAt.Sub(item.StartedAt).Seconds() * 1000
+		item.State = "ok"
+		if failed {
+			item.State = "error"
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
+func (m *Manager) TraceCount24H(ctx context.Context) int64 {
+	if m.connect(ctx) != nil {
+		return 0
+	}
+	m.mu.RLock()
+	pool := m.pool
+	m.mu.RUnlock()
+	var count int64
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM otel_spans WHERE started_at > now()-interval '24 hours'`).Scan(&count)
+	return count
+}
+
+func readTrace(ctx context.Context, pool *pgxpool.Pool, traceID string) (domain.TraceSnapshotV1, error) {
+	trace := domain.TraceSnapshotV1{TraceID: traceID, Spans: []domain.SpanSnapshotV1{}}
+	rows, err := pool.Query(ctx, `SELECT trace_id,span_id,parent_span_id,name,service,state,started_at,duration_ms,attributes FROM otel_spans WHERE trace_id=$1 ORDER BY started_at,span_id`, traceID)
+	if err != nil {
+		return trace, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var span domain.SpanSnapshotV1
+		var attributes []byte
+		if err := rows.Scan(&span.TraceID, &span.SpanID, &span.ParentSpanID, &span.Name, &span.Service, &span.State, &span.StartedAt, &span.DurationMS, &attributes); err != nil {
+			return trace, err
+		}
+		_ = json.Unmarshal(attributes, &span.Attributes)
+		trace.Spans = append(trace.Spans, span)
+	}
+	if len(trace.Spans) == 0 {
+		return trace, errors.New("trace not found")
+	}
+	return trace, rows.Err()
+}
 func (m *Manager) setDegraded(err error) {
 	m.mu.Lock()
 	m.snapshot.Available = false
@@ -361,16 +454,12 @@ func (m *Manager) Fault(ctx context.Context, req domain.PlatformFaultCommandV1) 
 	if err := m.connect(ctx); err != nil {
 		return domain.PlatformSnapshotV1{}, err
 	}
-	m.mu.RLock()
-	producer := m.producer
-	pool := m.pool
-	m.mu.RUnlock()
-	cmd := controlCommand{ID: req.RequestID, Kind: "worker.terminate", TargetID: req.TargetID, CreatedAt: time.Now().UTC()}
-	cmd.Signature = signCommand(cmd, m.cfg.ControlSecret)
-	data, _ := json.Marshal(cmd)
-	if err := producer.ProduceSync(ctx, &kgo.Record{Topic: ControlTopic, Key: []byte(req.TargetID), Value: data}).FirstErr(); err != nil {
+	if err := m.dispatchWorkerTermination(ctx, req.RequestID, req.TargetID); err != nil {
 		return domain.PlatformSnapshotV1{}, err
 	}
+	m.mu.RLock()
+	pool := m.pool
+	m.mu.RUnlock()
 	_, _ = pool.Exec(ctx, `UPDATE platform_state SET state_version=state_version+1,updated_at=now()`)
 	m.mu.Lock()
 	m.faultAt = time.Now()
@@ -379,6 +468,255 @@ func (m *Manager) Fault(ctx context.Context, req domain.PlatformFaultCommandV1) 
 	m.lastRecoverySeconds = 0
 	m.mu.Unlock()
 	return m.Snapshot(), nil
+}
+
+func (m *Manager) dispatchWorkerTermination(ctx context.Context, requestID, targetID string) error {
+	m.mu.RLock()
+	producer := m.producer
+	m.mu.RUnlock()
+	cmd := controlCommand{ID: requestID, Kind: "worker.terminate", TargetID: targetID, CreatedAt: time.Now().UTC()}
+	cmd.Signature = signCommand(cmd, m.cfg.ControlSecret)
+	data, _ := json.Marshal(cmd)
+	return producer.ProduceSync(ctx, &kgo.Record{Topic: ControlTopic, Key: []byte(targetID), Value: data}).FirstErr()
+}
+
+func (m *Manager) StartDrill(ctx context.Context, req domain.PlatformDrillRequestV1) (domain.PlatformDrillReceiptV1, error) {
+	if !req.Confirmed || strings.TrimSpace(req.ActorIdentity) == "" {
+		return domain.PlatformDrillReceiptV1{}, platformError("DRILL_CONFIRMATION_REQUIRED", "A named operator must confirm the exact drill before it starts.")
+	}
+	if req.Type != "data_pipeline_worker_recovery" || strings.TrimSpace(req.TargetID) == "" {
+		return domain.PlatformDrillReceiptV1{}, platformError("DRILL_UNSUPPORTED", "The supported bounded drill is data_pipeline_worker_recovery with an explicit worker target.")
+	}
+	if err := m.validateMutation(req.PlatformMutationV1, "drill|"+req.Type+"|"+req.TargetID); err != nil {
+		return domain.PlatformDrillReceiptV1{}, err
+	}
+	if err := m.connect(ctx); err != nil {
+		return domain.PlatformDrillReceiptV1{}, platformError("PLATFORM_UNAVAILABLE", err.Error())
+	}
+	snapshot := m.Snapshot()
+	var worker *domain.WorkerSnapshotV1
+	for i := range snapshot.Workers {
+		if snapshot.Workers[i].ID == req.TargetID && snapshot.Workers[i].State == "running" {
+			copy := snapshot.Workers[i]
+			worker = &copy
+			break
+		}
+	}
+	if worker == nil {
+		return domain.PlatformDrillReceiptV1{}, platformError("WORKER_NOT_FOUND", "The target must be a currently running ingestion worker.")
+	}
+	sum := sha256.Sum256([]byte(req.RequestID + "|" + req.TargetID))
+	receipt := domain.PlatformDrillReceiptV1{SchemaVersion: 1, ID: "drill-" + hex.EncodeToString(sum[:6]), Type: req.Type, TargetID: req.TargetID, ActorIdentity: req.ActorIdentity, State: "running", Outcome: "pending", ExpectedInvariants: []string{"committed edge missions continue", "worker supervisor restarts the child", "consumer lag returns to baseline", "logical projection remains deduplicated"}, InitialState: map[string]string{"worker_pid": strconv.Itoa(worker.PID), "consumer_lag": strconv.FormatInt(snapshot.Metrics.CurrentLag, 10), "platform_state_version": strconv.FormatInt(snapshot.StateVersion, 10)}, StartedAt: time.Now().UTC()}
+	receipt.Observations = append(receipt.Observations, domain.PlatformDrillObservationV1{At: receipt.StartedAt, Kind: "preflight_passed", Summary: "Target worker is healthy; the supervisor rollback path is active.", SourceID: worker.ID})
+	if err := m.storeDrill(ctx, receipt); err != nil {
+		return receipt, platformError("PLATFORM_UNAVAILABLE", err.Error())
+	}
+	if err := m.dispatchWorkerTermination(ctx, req.RequestID+"-terminate", req.TargetID); err != nil {
+		receipt.State, receipt.Outcome, receipt.Reason = "failed", "failed", err.Error()
+		now := time.Now().UTC()
+		receipt.CompletedAt = &now
+		_ = m.finalizeDrill(context.Background(), &receipt)
+		return receipt, err
+	}
+	receipt.Observations = append(receipt.Observations, domain.PlatformDrillObservationV1{At: time.Now().UTC(), Kind: "fault_dispatched", Summary: "A signed worker-child termination command was published; the supervisor remains active.", SourceID: req.TargetID})
+	_ = m.storeDrill(ctx, receipt)
+	go m.monitorWorkerDrill(receipt, worker.PID, snapshot.Metrics.CurrentLag)
+	return receipt, nil
+}
+
+func (m *Manager) monitorWorkerDrill(receipt domain.PlatformDrillReceiptV1, initialPID int, initialLag int64) {
+	deadline := time.NewTimer(75 * time.Second)
+	ticker := time.NewTicker(time.Second)
+	defer deadline.Stop()
+	defer ticker.Stop()
+	sawDown := false
+	for {
+		select {
+		case <-deadline.C:
+			receipt.State, receipt.Outcome, receipt.Reason = "failed", "failed", "Worker did not restart and drain lag within 75 seconds."
+			now := time.Now().UTC()
+			receipt.CompletedAt = &now
+			_ = m.finalizeDrill(context.Background(), &receipt)
+			return
+		case <-ticker.C:
+			if m.drillState(receipt.ID) == "aborted" {
+				return
+			}
+			snapshot := m.Snapshot()
+			var current *domain.WorkerSnapshotV1
+			for i := range snapshot.Workers {
+				if snapshot.Workers[i].ID == receipt.TargetID {
+					copy := snapshot.Workers[i]
+					current = &copy
+					break
+				}
+			}
+			if !sawDown && (current == nil || current.State != "running") {
+				sawDown = true
+				receipt.Observations = append(receipt.Observations, domain.PlatformDrillObservationV1{At: time.Now().UTC(), Kind: "worker_interrupted", Summary: "The original worker child stopped and Kafka began reassignment.", SourceID: receipt.TargetID})
+				_ = m.storeDrill(context.Background(), receipt)
+			}
+			if sawDown && current != nil && current.State == "running" && current.PID != initialPID && snapshot.Metrics.CurrentLag <= max64(100, initialLag) {
+				now := time.Now().UTC()
+				receipt.State, receipt.Outcome, receipt.CompletedAt = "completed", "passed", &now
+				receipt.RecoveryMS = now.Sub(receipt.StartedAt).Milliseconds()
+				receipt.FinalState = map[string]string{"worker_pid": strconv.Itoa(current.PID), "consumer_lag": strconv.FormatInt(snapshot.Metrics.CurrentLag, 10), "duplicates_suppressed": strconv.FormatInt(snapshot.Metrics.DuplicatesSuppressed, 10)}
+				receipt.Observations = append(receipt.Observations, domain.PlatformDrillObservationV1{At: now, Kind: "recovery_verified", Summary: "A new worker child is running and consumer lag returned to the bounded baseline.", SourceID: receipt.TargetID})
+				_ = m.finalizeDrill(context.Background(), &receipt)
+				return
+			}
+		}
+	}
+}
+
+func (m *Manager) storeDrill(ctx context.Context, receipt domain.PlatformDrillReceiptV1) error {
+	m.mu.RLock()
+	pool := m.pool
+	m.mu.RUnlock()
+	payload, _ := json.Marshal(receipt)
+	_, err := pool.Exec(ctx, `INSERT INTO platform_drills(id,drill_type,target_id,state,payload,evidence_hash,started_at,completed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET state=excluded.state,payload=excluded.payload,evidence_hash=excluded.evidence_hash,completed_at=excluded.completed_at`, receipt.ID, receipt.Type, receipt.TargetID, receipt.State, payload, receipt.EvidenceHash, receipt.StartedAt, receipt.CompletedAt)
+	return err
+}
+
+func (m *Manager) finalizeDrill(ctx context.Context, receipt *domain.PlatformDrillReceiptV1) error {
+	receipt.EvidenceHash = ""
+	payload, _ := json.Marshal(receipt)
+	sum := sha256.Sum256(payload)
+	receipt.EvidenceHash = "sha256:" + hex.EncodeToString(sum[:])
+	return m.storeDrill(ctx, *receipt)
+}
+
+func (m *Manager) drillState(id string) string {
+	m.mu.RLock()
+	pool := m.pool
+	m.mu.RUnlock()
+	var state string
+	_ = pool.QueryRow(context.Background(), `SELECT state FROM platform_drills WHERE id=$1`, id).Scan(&state)
+	return state
+}
+
+func (m *Manager) Drills(ctx context.Context) []domain.PlatformDrillReceiptV1 {
+	result := m.externalDrills()
+	if m.connect(ctx) != nil {
+		return result
+	}
+	m.mu.RLock()
+	pool := m.pool
+	m.mu.RUnlock()
+	rows, err := pool.Query(ctx, `SELECT payload FROM platform_drills ORDER BY started_at DESC LIMIT 25`)
+	if err != nil {
+		return result
+	}
+	defer rows.Close()
+	seen := make(map[string]bool, len(result))
+	for _, receipt := range result {
+		seen[receipt.ID] = true
+	}
+	for rows.Next() {
+		var payload []byte
+		var receipt domain.PlatformDrillReceiptV1
+		if rows.Scan(&payload) == nil && json.Unmarshal(payload, &receipt) == nil && !seen[receipt.ID] {
+			result = append(result, receipt)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].StartedAt.After(result[j].StartedAt) })
+	if len(result) > 25 {
+		result = result[:25]
+	}
+	return result
+}
+
+func (m *Manager) Drill(ctx context.Context, id string) (domain.PlatformDrillReceiptV1, error) {
+	if err := m.connect(ctx); err != nil {
+		for _, receipt := range m.externalDrills() {
+			if receipt.ID == id {
+				return receipt, nil
+			}
+		}
+		return domain.PlatformDrillReceiptV1{}, err
+	}
+	m.mu.RLock()
+	pool := m.pool
+	m.mu.RUnlock()
+	var payload []byte
+	if err := pool.QueryRow(ctx, `SELECT payload FROM platform_drills WHERE id=$1`, id).Scan(&payload); err != nil {
+		for _, receipt := range m.externalDrills() {
+			if receipt.ID == id {
+				return receipt, nil
+			}
+		}
+		return domain.PlatformDrillReceiptV1{}, platformError("DRILL_NOT_FOUND", "Drill receipt was not found.")
+	}
+	var receipt domain.PlatformDrillReceiptV1
+	if err := json.Unmarshal(payload, &receipt); err != nil {
+		return receipt, err
+	}
+	return receipt, nil
+}
+
+// externalDrills imports only completed, self-hashed receipts from the
+// read-only operator evidence directory. The privileged runner owns that
+// directory; the public HTTP service cannot create or modify these records.
+func (m *Manager) externalDrills() []domain.PlatformDrillReceiptV1 {
+	dir := strings.TrimSpace(m.cfg.EvidenceDir)
+	if dir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	result := make([]domain.PlatformDrillReceiptV1, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil || info.Size() > 1<<20 {
+			continue
+		}
+		encoded, readErr := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if readErr != nil {
+			continue
+		}
+		var receipt domain.PlatformDrillReceiptV1
+		var canonical map[string]any
+		if json.Unmarshal(encoded, &receipt) != nil || json.Unmarshal(encoded, &canonical) != nil || receipt.ID == "" || receipt.CompletedAt == nil || receipt.EvidenceHash == "" {
+			continue
+		}
+		expected := receipt.EvidenceHash
+		canonical["evidence_hash"] = ""
+		unsigned, marshalErr := json.Marshal(canonical)
+		if marshalErr != nil {
+			continue
+		}
+		digest := sha256.Sum256(unsigned)
+		if expected != "sha256:"+hex.EncodeToString(digest[:]) {
+			continue
+		}
+		result = append(result, receipt)
+	}
+	return result
+}
+
+func (m *Manager) AbortDrill(ctx context.Context, id string, req domain.PlatformMutationV1) (domain.PlatformDrillReceiptV1, error) {
+	if err := m.validateMutation(req, "abort-drill|"+id); err != nil {
+		return domain.PlatformDrillReceiptV1{}, err
+	}
+	receipt, err := m.Drill(ctx, id)
+	if err != nil {
+		return receipt, err
+	}
+	if receipt.State != "running" {
+		return receipt, platformError("DRILL_NOT_RUNNING", "Only a running drill can be aborted.")
+	}
+	now := time.Now().UTC()
+	receipt.State, receipt.Outcome, receipt.CompletedAt, receipt.Reason = "aborted", "aborted", &now, "Operator requested abort; the worker supervisor rollback remains active."
+	receipt.Observations = append(receipt.Observations, domain.PlatformDrillObservationV1{At: now, Kind: "operator_abort", Summary: receipt.Reason})
+	if err := m.finalizeDrill(ctx, &receipt); err != nil {
+		return receipt, err
+	}
+	return receipt, nil
 }
 func (m *Manager) validateMutation(req domain.PlatformMutationV1, fingerprint string) error {
 	if req.RequestID == "" || req.IdempotencyKey == "" {

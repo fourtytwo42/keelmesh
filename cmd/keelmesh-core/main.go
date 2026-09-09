@@ -20,6 +20,7 @@ import (
 	"github.com/fourtytwo42/keelmesh/internal/core"
 	"github.com/fourtytwo42/keelmesh/internal/fleetops"
 	"github.com/fourtytwo42/keelmesh/internal/memory"
+	"github.com/fourtytwo42/keelmesh/internal/observability"
 	"github.com/fourtytwo42/keelmesh/internal/platform"
 )
 
@@ -74,6 +75,12 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "trace-collector":
+		if err := observability.RunCollector(ctx, observability.CollectorConfig{Address: envOr("KEELMESH_OTLP_LISTEN", ":4318"), DatabaseURL: cfg.DatabaseURL, TokenFile: os.Getenv("KEELMESH_OTLP_TOKEN_FILE"), Retention: 24 * time.Hour}, logger); err != nil {
+			logger.Error("trace collector failed", "error", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	webRoot, err := fs.Sub(webContent, "web")
@@ -83,6 +90,7 @@ func main() {
 	}
 
 	engine := core.New()
+	tracer := observability.NewTracer(observability.ConfigFromEnv("keelmesh-core"), logger)
 	platformManager := platform.NewManager(cfg, logger)
 	agentManager := agent.NewManager(agent.ConfigFromEnv(), logger)
 	fleetDatabaseURL := cfg.DatabaseURL
@@ -142,7 +150,7 @@ func main() {
 			}
 		}
 	}()
-	serverAPI := api.New(engine, logger, webRoot, platformManager, agentManager, fleetManager, arenaManager, memoryManager, coordinationManager, coordinationGateway)
+	serverAPI := api.New(engine, logger, webRoot, platformManager, agentManager, fleetManager, arenaManager, memoryManager, coordinationManager, coordinationGateway, tracer)
 
 	server := &http.Server{
 		Addr:              ":8080",
@@ -185,6 +193,7 @@ func main() {
 			logger.Error("graceful shutdown", "error", shutdownErr)
 		}
 		_ = privateServer.Shutdown(contextWithTimeout)
+		tracer.Close(contextWithTimeout)
 		if coordinationManager != nil {
 			_ = coordinationManager.Close(contextWithTimeout)
 		}
@@ -195,6 +204,13 @@ func main() {
 		logger.Error("serve", "error", err)
 		os.Exit(1)
 	}
+}
+
+func envOr(key, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func privateHandler(manager *agent.Manager, fleet *fleetops.Manager, arenaManager *arena.Manager, memoryManager *memory.Manager) http.Handler {

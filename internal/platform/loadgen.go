@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/observability"
 	"github.com/twmb/franz-go/pkg/kgo"
 	bolt "go.etcd.io/bbolt"
 )
@@ -16,12 +17,19 @@ import (
 const maxOutboxBytes = 64 << 20
 
 type outboxRecord struct {
-	Topic string `json:"topic"`
-	Key   []byte `json:"key"`
-	Value []byte `json:"value"`
+	Topic   string            `json:"topic"`
+	Key     []byte            `json:"key"`
+	Value   []byte            `json:"value"`
+	Headers map[string][]byte `json:"headers,omitempty"`
 }
 
 func RunLoadgen(ctx context.Context, cfg Config, logger *slog.Logger) error {
+	tracer := observability.NewTracer(observability.ConfigFromEnv("keelmesh-loadgen"), logger)
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		tracer.Close(closeCtx)
+	}()
 	producer, err := kgo.NewClient(kgo.SeedBrokers(cfg.Brokers...), kgo.MaxBufferedRecords(20000), kgo.MaxBufferedBytes(32<<20))
 	if err != nil {
 		return err
@@ -92,7 +100,7 @@ func RunLoadgen(ctx context.Context, cfg Config, logger *slog.Logger) error {
 			counterMu.Lock()
 			attempted++
 			counterMu.Unlock()
-			producer.TryProduce(ctx, &kgo.Record{Topic: item.Topic, Key: item.Key, Value: item.Value}, func(_ *kgo.Record, produceErr error) {
+			producer.TryProduce(ctx, kafkaRecord(item), func(_ *kgo.Record, produceErr error) {
 				counterMu.Lock()
 				defer counterMu.Unlock()
 				if produceErr == nil {
@@ -136,7 +144,7 @@ func RunLoadgen(ctx context.Context, cfg Config, logger *slog.Logger) error {
 		}
 		sendCtx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
 		defer cancel()
-		if producer.ProduceSync(sendCtx, &kgo.Record{Topic: item.Topic, Key: item.Key, Value: item.Value}).FirstErr() != nil {
+		if producer.ProduceSync(sendCtx, kafkaRecord(item)).FirstErr() != nil {
 			return
 		}
 		_ = db.Update(func(tx *bolt.Tx) error { return tx.Bucket([]byte("outbox")).Delete(key) })
@@ -171,11 +179,23 @@ func RunLoadgen(ctx context.Context, cfg Config, logger *slog.Logger) error {
 				vessel := int((ordinal - 1 + cycle) % int64(run.VesselCount))
 				sequences[vessel]++
 				envelope := makeEnvelope(*run, vessel, sequences[vessel], now.UTC())
+				traceparent := ""
+				if ordinal%100 == 1 {
+					traceContext := observability.ContextWithParent(ctx, envelope.TraceID, "")
+					_, span := tracer.Start(traceContext, "telemetry.produce", map[string]string{"run.id": run.ID, "vessel.id": envelope.VesselID, "event.id": envelope.EventID})
+					traceparent = span.Traceparent()
+					span.End("accepted", map[string]string{"messaging.destination.name": RawTopic})
+				}
 				if ordinal%500 == 0 {
 					envelope.Checksum = "sha256:invalid"
 				}
 				data, _ := json.Marshal(envelope)
-				records := []outboxRecord{{Topic: RawTopic, Key: []byte(envelope.VesselID), Value: data}}
+				headers := map[string][]byte{}
+				if traceparent != "" {
+					headers["traceparent"] = []byte(traceparent)
+					headers["keelmesh-run-id"] = []byte(run.ID)
+				}
+				records := []outboxRecord{{Topic: RawTopic, Key: []byte(envelope.VesselID), Value: data, Headers: headers}}
 				if ordinal%100 == 0 {
 					records = append(records, records[0])
 				}
@@ -203,4 +223,12 @@ func RunLoadgen(ctx context.Context, cfg Config, logger *slog.Logger) error {
 			mu.Unlock()
 		}
 	}
+}
+
+func kafkaRecord(item outboxRecord) *kgo.Record {
+	record := &kgo.Record{Topic: item.Topic, Key: item.Key, Value: item.Value}
+	for key, value := range item.Headers {
+		record.Headers = append(record.Headers, kgo.RecordHeader{Key: key, Value: value})
+	}
+	return record
 }

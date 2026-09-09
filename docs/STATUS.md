@@ -50,9 +50,9 @@ Recent product hardening adds first-class multi-turn provider input for the shar
 
 ## Next investments
 
-1. Migrate legacy browser tests to global Assistant plus manual Mission semantics.
-2. Complete radio-plane memory synchronization on the authenticated M12 transport.
-3. Finish browser/node STT benchmarks and trusted-peer routing.
-4. Replace remaining fixture retrieval with bundled ONNX indexing.
-5. Complete private OTLP ingestion and cross-process traces.
+1. Execute the active [M13 Cloud Platform Proof](PLATFORM_PROOF_PLAN.md): cross-process tracing, SLO-backed failure drills, one GNSS incident-to-evaluation workflow, and measured capacity/cost evidence.
+2. Migrate legacy browser tests to global Assistant plus manual Mission semantics.
+3. Complete radio-plane memory synchronization on the authenticated M12 transport.
+4. Finish browser/node STT benchmarks and trusted-peer routing.
+5. Replace remaining fixture retrieval with bundled ONNX indexing.
 6. Add stable named HTTPS ingress after domain/account selection.

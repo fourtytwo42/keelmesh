@@ -29,7 +29,11 @@ func (m *Manager) StartManagement(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	m.server = &http.Server{Handler: m.InternalHandler(), ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 8 * time.Second, WriteTimeout: 8 * time.Second, IdleTimeout: 30 * time.Second}
+	handler := m.InternalHandler()
+	if m.tracer != nil {
+		handler = m.tracer.Middleware(handler)
+	}
+	m.server = &http.Server{Handler: handler, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 8 * time.Second, WriteTimeout: 8 * time.Second, IdleTimeout: 30 * time.Second}
 	go func() {
 		if serveErr := m.server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 			m.logger.Error("coordination management server failed", "error", serveErr)

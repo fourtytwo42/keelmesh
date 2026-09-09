@@ -113,3 +113,28 @@ func TestCoordinationV1Fixture(t *testing.T) {
 		t.Fatalf("fixture does not satisfy M12 coordination contracts: %+v", fixture)
 	}
 }
+
+func TestPlatformProofContractFixtures(t *testing.T) {
+	data, err := os.ReadFile("../../contracts/fixtures/platform-proof-summary-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var proof PlatformProofSummaryV1
+	if err := json.Unmarshal(data, &proof); err != nil {
+		t.Fatal(err)
+	}
+	if len(proof.Planes) != 4 || len(proof.SLOs) < 2 || proof.SLOs[1].Measured {
+		t.Fatalf("fixture does not satisfy platform proof contracts: %+v", proof)
+	}
+	data, err = os.ReadFile("../../contracts/fixtures/platform-drill-receipt-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var drill PlatformDrillReceiptV1
+	if err := json.Unmarshal(data, &drill); err != nil {
+		t.Fatal(err)
+	}
+	if drill.Outcome != "passed" || len(drill.ExpectedInvariants) != 4 {
+		t.Fatalf("fixture does not satisfy drill receipt contract: %+v", drill)
+	}
+}

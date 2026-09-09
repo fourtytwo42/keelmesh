@@ -2,7 +2,10 @@ package api
 
 import (
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 )
@@ -18,6 +21,51 @@ func (s *Server) coordinationCellsV6(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusServiceUnavailable, domain.APIError{Code: "QUORUM_UNAVAILABLE", Message: "Coordination runtime is unavailable."})
+}
+
+type coordinationBarrierRequest struct {
+	RequestID      string `json:"request_id"`
+	IdempotencyKey string `json:"idempotency_key"`
+	ActorIdentity  string `json:"actor_identity"`
+	Confirmed      bool   `json:"confirmed"`
+}
+
+// coordinationBarrierV6 is a drill-only, side-effect-free Raft proposal. It
+// proves quorum availability without creating, editing, or starting a mission.
+// Production deployments keep it disabled unless an operator intentionally
+// enables the bounded M13 drill surface.
+func (s *Server) coordinationBarrierV6(w http.ResponseWriter, r *http.Request) {
+	if !strings.EqualFold(strings.TrimSpace(os.Getenv("KEELMESH_PLATFORM_DRILLS_ENABLED")), "true") {
+		writeJSON(w, http.StatusForbidden, domain.APIError{Code: "DRILL_DISABLED", Message: "The coordination drill surface is disabled."})
+		return
+	}
+	if s.coordGateway == nil {
+		writeJSON(w, http.StatusServiceUnavailable, domain.APIError{Code: "QUORUM_UNAVAILABLE", Message: "The VM 214 coordination gateway is unavailable."})
+		return
+	}
+	var request coordinationBarrierRequest
+	if !decode(w, r, &request) {
+		return
+	}
+	cellID := strings.ToUpper(strings.TrimSpace(r.PathValue("id")))
+	if (cellID != "A" && cellID != "B") || !request.Confirmed || strings.TrimSpace(request.RequestID) == "" || strings.TrimSpace(request.IdempotencyKey) == "" || strings.TrimSpace(request.ActorIdentity) == "" {
+		writeJSON(w, http.StatusBadRequest, domain.APIError{Code: "DRILL_CONFIRMATION_REQUIRED", Message: "A valid cell, request ID, idempotency key, named actor, and explicit confirmation are required."})
+		return
+	}
+	now := time.Now().UTC()
+	payload := map[string]any{"kind": "m13_quorum_barrier", "cell": cellID, "requested_at": now.Format(time.RFC3339Nano)}
+	commandID := "m13-barrier-" + strings.ToLower(cellID) + "-" + strconv.FormatInt(now.UnixNano(), 36)
+	command, err := s.coordGateway.CanonicalCommand(cellID, commandID, request.RequestID, request.IdempotencyKey, request.ActorIdentity, "platform.drill_barrier", "m13-platform-proof", 0, payload, nil)
+	if err != nil {
+		writeCoordinationPublicError(w, err)
+		return
+	}
+	receipt, proof, err := s.coordGateway.Commit(r.Context(), command)
+	if err != nil {
+		writeCoordinationPublicError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"schema_version": 1, "receipt": receipt, "proof": proof})
 }
 
 func (s *Server) coordinationCellV6(w http.ResponseWriter, r *http.Request) {

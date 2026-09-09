@@ -402,6 +402,7 @@ export type PlatformSnapshot = {
     service: string;
     detail?: string;
   }>;
+	 real_trace?: TraceSnapshot;
   retrieval: Array<{
     id: string;
     title: string;
@@ -411,6 +412,49 @@ export type PlatformSnapshot = {
     fixture: boolean;
   }>;
   summary: string;
+};
+
+export type PlatformSLORecordV1 = {
+  id: string;
+  label: string;
+  value: number;
+  unit: string;
+  objective: number;
+  comparison: "lte" | "eq";
+  state: "within_objective" | "violated" | "unavailable";
+  source: string;
+  workload: string;
+  window: string;
+  environment: string;
+  measured: boolean;
+  sampled_at: string;
+};
+
+export type PlatformProofSummaryV1 = {
+  schema_version: number;
+  sampled_at: string;
+  commit: string;
+  planes: Array<{ id:string; label:string; state:string; detail:string; source:string; measured:boolean; sampled_at:string; stale_age_ms:number }>;
+  slos: PlatformSLORecordV1[];
+  latest_trace?: TraceSnapshot;
+  summary: string;
+};
+
+export type CapacityCostEvidenceV1 = {
+  schema_version: number;
+  sampled_at: string;
+  capacity?: Array<{ asset_count:number; evidence_class:string; events_per_second:number; ingest_p95_ms:number; consumer_lag:number; worker_count:number; trace_spans_24h:number; assumption?:string; source:string; sampled_at:string }>;
+  cost?: Array<{ asset_count:number; evidence_class:string; compute_monthly_usd:number; storage_monthly_usd:number; transfer_monthly_usd:number; model_monthly_usd:number; estimated_monthly_usd:number; assumption:string }>;
+  currency: string;
+  disclaimer: string;
+};
+
+export type PlatformDrillReceiptV1 = {
+  schema_version:number; id:string; type:string; target_id:string; actor_identity:string; state:string;
+  expected_invariants:string[];
+  observations:Array<{at:string;kind:string;summary:string;source_id?:string}>;
+  initial_state:Record<string,string>; final_state?:Record<string,string>; recovery_ms?:number;
+  evidence_hash?:string; started_at:string; completed_at?:string; outcome:string; reason?:string;
 };
 
 export type ProviderAttempt = {
