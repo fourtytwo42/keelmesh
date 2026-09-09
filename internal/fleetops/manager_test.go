@@ -56,6 +56,20 @@ func TestVMFleetProfileBindsTwelveUnassignedDispersedNodes(t *testing.T) {
 	}
 }
 
+func TestSnapshotZerosPersistedLegacyTapeDepth(t *testing.T) {
+	m := New("", slog.Default())
+	for id, vessel := range m.vessels {
+		vessel.Telemetry.TapeDepthSeconds = 60
+		m.vessels[id] = vessel
+		break
+	}
+	for _, vessel := range m.Snapshot().Vessels {
+		if vessel.Telemetry.TapeDepthSeconds != 0 {
+			t.Fatalf("legacy tape depth leaked through snapshot for %s: %d", vessel.ID, vessel.Telemetry.TapeDepthSeconds)
+		}
+	}
+}
+
 func TestMissionLoopDefaultsOffAndRestartsFromFinalPose(t *testing.T) {
 	for _, test := range []struct {
 		name string

@@ -532,6 +532,10 @@ func (m *Manager) snapshotLocked() domain.FleetSnapshotV2 {
 	now := time.Now().UTC()
 	vs := make([]domain.VesselProfileV2, 0, len(m.vessels))
 	for _, v := range m.vessels {
+		// M14 retires tape depth as execution state. Persisted M1-M13 snapshots
+		// may still carry the old idle 60-second default, but compatibility
+		// projections must always serialize zero.
+		v.Telemetry.TapeDepthSeconds = 0
 		solarKW, loadKW, netKW := energyFlow(v, v.Telemetry.SpeedMPS, m.simTickMS/1000)
 		v.Telemetry.SolarInputKW = solarKW
 		v.Telemetry.PowerDrawKW = loadKW
