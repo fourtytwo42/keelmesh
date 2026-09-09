@@ -348,7 +348,13 @@ func (m *Manager) RepresentativeTrace(ctx context.Context) (domain.TraceSnapshot
 		FROM otel_spans
 		WHERE started_at > now() - interval '24 hours'
 		GROUP BY trace_id
-		ORDER BY count(DISTINCT service) DESC, count(*) DESC, max(started_at) DESC
+		ORDER BY
+			bool_or(service = 'keelmesh-coordination-node') DESC,
+			bool_or(service = 'keelmesh-coordination-gateway') DESC,
+			bool_or(service = 'keelmesh-core') DESC,
+			count(DISTINCT service) DESC,
+			count(*) DESC,
+			max(started_at) DESC
 		LIMIT 1`).Scan(&traceID)
 	if err != nil {
 		return domain.TraceSnapshotV1{}, err
