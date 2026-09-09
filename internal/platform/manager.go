@@ -344,6 +344,33 @@ func (m *Manager) TraceCount24H(ctx context.Context) int64 {
 	return count
 }
 
+// LatestCompletedCapacity returns a durable measurement from the newest
+// completed load run. It lets the evidence UI remain useful while the
+// generator is idle without presenting a projection as a live measurement.
+func (m *Manager) LatestCompletedCapacity(ctx context.Context) (rate, ingestP95 float64, source string, sampledAt time.Time, ok bool) {
+	if err := m.connect(ctx); err != nil {
+		return 0, 0, "", time.Time{}, false
+	}
+	m.mu.RLock()
+	pool := m.pool
+	m.mu.RUnlock()
+	var runID string
+	err := pool.QueryRow(ctx, `
+		SELECT lr.id,
+		       lr.produced / GREATEST(EXTRACT(EPOCH FROM (lr.stopped_at-lr.started_at)), 0.001),
+		       COALESCE((SELECT percentile_cont(.95) WITHIN GROUP
+		         (ORDER BY EXTRACT(EPOCH FROM (te.received_at-te.produced_at))*1000)
+		         FROM telemetry_events te WHERE te.run_id=lr.id), 0),
+		       lr.stopped_at
+		FROM load_runs lr
+		WHERE lr.state='stopped' AND lr.stopped_at IS NOT NULL AND lr.produced>0
+		ORDER BY lr.stopped_at DESC LIMIT 1`).Scan(&runID, &rate, &ingestP95, &sampledAt)
+	if err != nil {
+		return 0, 0, "", time.Time{}, false
+	}
+	return rate, ingestP95, "completed load run " + runID, sampledAt.UTC(), true
+}
+
 func readTrace(ctx context.Context, pool *pgxpool.Pool, traceID string) (domain.TraceSnapshotV1, error) {
 	trace := domain.TraceSnapshotV1{TraceID: traceID, Spans: []domain.SpanSnapshotV1{}}
 	rows, err := pool.Query(ctx, `SELECT trace_id,span_id,parent_span_id,name,service,state,started_at,duration_ms,attributes FROM otel_spans WHERE trace_id=$1 ORDER BY started_at,span_id`, traceID)

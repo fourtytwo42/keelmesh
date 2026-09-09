@@ -25,6 +25,18 @@ func (s *Server) buildPlatformSummary(r *http.Request) domain.PlatformProofSumma
 	if s.platform != nil {
 		platformSnapshot = s.platform.Snapshot()
 	}
+	ingestP95 := platformSnapshot.Metrics.LatencyP95MS
+	ingestMeasured := platformSnapshot.Available && platformSnapshot.Metrics.EventsPerSecond > 0
+	ingestSource := "telemetry_events.received_at - produced_at"
+	ingestWorkload := workloadName(platformSnapshot)
+	ingestWindow := "rolling 60 seconds"
+	if s.platform != nil && !ingestMeasured {
+		if _, measuredP95, source, sampledAt, ok := s.platform.LatestCompletedCapacity(r.Context()); ok {
+			ingestP95, ingestMeasured = measuredP95, true
+			ingestSource, ingestWorkload = source, source
+			ingestWindow = "completed at " + sampledAt.Format(time.RFC3339)
+		}
+	}
 	planes := []domain.PlatformPlaneHealthV1{
 		{ID: "edge", Label: "Edge mission plane", State: "unavailable", Detail: "Live vessel-node health has not been sampled for this request.", Source: "node health and execution journals", Measured: false, SampledAt: now},
 		{ID: "coordination", Label: "Coordination plane", State: "unavailable", Detail: "No live coordination gateway is configured.", Source: "mTLS node status", Measured: false, SampledAt: now},
@@ -80,7 +92,7 @@ func (s *Server) buildPlatformSummary(r *http.Request) domain.PlatformProofSumma
 		planes[1].Measured = true
 	}
 	slos := []domain.PlatformSLORecordV1{
-		slo("ingest-p95", "Telemetry projection latency P95", platformSnapshot.Metrics.LatencyP95MS, "ms", 500, "lte", platformSnapshot.Available, "telemetry_events.received_at - produced_at", workloadName(platformSnapshot), "rolling 60 seconds", now),
+		slo("ingest-p95", "Telemetry projection latency P95", ingestP95, "ms", 500, "lte", ingestMeasured, ingestSource, ingestWorkload, ingestWindow, now),
 		slo("consumer-lag", "Kafka consumer lag", float64(platformSnapshot.Metrics.CurrentLag), "events", 100, "lte", platformSnapshot.Available, "Kafka committed versus end offsets", workloadName(platformSnapshot), "current sample", now),
 		slo("duplicate-effects", "Duplicate applied mission effects", 0, "effects", 0, "eq", duplicateMeasured, "hash-addressed M13 drill receipt", "latest passed leader/radio drill", "latest completed drill", now),
 		slo("leader-recovery", "Cell leader recovery", firstMeasured(leaderRecoveryMeasured, leaderRecoveryMS, maxFloat(electionValues)), "ms", 10000, "lte", leaderRecoveryMeasured || len(electionValues) > 0, firstSource(leaderRecoveryMeasured, "hash-addressed M13 drill receipt", "Raft node last_election_ms"), "two six-voter cells", "latest election or completed drill", now),
@@ -123,7 +135,15 @@ func (s *Server) platformCapacityV6(w http.ResponseWriter, r *http.Request) {
 	}
 	traceCount := s.platform.TraceCount24H(r.Context())
 	baseRate := snapshot.Metrics.EventsPerSecond
-	profiles := []domain.CapacityProfileV1{{AssetCount: 12, EvidenceClass: "measured", EventsPerSecond: baseRate, IngestP95MS: snapshot.Metrics.LatencyP95MS, ConsumerLag: snapshot.Metrics.CurrentLag, WorkerCount: workers, TraceSpans24H: traceCount, Source: "live VM 214 platform snapshot", SampledAt: now}}
+	ingestP95 := snapshot.Metrics.LatencyP95MS
+	source := "live VM 214 platform snapshot"
+	sampledAt := now
+	if baseRate <= 0 {
+		if measuredRate, measuredP95, measuredSource, measuredAt, ok := s.platform.LatestCompletedCapacity(r.Context()); ok {
+			baseRate, ingestP95, source, sampledAt = measuredRate, measuredP95, measuredSource, measuredAt
+		}
+	}
+	profiles := []domain.CapacityProfileV1{{AssetCount: 12, EvidenceClass: "measured", EventsPerSecond: baseRate, IngestP95MS: ingestP95, ConsumerLag: snapshot.Metrics.CurrentLag, WorkerCount: workers, TraceSpans24H: traceCount, Source: source, SampledAt: sampledAt}}
 	for _, count := range []int{100, 1000} {
 		profiles = append(profiles, domain.CapacityProfileV1{AssetCount: count, EvidenceClass: "projected", EventsPerSecond: baseRate * float64(count) / 12, WorkerCount: max(3, (count+99)/100), Assumption: "Linear event-rate projection from the current 12-node sample; not a benchmark.", Source: "calculated projection", SampledAt: now})
 	}
