@@ -53,6 +53,9 @@ provider traffic.
 non-blocking OTLP traces over the management plane to VM 214. The bearer token
 is installed separately at `/etc/keelmesh/secrets/otel_token` with mode `0400`;
 it is never stored in Git or rendered through application interfaces.
+`infrastructure/install-m13-node-release` performs the one-node-at-a-time
+binary, helper, token, and drop-in installation and restores the previous node
+binary automatically if the M13 health check fails.
 
 Player B traffic enters VM 214 on the private `player-b-ingress` Compose service.
 The ingress pins all `/api/v3` requests to faction B and follows the currently

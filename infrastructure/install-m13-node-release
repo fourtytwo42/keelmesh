@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+binary=/tmp/keelmesh-node.m13
+fault_helper=/tmp/m7-radio-fault
+dropin=/tmp/m13-observability.conf
+token=/tmp/otel_token
+installed_binary=/usr/local/bin/keelmesh-node
+backup=/tmp/keelmesh-node.pre-m13
+installed_dropin=/etc/systemd/system/keelmesh-node.service.d/m13-observability.conf
+
+if [[ ${EUID} -ne 0 ]]; then
+  echo "run as root" >&2
+  exit 2
+fi
+
+for artifact in "$binary" "$fault_helper" "$dropin" "$token"; do
+  [[ -s "$artifact" ]] || { echo "missing artifact: $artifact" >&2; exit 2; }
+done
+
+grep -Fq 'KEELMESH_OTLP_ENDPOINT=http://192.168.50.214:4318/v1/traces' "$dropin"
+[[ "$(ip route show default | awk 'NR == 1 {print $5}')" != eth1 ]]
+ip -4 -o addr show dev eth1 | grep -q '10\.77\.0\.'
+
+cp --preserve=mode,ownership,timestamps "$installed_binary" "$backup"
+rollback() {
+  if [[ -s "$backup" ]]; then
+    install -o root -g root -m 0755 "$backup" "$installed_binary"
+    rm -f "$installed_dropin"
+    systemctl daemon-reload
+    systemctl restart keelmesh-node || true
+    echo "M13 node installation failed; previous binary restored" >&2
+  fi
+}
+trap rollback ERR
+
+install -o root -g root -m 0755 "$binary" "$installed_binary"
+install -o root -g root -m 0755 "$fault_helper" /usr/local/sbin/m7-radio-fault
+install -d -o root -g root -m 0700 /etc/keelmesh/secrets
+install -o root -g root -m 0400 "$token" /etc/keelmesh/secrets/otel_token
+install -d -o root -g root -m 0755 /etc/systemd/system/keelmesh-node.service.d
+install -o root -g root -m 0644 "$dropin" "$installed_dropin"
+systemctl daemon-reload
+systemctl restart keelmesh-node
+
+healthy=0
+for _ in $(seq 1 40); do
+  if curl -fsS http://127.0.0.1:8080/healthz 2>/dev/null | grep -q '"version":"m13"'; then
+    healthy=1
+    break
+  fi
+  sleep 1
+done
+[[ "$healthy" == 1 ]]
+[[ "$(systemctl is-active keelmesh-node)" == active ]]
+
+trap - ERR
+sha256sum "$installed_binary"
+rm -f "$binary" "$fault_helper" "$dropin" "$token" "$backup"
+echo "M13_NODE_INSTALL_PASS"
