@@ -1684,8 +1684,8 @@ async def investigate(request: InvestigateRequest) -> dict[str, Any]:
             receipts.append(receipt)
             pnt, receipt = await call_tool(session, "pnt.get_evidence", {"incident_id": request.incident_id})
             receipts.append(receipt)
-            tape, receipt = await call_tool(
-                session, "mission_tape.get_lifecycle", {"incident_id": request.incident_id}
+            program, receipt = await call_tool(
+                session, "execution.get_program_lifecycle", {"incident_id": request.incident_id}
             )
             receipts.append(receipt)
             policy, receipt = await call_tool(
@@ -1721,7 +1721,7 @@ async def investigate(request: InvestigateRequest) -> dict[str, Any]:
             {
                 "incident": manifest["summary"],
                 "pnt": pnt,
-                "tape": tape,
+                "execution_program": program,
                 "policy": policy,
                 "runbooks": runbooks["chunks"],
                 "history": history["hits"],
