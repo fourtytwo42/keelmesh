@@ -65,8 +65,8 @@ M14 adds `infrastructure/systemd/keelmesh-node-m14-execution.conf` and
 not the default route, deploys one node at a time, and restores both the prior
 binary and execution-mode drop-in if the M14 health check fails. The Compose
 deployment defaults to `full_program_shadow`; promotion to `full_program` is
-explicit and occurs only after receipt-backed program installation succeeds on
-all assigned nodes.
+explicit through `keelmesh-node-m14-full-program.conf` and occurs only after
+receipt-backed program installation succeeds on all assigned nodes.
 
 Player B traffic enters VM 214 on the private `player-b-ingress` Compose service.
 The ingress pins all `/api/v3` requests to faction B and follows the currently
