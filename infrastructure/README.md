@@ -51,7 +51,8 @@ provider traffic.
 
 `infrastructure/systemd/keelmesh-node-m13-observability.conf` sends bounded,
 non-blocking OTLP traces over the management plane to VM 214. The bearer token
-is installed separately at `/etc/keelmesh/secrets/otel_token` with mode `0400`;
+is installed separately for the unprivileged node service at
+`/etc/keelmesh/secrets/otel_token` with mode `0400`;
 it is never stored in Git or rendered through application interfaces.
 `infrastructure/install-m13-node-release` performs the one-node-at-a-time
 binary, helper, token, and drop-in installation and restores the previous node
