@@ -101,7 +101,7 @@ func (s *Server) buildPlatformSummary(r *http.Request) domain.PlatformProofSumma
 	representativeTrace := platformSnapshot.RealTrace
 	if s.platform != nil {
 		if trace, err := s.platform.RepresentativeTrace(r.Context()); err == nil && len(trace.Spans) > 0 {
-			representativeTrace = trace
+			representativeTrace = &trace
 		}
 	}
 	return domain.PlatformProofSummaryV1{SchemaVersion: 1, SampledAt: now, Commit: envValue("GIT_COMMIT", "development"), Planes: planes, SLOs: slos, LatestTrace: representativeTrace, Summary: "Four independently failing planes with measured evidence and explicit unavailable states."}
