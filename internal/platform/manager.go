@@ -332,6 +332,30 @@ func (m *Manager) RecentTraces(ctx context.Context, limit int) ([]domain.TraceSu
 	return result, rows.Err()
 }
 
+// RepresentativeTrace returns the strongest recent cross-process trace rather
+// than whichever health/read request happened most recently. This keeps the
+// interview surface honest while routine polling continues to emit spans.
+func (m *Manager) RepresentativeTrace(ctx context.Context) (domain.TraceSnapshotV1, error) {
+	if err := m.connect(ctx); err != nil {
+		return domain.TraceSnapshotV1{}, platformError("PLATFORM_UNAVAILABLE", "Trace storage is unavailable.")
+	}
+	m.mu.RLock()
+	pool := m.pool
+	m.mu.RUnlock()
+	var traceID string
+	err := pool.QueryRow(ctx, `
+		SELECT trace_id
+		FROM otel_spans
+		WHERE started_at > now() - interval '24 hours'
+		GROUP BY trace_id
+		ORDER BY count(DISTINCT service) DESC, count(*) DESC, max(started_at) DESC
+		LIMIT 1`).Scan(&traceID)
+	if err != nil {
+		return domain.TraceSnapshotV1{}, err
+	}
+	return readTrace(ctx, pool, traceID)
+}
+
 func (m *Manager) TraceCount24H(ctx context.Context) int64 {
 	if m.connect(ctx) != nil {
 		return 0

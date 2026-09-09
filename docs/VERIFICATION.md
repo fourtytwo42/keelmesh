@@ -36,6 +36,8 @@ python3 scripts/verify_m5.py http://127.0.0.1:8080
 python3 scripts/verify_m6.py http://127.0.0.1:8080
 python3 scripts/verify_m7.py --base-url http://127.0.0.1:8080
 python3 scripts/verify_m11.py http://127.0.0.1:8080
+python3 scripts/verify_m12.py http://127.0.0.1:8080
+python3 scripts/verify_m13.py http://127.0.0.1:8080
 ```
 
 The consolidated command is `scripts/keelmesh verify`.

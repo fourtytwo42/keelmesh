@@ -23,8 +23,9 @@
 | M10 | Trusted A2UI scenes, live bindings, assistant tools, critical scenes |
 | M11 | Central/node memory, Kafka learning, replay, optional MLOps profile |
 | M12 | Real two-cell Raft runtime, separate-role mTLS PKI, four-signature proofs, follower forwarding, cross-cell activation, and signed leader discovery |
+| M13 | Cross-process OTLP tracing, SLO-backed recovery drills, measured capacity evidence, and a governed GNSS incident-to-evaluation flywheel |
 
-Recent product hardening adds first-class multi-turn provider input for the shared voice/text assistant, deterministic follow-up resolution across controlled vessels, groups, and neutral contacts, and live battery-flow telemetry. Fleet reserve percentages now distinguish net charging from discharge, while each vessel inspector exposes solar input and net power.
+M13 unifies the four operational planes in Engineer and System: edge mission execution, quorum-backed coordination, Kafka/PostgreSQL data processing, and advisory AI/ML. The deployed evidence includes a real multi-service OTLP trace, rollback-protected leader and radio-partition drills, supervised worker recovery, immutable GNSS evaluation artifacts, and a measured 1,000-producer capacity run.
 
 ## Deployment
 
@@ -34,6 +35,8 @@ Recent product hardening adds first-class multi-turn provider input for the shar
 - VM 214 probes each real node management health endpoint; simulated Starlink/HaLow and GNSS state is projected onto the matching Fleet vessel.
 - PostgreSQL/pgvector, Kafka, workers, AI, and speech remain private.
 - Builds and verification run on VM 214/nodes.
+- M13's private OTLP collector, MinIO, Dagster, and MLflow services are deployed without publishing additional ports.
+- Latest measured scale run: 1,000 logical producers, approximately 2,020 events/second, zero dropped events, and matching replay checksums on VM 214.
 - GitHub-hosted workflows remain disabled.
 - No snapshot is authorized by documentation or deployment operations.
 
@@ -47,12 +50,13 @@ Recent product hardening adds first-class multi-turn provider input for the shar
 - Map, environment, contacts, navigation, and effects are simulation-only.
 - Some legacy Playwright tests still target removed Mission chat.
 - Cloudflare Quick Tunnel URLs are ephemeral.
+- The 100- and 1,000-asset capacity extrapolations and all cloud-cost rows are planning projections, not production benchmarks or vendor quotes.
 
 ## Next investments
 
-1. Execute the active [M13 Cloud Platform Proof](PLATFORM_PROOF_PLAN.md): cross-process tracing, SLO-backed failure drills, one GNSS incident-to-evaluation workflow, and measured capacity/cost evidence.
-2. Migrate legacy browser tests to global Assistant plus manual Mission semantics.
-3. Complete radio-plane memory synchronization on the authenticated M12 transport.
-4. Finish browser/node STT benchmarks and trusted-peer routing.
-5. Replace remaining fixture retrieval with bundled ONNX indexing.
-6. Add stable named HTTPS ingress after domain/account selection.
+1. Migrate legacy browser tests to global Assistant plus manual Mission semantics.
+2. Complete radio-plane memory synchronization on the authenticated M12 transport.
+3. Finish browser/node STT benchmarks and trusted-peer routing.
+4. Replace remaining fixture retrieval with bundled ONNX indexing.
+5. Add stable named HTTPS ingress after domain/account selection.
+6. Validate the production-shape Kubernetes design in a disposable local cluster without replacing the stable interview appliance.

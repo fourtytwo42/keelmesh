@@ -2,6 +2,22 @@
 
 M13 presents KeelMesh as four independently failing planes: edge execution, distributed coordination, cloud data processing, and advisory AI/ML. The source plan is [M13 — Cloud Platform Proof](PLATFORM_PROOF_PLAN.md).
 
+## Verified lab baseline
+
+The current twelve-node release was verified on 2026-09-09. These values are evidence from the home-lab deployment, not production claims:
+
+| Evidence | Result |
+|---|---|
+| Capacity workload | 1,000 logical producers; approximately 2,020 events/second; zero dropped events |
+| Projection recovery | Peak lag 202; drained in approximately 19.1 seconds; replay counts and checksums matched |
+| Leader recovery | 2,740 ms; six voters reconverged; zero duplicate effects |
+| Radio 4/2 partition | Four-voter side committed; two-voter side did not; management/provider interruptions zero |
+| Radio 3/3 partition | Both sides rejected new authority; all six voters reconverged after rollback |
+| GNSS evaluation | Source-linked MinIO artifact, successful Dagster materialization, finished MLflow comparison, promotion still human-gated |
+| Cross-process trace | Core, coordination gateway, node mTLS/Raft apply, and signed proof collection represented by stored OTLP spans |
+
+The API supplies exact timestamps, hashes, run IDs, workload labels, and freshness. Engineer and System render that same state rather than a separate demonstration fixture.
+
 ## Evidence surfaces
 
 - **Engineer** is the live SRE surface: plane health, SLO measurements, real OTLP traces, bounded drill controls, and capacity/cost evidence.

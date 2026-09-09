@@ -59,6 +59,7 @@ The current product contract is the [PRD](PRD.md). Superseded milestone plans re
 - Central and node-local memory with scoped retrieval, immutable provenance, tombstones, and deterministic projection replay.
 - Twelve symmetric vessel-node VMs plus a neutral referee/ingress VM for distributed-system demonstrations.
 - Two fixed six-voter Raft cells with radio-plane replication, four-signature effect proofs, cross-cell future activation, and separate Ed25519 mTLS identities; `simulated` and `shadow` remain guarded rollback modes during rollout.
+- A private, nonblocking OTLP path; SLO-backed leader, radio, and worker recovery receipts; measured capacity evidence; and a human-gated GNSS incident-to-evaluation pipeline through Dagster, MinIO, and MLflow.
 
 ## System at a glance
 
@@ -153,6 +154,7 @@ Mission execution never depends on AI availability. On touch devices, tapping wa
 | `memory-lab` | Adds MinIO, Dagster, and MLflow | Optional ingestion, experiment, and artifact showcase |
 | Vessel node | Symmetric Go/API/UI node with local stores | Per-vessel and coordinator-failover demonstrations |
 | M12 coordination | Two independent six-voter Raft cells | Quorum authority, signed receipts, mTLS, and failover |
+| M13 platform proof | OTLP collector plus optional memory-lab services | Trace, SLO, drill, capacity, cost, and governed evaluation evidence |
 
 ## Engineering principles
 

@@ -98,7 +98,13 @@ func (s *Server) buildPlatformSummary(r *http.Request) domain.PlatformProofSumma
 		slo("leader-recovery", "Cell leader recovery", firstMeasured(leaderRecoveryMeasured, leaderRecoveryMS, maxFloat(electionValues)), "ms", 10000, "lte", leaderRecoveryMeasured || len(electionValues) > 0, firstSource(leaderRecoveryMeasured, "hash-addressed M13 drill receipt", "Raft node last_election_ms"), "two six-voter cells", "latest election or completed drill", now),
 		slo("radio-recovery", "Radio partition rollback and convergence", radioRecoveryMS, "ms", 60000, "lte", radioRecoveryMeasured, "hash-addressed M13 drill receipt", "4/2 and 3/3 eth1-only fault profiles", "latest completed drills", now),
 	}
-	return domain.PlatformProofSummaryV1{SchemaVersion: 1, SampledAt: now, Commit: envValue("GIT_COMMIT", "development"), Planes: planes, SLOs: slos, LatestTrace: platformSnapshot.RealTrace, Summary: "Four independently failing planes with measured evidence and explicit unavailable states."}
+	representativeTrace := platformSnapshot.RealTrace
+	if s.platform != nil {
+		if trace, err := s.platform.RepresentativeTrace(r.Context()); err == nil && len(trace.Spans) > 0 {
+			representativeTrace = trace
+		}
+	}
+	return domain.PlatformProofSummaryV1{SchemaVersion: 1, SampledAt: now, Commit: envValue("GIT_COMMIT", "development"), Planes: planes, SLOs: slos, LatestTrace: representativeTrace, Summary: "Four independently failing planes with measured evidence and explicit unavailable states."}
 }
 
 func (s *Server) platformSLOV6(w http.ResponseWriter, r *http.Request) {

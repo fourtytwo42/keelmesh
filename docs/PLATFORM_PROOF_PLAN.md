@@ -1,6 +1,6 @@
 # M13 — Cloud Platform Proof
 
-**Status:** Planned  
+**Status:** Implemented and verified on the twelve-node lab deployment
 **Purpose:** Interview-facing platform evidence and production-readiness hardening  
 **Depends on:** M10 command scenes, M11 memory/data plane, and M12 Raft/mTLS authority  
 **Deployment rule:** Preserve the stable VM 214 and twelve-node deployment while this work is developed and verified
@@ -528,4 +528,3 @@ The following are valuable but are not required to complete M13:
 - Create no Proxmox snapshot without a separate explicit authorization and safe-capacity verification.
 - Run builds and verification only on the approved local/VM 214/node environment; do not run GitHub-hosted workflows.
 - Retain the current stable binary and configuration as the immediate rollback target until M13 acceptance passes.
-
