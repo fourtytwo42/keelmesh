@@ -49,6 +49,11 @@ applying a fault. The split mode uses an isolated nftables table on `eth1`, so
 M13 can prove real 4/2 and 3/3 Raft partitions without touching management or
 provider traffic.
 
+`infrastructure/systemd/keelmesh-node-m13-observability.conf` sends bounded,
+non-blocking OTLP traces over the management plane to VM 214. The bearer token
+is installed separately at `/etc/keelmesh/secrets/otel_token` with mode `0400`;
+it is never stored in Git or rendered through application interfaces.
+
 Player B traffic enters VM 214 on the private `player-b-ingress` Compose service.
 The ingress pins all `/api/v3` requests to faction B and follows the currently
 advertised B coordinator. The Cloudflare systemd unit publishes that ingress;
