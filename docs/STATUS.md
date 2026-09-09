@@ -28,7 +28,7 @@
 
 M13 unifies the four operational planes in Engineer and System: edge mission execution, quorum-backed coordination, Kafka/PostgreSQL data processing, and advisory AI/ML. The deployed evidence includes a real multi-service OTLP trace, rollback-protected leader and radio-partition drills, supervised worker recovery, immutable GNSS evaluation artifacts, and a measured 1,000-producer capacity run.
 
-M14 is implemented and verified in source. Its staged VM 214 and twelve-node rollout remains pending; the current deployed appliance therefore continues to represent the M13 release until that rollout and live acceptance are completed.
+M14 is deployed in authoritative `full_program` execution mode on VM 214 and all twelve vessel nodes. A live quorum-backed proof installed one exact 3,663-segment program on all six Cell A nodes and continued to mission tick 108 without a rolling authority refill. The compatibility sweep passed twice; every legacy tape-depth projection is zero.
 
 ## Deployment
 
@@ -39,6 +39,7 @@ M14 is implemented and verified in source. Its staged VM 214 and twelve-node rol
 - PostgreSQL/pgvector, Kafka, workers, AI, and speech remain private.
 - Builds and verification run on VM 214/nodes.
 - M13's private OTLP collector, MinIO, Dagster, and MLflow services are deployed without publishing additional ports.
+- M14 complete-program storage and validation are active on all twelve nodes; the identical node binary SHA-256 is `03f522dad5ca7e3430a268e5e805d892c35f87ea418cfc40bec9f5370df06879`.
 - Latest measured scale run: 1,000 logical producers, approximately 2,020 events/second, zero dropped events, and matching replay checksums on VM 214.
 - GitHub-hosted workflows remain disabled.
 - No snapshot is authorized by documentation or deployment operations.

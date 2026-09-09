@@ -72,7 +72,7 @@ Legacy execution-buffer fields remain serialized as zero for one compatibility r
 - `full_program_shadow`: central execution remains authoritative while node installation differences are recorded.
 - `full_program`: program installation and validation are required before readiness.
 
-Rollout proceeds through local tests, two local six-node cells, VM 214 shadow comparison, one vessel at a time, Cell A, then Cell B. The old executor is removed only after live acceptance. No rollout step requires a Proxmox snapshot or network-topology change.
+The 2026-09-09 rollout passed local tests, VM 214 shadow comparison, sequential vessel updates, Cell A and Cell B convergence, and live full-program acceptance. The legacy executor remains only as a bounded rollback mode for this compatibility release. No Proxmox snapshot, VM migration, network-topology change, or hosted workflow was used.
 
 ## Verification
 

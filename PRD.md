@@ -530,7 +530,7 @@ GitHub-hosted workflows are intentionally unused. Verification runs on VM 214 an
 | M11 | Central/node memory, Kafka learning, replay, optional MLOps | Implemented with radio-sync follow-up |
 | M12 | Two real six-voter Raft cells, mTLS, proofs, cross-cell activation | Implemented and deployed in Raft mode |
 | M13 | Cross-process traces, SLO drills, capacity/cost evidence, GNSS evaluation flywheel | Implemented and deployed |
-| M14 | Complete onboard programs, explicit expiry, node-local stores, group/local decisions | Implemented in source; staged node rollout pending |
+| M14 | Complete onboard programs, explicit expiry, node-local stores, group/local decisions | Deployed on VM 214 and all twelve vessel nodes in `full_program` mode |
 
 ### 15.2 Verified deployment snapshot
 

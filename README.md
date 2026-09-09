@@ -58,7 +58,7 @@ The current product contract is the [PRD](PRD.md). Superseded milestone plans re
 - A private MCP boundary, deterministic incident replay, human-approved evaluation promotion, and trusted A2UI operational scenes.
 - Central and node-local memory with scoped retrieval, immutable provenance, tombstones, and deterministic projection replay.
 - Twelve symmetric vessel-node VMs plus a neutral referee/ingress VM for distributed-system demonstrations.
-- Two fixed six-voter Raft cells with radio-plane replication, four-signature effect proofs, cross-cell future activation, and separate Ed25519 mTLS identities; `simulated` and `shadow` remain guarded rollback modes during rollout.
+- Two fixed six-voter Raft cells with radio-plane replication, four-signature effect proofs, cross-cell future activation, and separate Ed25519 mTLS identities; `simulated` and `shadow` remain guarded rollback modes.
 - A private, nonblocking OTLP path; SLO-backed leader, radio, and worker recovery receipts; measured capacity evidence; and a human-gated GNSS incident-to-evaluation pipeline through Dagster, MinIO, and MLflow.
 
 ## System at a glance
