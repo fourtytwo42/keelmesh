@@ -1,0 +1,58 @@
+{
+  "program": {
+    "schema_version": 2,
+    "program_id": "program-mission-14-r1",
+    "mission_id": "mission-14",
+    "plan_id": "plan-14",
+    "plan_hash": "sha256:plan",
+    "lease_id": "lease-14",
+    "issued_at": "2026-09-09T12:00:00Z",
+    "issued_tick": 0,
+    "authorization_expiry_tick": 7200,
+    "completion_policy": "hold_at_final_point",
+    "terminal_contingency": "safe_hold",
+    "active_revision": 1,
+    "mission_tick_ms": 75000,
+    "revisions": {},
+    "cursors": {},
+    "content_hash": "sha256:program",
+    "signature": "fixture"
+  },
+  "authority": {
+    "schema_version": 1,
+    "program_id": "program-mission-14-r1",
+    "mission_id": "mission-14",
+    "plan_id": "plan-14",
+    "revision": 1,
+    "status": "active",
+    "complete_program_onboard": true,
+    "issued_tick": 0,
+    "authorization_expiry_tick": 7200,
+    "authorized_time_remaining_seconds": 7125,
+    "decision_node_id": "node-a-01",
+    "decision_scope": "group",
+    "decision_epoch": 3,
+    "terminal_contingency": "safe_hold",
+    "program_hash": "sha256:program"
+  },
+  "install_receipt": {
+    "schema_version": 1,
+    "program_id": "program-mission-14-r1",
+    "mission_id": "mission-14",
+    "node_id": "node-a-01",
+    "revision": 1,
+    "program_hash": "sha256:program",
+    "installed_at": "2026-09-09T12:00:01Z",
+    "state": "installed",
+    "receipt_hash": "sha256:receipt",
+    "signature": "fixture"
+  },
+  "decision": {
+    "schema_version": 1,
+    "group_id": "group-amber",
+    "decision_node_id": "node-a-01",
+    "decision_scope": "group",
+    "decision_epoch": 3,
+    "reachable_nodes": ["node-a-01", "node-a-02", "node-a-03"]
+  }
+}

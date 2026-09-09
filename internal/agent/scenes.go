@@ -565,7 +565,15 @@ func (m *Manager) RefreshScenes(fleet domain.FleetSnapshotV2) {
 func liveSceneEntity(id string, fleet domain.FleetSnapshotV2) (map[string]any, bool) {
 	for _, v := range fleet.Vessels {
 		if v.ID == id {
-			return map[string]any{"id": v.ID, "type": "vessel", "name": v.DisplayName, "status": v.Telemetry.Mode, "reserve": v.Telemetry.Reserve, "position": v.Telemetry.Position, "group": v.GroupCode, "pnt": v.Telemetry.PNTIntegrity, "uncertainty_m": v.Telemetry.UncertaintyM, "tape_seconds": v.Telemetry.TapeDepthSeconds}, true
+			value := map[string]any{"id": v.ID, "type": "vessel", "name": v.DisplayName, "status": v.Telemetry.Mode, "reserve": v.Telemetry.Reserve, "position": v.Telemetry.Position, "group": v.GroupCode, "pnt": v.Telemetry.PNTIntegrity, "uncertainty_m": v.Telemetry.UncertaintyM}
+			for _, mission := range fleet.Missions {
+				if mission.ID == v.Telemetry.MissionID && mission.Execution != nil {
+					value["program_id"] = mission.Execution.ProgramID
+					value["complete_program_onboard"] = mission.Execution.CompleteProgramOnboard
+					value["authorized_time_remaining_seconds"] = mission.Execution.AuthorizedTimeRemainingSeconds
+				}
+			}
+			return value, true
 		}
 	}
 	for _, g := range fleet.Groups {
@@ -590,8 +598,8 @@ func (m *Manager) evaluateProactiveLocked(fleet domain.FleetSnapshotV2) {
 		condition, detail := "", ""
 		if vessel.Telemetry.PNTIntegrity == "unsafe" || vessel.Telemetry.UncertaintyM > 45 {
 			condition, detail = "unsafe_pnt", fmt.Sprintf("%s PNT uncertainty is %.0f m; mission motion requires operator review.", vessel.DisplayName, vessel.Telemetry.UncertaintyM)
-		} else if vessel.Telemetry.TapeDepthSeconds > 0 && vessel.Telemetry.TapeDepthSeconds <= 14 {
-			condition, detail = "critical_tape", fmt.Sprintf("%s has %d seconds of cached authority remaining.", vessel.DisplayName, vessel.Telemetry.TapeDepthSeconds)
+		} else if remaining, ok := vesselAuthorityRemaining(vessel, fleet); ok && remaining <= 120 {
+			condition, detail = "authority_expiring", fmt.Sprintf("%s has %d seconds of approved mission authority remaining and will enter its signed contingency at expiry.", vessel.DisplayName, remaining)
 		} else if vessel.Telemetry.Reserve <= .2 {
 			condition, detail = "reserve_threshold", fmt.Sprintf("%s reserve crossed the 20 percent critical threshold.", vessel.DisplayName)
 		}
@@ -621,6 +629,18 @@ func (m *Manager) evaluateProactiveLocked(fleet domain.FleetSnapshotV2) {
 		m.activeScenes[sceneSessionKey(scene.ActorID, scene.SessionID)] = scene.ID
 		m.appendSceneEventLocked("proactive.critical", scene.ID, "", domain.ProactiveSceneTriggerV1{ID: key, EntityID: vessel.ID, Condition: condition, Transition: transition, Severity: "critical", DetectedAt: now})
 	}
+}
+
+func vesselAuthorityRemaining(vessel domain.VesselProfileV2, fleet domain.FleetSnapshotV2) (int64, bool) {
+	if vessel.Telemetry.MissionID == "" {
+		return 0, false
+	}
+	for _, mission := range fleet.Missions {
+		if mission.ID == vessel.Telemetry.MissionID && mission.Execution != nil && mission.Execution.AuthorizedTimeRemainingSeconds > 0 {
+			return mission.Execution.AuthorizedTimeRemainingSeconds, true
+		}
+	}
+	return 0, false
 }
 
 func sceneSessionKey(actor, session string) string { return actor + "|" + session }

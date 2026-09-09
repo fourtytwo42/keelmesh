@@ -4,9 +4,9 @@ import type { ResilienceSnapshot } from "./types";
 
 const actions = [
   ["fail_starlink", "Fail Starlink", "Route around the direct uplink"],
-  ["partition_vessel4", "Partition Vessel 4", "Drain 30 seconds of cached authority"],
+  ["partition_vessel4", "Isolate Vessel 4", "Continue past one minute from its complete onboard program"],
   ["inject_gnss_spoof", "Inject GNSS spoof", "Reject the fix and enter safe hold"],
-  ["restore_contact", "Restore contact", "Reconcile and bridge to future work"],
+  ["restore_contact", "Restore contact", "Reconcile position, revision, epoch, and progress"],
 ] as const;
 
 type Props = { value: ResilienceSnapshot; onChange: (value: ResilienceSnapshot) => void; onError: (message: string) => void };
@@ -47,13 +47,12 @@ export function ResilienceDrill({ value, onChange, onError }: Props) {
     <header><div><small>RESILIENCE DRILL · VESSEL 4</small><h2>{value.phase.replaceAll("_", " ")}</h2></div><span>T+{value.mission_tick}s</span></header>
     <p className="resilience-summary">{value.summary}</p>
     <div className="resilience-metrics">
-      <div><small>MISSION TAPE</small><strong className={incident?.tape.watermark}>{incident?.tape.depth_seconds ?? 0}s</strong></div>
+      <div><small>ONBOARD PROGRAM</small><strong className={incident?.execution?.complete_program_onboard ? "trusted" : "unsafe"}>{incident?.execution?.complete_program_onboard ? "COMPLETE" : "NONE"}</strong></div>
       <div><small>PNT INTEGRITY</small><strong className={incident?.pnt.integrity}>{incident?.pnt.integrity ?? "trusted"}</strong></div>
       <div><small>UNCERTAINTY</small><strong>{incident?.pnt.uncertainty_m ?? 0}m</strong></div>
       <div><small>BUFFERED</small><strong>{incident?.buffered_events ?? 0}</strong></div>
     </div>
-    <div className="tape-cells" aria-label="Mission tape segments">{incident?.tape.segments.map((segment) => <span key={segment.sequence} className={segment.lifecycle} title={`Segment ${segment.sequence}: ${segment.lifecycle}`}><b>{segment.sequence}</b><i>{segment.lifecycle.slice(0, 3)}</i></span>)}</div>
-    <div className="resilience-evidence"><span>{value.hop_receipts?.length ? `${value.hop_receipts.length} signed hop receipts` : "Direct authority path"}</span><span>{incident?.pnt.excluded_sources?.includes("gnss") ? "GNSS excluded" : `${incident?.pnt.contributing_sources?.length ?? 0} PNT sources`}</span>{(value.discarded_sequences?.length ?? 0) > 0 && <span>{value.discarded_sequences.length} stale segments discarded</span>}</div>
+    <div className="resilience-evidence"><span>{incident?.execution ? `${Math.ceil(incident.execution.authorized_time_remaining_seconds / 60)} min authority remaining` : "No active authority"}</span><span>{incident?.execution ? `${incident.execution.decision_scope} decisions · epoch ${incident.execution.decision_epoch}` : "No decision scope"}</span><span>{value.hop_receipts?.length ? `${value.hop_receipts.length} signed hop receipts` : "Direct authority path"}</span><span>{incident?.pnt.excluded_sources?.includes("gnss") ? "GNSS excluded" : `${incident?.pnt.contributing_sources?.length ?? 0} PNT sources`}</span></div>
     <div className="fault-actions">{actions.map(([kind, label, detail], index) => {
       const enabled = value.next_action === kind && !busy;
       return <button key={kind} disabled={!enabled} onClick={() => run(kind)}><b>{index + 1}</b><span><strong>{label}</strong><small>{detail}</small></span></button>;

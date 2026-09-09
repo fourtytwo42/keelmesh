@@ -86,7 +86,7 @@ func (m *Manager) seed() {
 		} else if i == 0 {
 			eq = []string{"enhanced_radar", "communications_jammer"}
 		}
-		m.nodes[id] = domain.ArenaNodeV1{ID: id, Faction: f, VesselID: spec.VesselID, PlannedVMID: spec.VMID, PlannedManagementIP: spec.ManagementIP, Host: spec.Host, Role: map[bool]string{true: "coordinator", false: "follower"}[i == 0], Status: "probing", RadioState: "connected", ManagementConnected: true, InferenceConnected: true, Provider: "openai", Position: spec.Position, HeadingDeg: spec.HeadingDeg, BatteryKWh: cap * .82, BatteryCapacityKWh: cap, SolarKW: solar, Hull: hull, HullMaximum: hull, Class: cls, Equipment: eq, TapeDepthSeconds: 60, PNTIntegrity: "trusted", NavigationSource: "GNSS + INS + peer corroboration", GNSSState: "nominal", GNSSAccepted: true, UncertaintyM: 4 + float64(i%3)}
+		m.nodes[id] = domain.ArenaNodeV1{ID: id, Faction: f, VesselID: spec.VesselID, PlannedVMID: spec.VMID, PlannedManagementIP: spec.ManagementIP, Host: spec.Host, Role: map[bool]string{true: "coordinator", false: "follower"}[i == 0], Status: "probing", RadioState: "connected", ManagementConnected: true, InferenceConnected: true, Provider: "openai", Position: spec.Position, HeadingDeg: spec.HeadingDeg, BatteryKWh: cap * .82, BatteryCapacityKWh: cap, SolarKW: solar, Hull: hull, HullMaximum: hull, Class: cls, Equipment: eq, TapeDepthSeconds: 0, PNTIntegrity: "trusted", NavigationSource: "GNSS + INS + peer corroboration", GNSSState: "nominal", GNSSAccepted: true, UncertaintyM: 4 + float64(i%3)}
 	}
 	m.coords["A"] = domain.CoordinatorV1{Faction: "A", NodeID: "node-a-01", Epoch: 1, Votes: 6, QuorumRequired: 4, State: "stable"}
 	m.coords["B"] = domain.CoordinatorV1{Faction: "B", NodeID: "node-b-01", Epoch: 1, Votes: 6, QuorumRequired: 4, State: "stable"}

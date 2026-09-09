@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+binary=/tmp/keelmesh-node.m14
+dropin=/tmp/m14-execution.conf
+installed_binary=/usr/local/bin/keelmesh-node
+backup=/tmp/keelmesh-node.pre-m14
+installed_dropin=/etc/systemd/system/keelmesh-node.service.d/m14-execution.conf
+dropin_backup=/tmp/m14-execution.conf.pre-m14
+
+if [[ ${EUID} -ne 0 ]]; then
+  echo "run as root" >&2
+  exit 2
+fi
+
+for artifact in "$binary" "$dropin"; do
+  [[ -s "$artifact" ]] || { echo "missing artifact: $artifact" >&2; exit 2; }
+done
+
+grep -Eq '^Environment=KEELMESH_EXECUTION_MODE=(full_program_shadow|full_program)$' "$dropin"
+[[ "$(ip route show default | awk 'NR == 1 {print $5}')" != eth1 ]]
+ip -4 -o addr show dev eth1 | grep -q '10\.77\.0\.'
+
+cp --preserve=mode,ownership,timestamps "$installed_binary" "$backup"
+had_dropin=0
+if [[ -e "$installed_dropin" ]]; then
+  cp --preserve=mode,ownership,timestamps "$installed_dropin" "$dropin_backup"
+  had_dropin=1
+fi
+
+rollback() {
+  if [[ -s "$backup" ]]; then
+    install -o root -g root -m 0755 "$backup" "$installed_binary"
+    if [[ "$had_dropin" == 1 ]]; then
+      install -o root -g root -m 0644 "$dropin_backup" "$installed_dropin"
+    else
+      rm -f "$installed_dropin"
+    fi
+    systemctl daemon-reload
+    systemctl restart keelmesh-node || true
+    echo "M14 node installation failed; previous binary and execution mode restored" >&2
+  fi
+}
+trap rollback ERR
+
+install -o root -g root -m 0755 "$binary" "$installed_binary"
+install -d -o keelmesh -g keelmesh -m 0700 /var/lib/keelmesh-node
+install -d -o root -g root -m 0755 /etc/systemd/system/keelmesh-node.service.d
+install -o root -g root -m 0644 "$dropin" "$installed_dropin"
+systemctl daemon-reload
+systemctl restart keelmesh-node
+
+healthy=0
+for _ in $(seq 1 40); do
+  if curl -fsS http://127.0.0.1:8080/healthz 2>/dev/null | grep -q '"version":"m14"'; then
+    healthy=1
+    break
+  fi
+  sleep 1
+done
+[[ "$healthy" == 1 ]]
+[[ "$(systemctl is-active keelmesh-node)" == active ]]
+
+trap - ERR
+sha256sum "$installed_binary"
+rm -f "$binary" "$dropin" "$backup" "$dropin_backup"
+echo "M14_NODE_INSTALL_PASS"

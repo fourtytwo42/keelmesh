@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/edgeexec"
 	"github.com/fourtytwo42/keelmesh/internal/observability"
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
@@ -46,6 +47,7 @@ type Manager struct {
 	client          *http.Client
 	startedAt       time.Time
 	tracer          *observability.Tracer
+	execution       *edgeexec.Store
 }
 
 func NewManager(cfg Config, logger *slog.Logger) (*Manager, error) {
@@ -125,7 +127,13 @@ func NewManager(cfg Config, logger *slog.Logger) (*Manager, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("load referee signing public key: %w", err)
 	}
-	manager := &Manager{cfg: cfg, logger: logger, fsm: fsm, raft: nodeRaft, transport: transport, raftTLS: raftTLS, store: store, signKey: signKey, refereeKey: refereeKey, startedAt: nowUTC(), tracer: observability.NewTracer(observability.ConfigFromEnv("keelmesh-coordination-node"), logger)}
+	execution, err := edgeexec.Open(filepath.Join(cfg.DataDir, "edge-execution.bbolt"), cfg.Identity.NodeID)
+	if err != nil {
+		_ = nodeRaft.Shutdown().Error()
+		_ = store.Close()
+		return nil, fmt.Errorf("open edge execution store: %w", err)
+	}
+	manager := &Manager{cfg: cfg, logger: logger, fsm: fsm, raft: nodeRaft, transport: transport, raftTLS: raftTLS, store: store, signKey: signKey, refereeKey: refereeKey, startedAt: nowUTC(), tracer: observability.NewTracer(observability.ConfigFromEnv("keelmesh-coordination-node"), logger), execution: execution}
 	go manager.watchLeadership(leadership)
 	return manager, nil
 }
@@ -457,6 +465,9 @@ func (m *Manager) Close(ctx context.Context) error {
 	}
 	if m.tracer != nil {
 		m.tracer.Close(ctx)
+	}
+	if m.execution != nil {
+		_ = m.execution.Close()
 	}
 	if m.raft != nil {
 		err := m.raft.Shutdown().Error()

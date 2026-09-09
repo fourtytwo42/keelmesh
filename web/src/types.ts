@@ -151,6 +151,19 @@ export type NodeSnapshot = {
   position: Point;
   behavior: string;
   tape: { depth_seconds: number; watermark: string; segments: TapeSegment[] };
+  execution?: {
+    program_id: string;
+    mission_id: string;
+    revision: number;
+    status: string;
+    complete_program_onboard: boolean;
+    authorization_expiry_tick: number;
+    authorized_time_remaining_seconds: number;
+    decision_node_id?: string;
+    decision_scope: "group" | "local";
+    decision_epoch: number;
+    terminal_contingency: string;
+  };
   active_route: string[];
   buffered_bundles: number;
   buffered_events: number;
@@ -794,6 +807,7 @@ export type MissionWorkspaceV2 = {
   authorized_plan_id?: string;
   conversation: MissionChatMessageV2[];
   trajectory?: TrajectoryProgramSummaryV1;
+  execution?: TrajectoryProgramSummaryV2;
   created_at: string;
   updated_at: string;
 };
@@ -834,6 +848,61 @@ export type TrajectoryProgramSummaryV1 = {
   hot_tape_horizon_seconds: number;
   execution: Record<string, ExecutionCursorV1>;
   last_adjustments?: Record<string, LocalAdjustmentV1>;
+  content_hash: string;
+};
+
+export type ExecutionCursorV2 = {
+  vessel_id: string;
+  revision: number;
+  sequence: number;
+  mission_tick: number;
+  program_remaining_seconds: number;
+  authorized_time_remaining_seconds: number;
+  lifecycle: string;
+};
+
+export type GroupAdaptationV1 = {
+  schema_version: number;
+  adaptation_id: string;
+  program_id: string;
+  mission_id: string;
+  vessel_id: string;
+  decision_node_id: string;
+  decision_scope: "group" | "local";
+  decision_epoch: number;
+  tick: number;
+  kind: string;
+  reason: string;
+  heading_delta_deg: number;
+  speed_factor: number;
+  lateral_offset_m: number;
+  inside_envelope: boolean;
+  escalation: string;
+  contingency?: string;
+  content_hash: string;
+  signature?: string;
+};
+
+export type TrajectoryProgramSummaryV2 = {
+  schema_version: number;
+  program_id: string;
+  mission_id: string;
+  plan_id: string;
+  active_revision: number;
+  pending_revision?: number;
+  activation_tick?: number;
+  mission_tick: number;
+  duration_seconds: number;
+  total_segments: number;
+  complete_program_onboard: boolean;
+  installed_node_count: number;
+  installation_state: string;
+  authorization_expiry_tick: number;
+  authorized_time_remaining_seconds: number;
+  completion_policy: string;
+  terminal_contingency: string;
+  execution: Record<string, ExecutionCursorV2>;
+  last_adaptations?: Record<string, GroupAdaptationV1>;
   content_hash: string;
 };
 
@@ -988,6 +1057,7 @@ export type FleetLeaseV2 = {
 };
 export type FleetSnapshotV2 = {
   schema_version: number;
+  execution_mode: "tape" | "full_program_shadow" | "full_program";
   fleet_version: number;
   simulation_rate: 0 | 1 | 5 | 20 | 100 | 500;
   simulation_tick_ms: number;

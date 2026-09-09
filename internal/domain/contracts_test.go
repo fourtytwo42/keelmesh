@@ -138,3 +138,22 @@ func TestPlatformProofContractFixtures(t *testing.T) {
 		t.Fatalf("fixture does not satisfy drill receipt contract: %+v", drill)
 	}
 }
+
+func TestExecutionV7ContractFixture(t *testing.T) {
+	data, err := os.ReadFile("../../contracts/fixtures/execution-v7.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Program        TrajectoryProgramV2     `json:"program"`
+		Authority      ExecutionAuthorityV1    `json:"authority"`
+		InstallReceipt ProgramInstallReceiptV1 `json:"install_receipt"`
+		Decision       GroupDecisionStateV1    `json:"decision"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.Program.AuthorizationExpiryTick != 7200 || !fixture.Authority.CompleteProgramOnboard || fixture.InstallReceipt.State != "installed" || fixture.Decision.DecisionNodeID != "node-a-01" {
+		t.Fatalf("fixture does not satisfy M14 execution contracts: %+v", fixture)
+	}
+}

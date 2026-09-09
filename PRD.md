@@ -288,17 +288,17 @@ Effective constraints merge conservatively in this order:
 
 Minimum requirements use the highest value; maximum limits use the lowest; allowed areas intersect; prohibited areas union and expand by separation and uncertainty. Safer active changes may use a bounded safer-action path. Looser limits require exact new approval. Hardware and prohibited policy are non-overridable.
 
-### 8.3 Signed trajectory programs
+### 8.3 Complete signed trajectory programs
 
-A mission compiles into an arbitrarily long signed trajectory program composed of ten-second envelopes. Every vessel materializes a rolling 60-second hot execution buffer from that complete program. “60 seconds” is buffer depth, not total mission duration.
+A mission compiles into one complete, finite, signed trajectory program composed of ten-second envelopes. Every assigned vessel durably installs that complete program before execution is reported ready. An explicit authorization-expiration tick bounds both finite and looping work; a loop cannot continue indefinitely without a newly approved, quorum-committed revision.
 
 Segments contain timestamped position/speed targets, corridors, reserve/separation/PNT envelopes, expiry, failure behavior, predecessor hash, and signature. They are not direct rudder or throttle commands.
 
-Program revisions activate at a safe future boundary only after the affected set has the matching signed revision. Reconnection reports actual state and execution high-water marks, expires missed work, and bridges to a future valid point; it never replays stale commands or jumps a vessel.
+Program revisions activate at a safe future boundary only after the affected set has the matching signed revision. Reconnection exchanges the program revision, execution watermark, decision epoch, and fused position, then bridges from actual state without replaying missed movement or jumping a vessel.
 
 ### 8.4 Degraded behavior
 
-When communication is lost, a vessel may continue committed work while its lease and constraints remain valid, perform deterministic local safety actions, execute an authorized communication-recovery behavior inside fixed budgets, and fall back to a lease-defined safe termination state.
+When shore authority is lost, a mesh-connected group continues the approved program under its deterministic lowest-reachable decision-capable member. If group communication is also lost, each isolated vessel continues independently inside the same signed envelope. Both scopes may perform collision avoidance, formation correction, energy/current compensation, contact-track refresh, and communication recovery, but every vessel independently validates the adaptation. Completion, authorization expiry, reserve, unsafe PNT, grounding, boundary, separation, or trusted-state failure transitions to the signed terminal contingency.
 
 It may not invent a mission, lower quorum, expand geography, loosen constraints, or treat reachability as authorization.
 
@@ -518,7 +518,7 @@ GitHub-hosted workflows are intentionally unused. Verification runs on VM 214 an
 | Milestone | Delivered capability | Status |
 |---|---|---|
 | M1 | Deterministic planning, exact preview/hash authorization, execution | Implemented |
-| M2 | Mission-tape incident, partition, PNT rejection, safe hold/rejoin | Implemented |
+| M2 | Full-program isolation, PNT rejection, signed contingency, reconciliation | Implemented |
 | M3 | Kafka/PostgreSQL pipeline, workers, quarantine, replay, metrics | Implemented |
 | M4 | MCP investigation, retrieval, replay, evaluation approval | Implemented |
 | M5 | Quiet Fleet quorum/arming/future commit and release commands | Compatibility workspace |
@@ -529,6 +529,8 @@ GitHub-hosted workflows are intentionally unused. Verification runs on VM 214 an
 | M10 | Trusted A2UI scenes, live bindings, assistant tools, critical scenes | Implemented |
 | M11 | Central/node memory, Kafka learning, replay, optional MLOps | Implemented with radio-sync follow-up |
 | M12 | Two real six-voter Raft cells, mTLS, proofs, cross-cell activation | Implemented and deployed in Raft mode |
+| M13 | Cross-process traces, SLO drills, capacity/cost evidence, GNSS evaluation flywheel | Implemented and deployed |
+| M14 | Complete onboard programs, explicit expiry, node-local stores, group/local decisions | Implemented in source; staged node rollout pending |
 
 ### 15.2 Verified deployment snapshot
 
@@ -578,7 +580,9 @@ Current shared delivery state lives in [Delivery status](docs/STATUS.md) and [Ve
 - [x] Validation rejects land, grounding, exclusion, speed, reserve, PNT, authority, and separation violations.
 - [x] Mission revisions invalidate stale previews and approvals.
 - [x] Deleting/completing a mission removes overlays and does not return vessels to obsolete starting points.
-- [x] Signed programs may exceed one minute while maintaining a rolling 60-second hot buffer.
+- [x] Every assigned vessel receives the complete finite signed program and can execute beyond one minute without shore authority.
+- [x] Looping work stops at its explicit authorization-expiration tick unless a new exact revision is approved and committed.
+- [x] Group and isolated-vessel adaptations remain inside the same signed mission envelope and produce inspectable receipts.
 - [x] Loss of AI, speech, Kafka, PostgreSQL, or VM 214 does not invalidate committed local execution.
 - [x] Spoofed GNSS cannot move the fused marker; uncertainty constrains behavior.
 

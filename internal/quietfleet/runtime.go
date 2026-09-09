@@ -114,7 +114,7 @@ func (r *Runtime) Apply(kind, proposalHash string) (string, error) {
 		}
 		r.snapshot.Commit = &commit
 		r.snapshot.Phase, r.snapshot.NextAction = "committed", AdvanceActivation
-		r.snapshot.Summary = fmt.Sprintf("Exact proposal committed for future tape boundary tick %d; active routes remain unchanged.", activation)
+		r.snapshot.Summary = fmt.Sprintf("Exact proposal committed for future segment boundary tick %d; active routes remain unchanged.", activation)
 		return "quiet_fleet.commit.prepared", nil
 	case AdvanceActivation:
 		if r.snapshot.Phase != "committed" || r.snapshot.Commit == nil || r.snapshot.Proposal == nil {

@@ -82,7 +82,7 @@ export const guidedDemoBeats: GuidedDemoBeat[] = [
     id: "06-execution", title: "Committed work, accelerated simulation", focus: "map", action: "execute-plan",
     audio: { navy: asset("navy", "06-execution"), pirate: asset("pirate", "06-execution") },
     transcript: {
-      navy: "The approved mission is now executing at one hundred times simulation speed. Routes are trajectory programs with timed intermediate states, not a sixty-second demo tape. Boats consume completed path segments like a queue, maintain formation, respond to wind and current, and spend or recover energy under a day-night solar model. Passed route and waypoint graphics disappear while immutable receipts remain available for replay.",
+      navy: "The approved mission is now executing at one hundred times simulation speed. Every assigned vessel stores the complete finite signed program, including its expiry and contingency. Boats consume completed ten-second segments like a queue, maintain formation, respond to wind and current, and spend or recover energy under a day-night solar model. Passed route and waypoint graphics disappear while immutable receipts remain available for replay.",
       pirate: "The sealed voyage is underway at one hundred tides of time. These courses be long trajectory programs with timed waymarks, not a tiny sixty-second trick. Ships consume the path ahead, keep station, answer wind and current, and spend or harvest power beneath sun and night. Old lines vanish from the chart like crumbs before gulls, while the immutable ship's log keeps every proof.",
     },
   },

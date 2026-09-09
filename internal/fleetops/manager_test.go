@@ -2,6 +2,7 @@ package fleetops
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"math"
 	"os"
@@ -87,9 +88,9 @@ func TestMissionLoopDefaultsOffAndRestartsFromFinalPose(t *testing.T) {
 			}
 			lease := domain.FleetLeaseV2{ID: "lease-loop-test"}
 			revision := trajectory.BuildRevision(mission, plan, lease, 1, 0, 0, m.secret)
-			program := trajectory.NewProgram(mission.ID, revision, 60)
+			program := trajectory.NewFullProgram(mission, plan, lease, revision, 0, m.secret)
 			program.MissionTickMS = 9_800
-			trajectory.UpdateCursors(&program)
+			trajectory.UpdateFullProgramCursors(&program)
 			vessel := m.vessels[vesselID]
 			vessel.Telemetry.MissionID = mission.ID
 			vessel.Telemetry.Position = marker
@@ -131,7 +132,7 @@ func TestMissionMembershipOrLoopChangeInvalidatesActiveAuthority(t *testing.T) {
 	m.missions[mission.ID] = mission
 	m.plans["plan-replan"] = domain.FleetPlanV2{ID: "plan-replan", MissionID: mission.ID}
 	m.leases["lease-replan"] = domain.FleetLeaseV2{ID: "lease-replan", MissionID: mission.ID}
-	m.programs[mission.ID] = domain.TrajectoryProgramV1{MissionID: mission.ID}
+	m.programs[mission.ID] = domain.TrajectoryProgramV2{MissionID: mission.ID}
 	vessel := m.vessels[first]
 	vessel.Telemetry.MissionID = mission.ID
 	vessel.Telemetry.Mode = "mission"
@@ -426,8 +427,22 @@ func TestConcurrentDisjointMissionsAndAuthorityConflict(t *testing.T) {
 
 func TestPreviewDoesNotMoveAndExactHashStarts(t *testing.T) {
 	m := New("", slog.Default())
+	m.SetProgramInstaller(func(program domain.TrajectoryProgramV2, cells []string) ([]domain.ProgramInstallReceiptV1, error) {
+		receipts := make([]domain.ProgramInstallReceiptV1, 0, len(cells)*6)
+		for _, cell := range cells {
+			for index := 1; index <= 6; index++ {
+				receipts = append(receipts, domain.ProgramInstallReceiptV1{SchemaVersion: 1, ProgramID: program.ProgramID, MissionID: program.MissionID, NodeID: fmt.Sprintf("node-%s-%02d", strings.ToLower(cell), index), Revision: trajectory.ProgramInstallRevision(program), ProgramHash: program.ContentHash, State: "installed"})
+			}
+		}
+		return receipts, nil
+	})
 	s := m.Snapshot()
 	target := s.Groups[0].MemberIDs
+	for _, vesselID := range target {
+		vessel := m.vessels[vesselID]
+		vessel.NodeFaction = "A"
+		m.vessels[vesselID] = vessel
+	}
 	before := m.vessels[target[0]].Telemetry.Position
 	mission, err := m.CreateMission(CreateMissionRequest{Mutation: Mutation{RequestID: "mission", IdempotencyKey: "mission", ExpectedVersion: m.fleetVersion}, Name: "Search", TargetIDs: target})
 	if err != nil {
@@ -470,6 +485,14 @@ func TestPreviewDoesNotMoveAndExactHashStarts(t *testing.T) {
 	if mission.Status != "executing" {
 		t.Fatalf("status = %s", mission.Status)
 	}
+	programView, err := m.FullTrajectoryProgram(mission.ID)
+	if err != nil || !programView.Summary.CompleteProgramOnboard || programView.Summary.InstalledNodeCount == 0 || programView.Summary.AuthorizationExpiryTick <= 60 {
+		t.Fatalf("full program was not receipt-backed and finite: view=%#v err=%v", programView.Summary, err)
+	}
+	legacyView, err := m.TrajectoryProgram(mission.ID)
+	if err != nil || legacyView.Summary.HotTapeHorizonS != 0 || len(legacyView.HotTape) != 0 {
+		t.Fatalf("legacy compatibility exposed executable tape state: view=%#v err=%v", legacyView, err)
+	}
 	pausedStatus := "paused"
 	mission, err = m.PatchMission(mission.ID, PatchMissionRequest{Mutation: Mutation{RequestID: "pause", IdempotencyKey: "pause", ExpectedVersion: mission.Version}, Status: &pausedStatus})
 	if err != nil || mission.Status != "paused" {
@@ -484,6 +507,13 @@ func TestPreviewDoesNotMoveAndExactHashStarts(t *testing.T) {
 	mission, err = m.PatchMission(mission.ID, PatchMissionRequest{Mutation: Mutation{RequestID: "resume", IdempotencyKey: "resume", ExpectedVersion: mission.Version}, Status: &resumeStatus})
 	if err != nil || mission.Status != "executing" {
 		t.Fatalf("resume failed: status=%s err=%v", mission.Status, err)
+	}
+	for range 16 {
+		m.tick()
+	}
+	programView, err = m.FullTrajectoryProgram(mission.ID)
+	if err != nil || programView.Summary.MissionTick <= 60 || m.missions[mission.ID].Status != "executing" {
+		t.Fatalf("mission did not continue beyond one minute from its complete program: tick=%d status=%s err=%v", programView.Summary.MissionTick, m.missions[mission.ID].Status, err)
 	}
 	positionsAtDelete := make([]domain.GeoPointV2, 0, len(target))
 	for _, vesselID := range target {

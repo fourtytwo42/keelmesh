@@ -194,7 +194,8 @@ type MissionWorkspaceV2 struct {
 	PlanIDs            []string                    `json:"plan_ids"`
 	AuthorizedPlanID   string                      `json:"authorized_plan_id,omitempty"`
 	Conversation       []MissionChatMessageV2      `json:"conversation"`
-	Trajectory         *TrajectoryProgramSummaryV1 `json:"trajectory,omitempty"`
+	Trajectory         *TrajectoryProgramSummaryV1 `json:"trajectory,omitempty"` // Deprecated: compatibility only; tape fields are zero.
+	Execution          *TrajectoryProgramSummaryV2 `json:"execution,omitempty"`
 	CreatedAt          time.Time                   `json:"created_at"`
 	UpdatedAt          time.Time                   `json:"updated_at"`
 }
@@ -468,6 +469,7 @@ type FleetLeaseV2 struct {
 
 type FleetSnapshotV2 struct {
 	SchemaVersion   int                  `json:"schema_version"`
+	ExecutionMode   string               `json:"execution_mode"`
 	FleetVersion    int64                `json:"fleet_version"`
 	SimulationRate  int                  `json:"simulation_rate"`
 	SimulationTick  int64                `json:"simulation_tick_ms"`

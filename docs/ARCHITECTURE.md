@@ -52,9 +52,9 @@ AI can propose typed drafts; it cannot sign a lease or approve its own effect.
 
 ## Trajectory execution
 
-Missions compile into signed ten-second segments. The complete program may be arbitrarily long; each vessel materializes a rolling 60-second hot execution buffer. Changes become future signed revisions that activate atomically at safe boundaries.
+Missions compile into complete finite programs of signed ten-second segments. Before readiness, every assigned vessel durably stores the active and pending revisions plus explicit authorization expiry and terminal contingency. Changes become future signed revisions that activate atomically at safe boundaries.
 
-Reconnection reconciles high-water marks, expires stale work, and bridges forward without replay or position jumps.
+The lowest reachable decision-capable group member coordinates bounded adaptations. An isolated vessel uses the same deterministic validator locally and gains no additional authority. Reconnection reconciles program revision, execution watermark, decision epoch, and fused position, then bridges forward without stale movement replay or position jumps.
 
 ## Scale pipeline
 
@@ -79,6 +79,8 @@ Not claimed complete: physical HaLow radios, dynamic Raft membership, production
 | Kafka | Producers spool to bounded outboxes |
 | PostgreSQL | Workers stop offset commits; cached missions continue |
 | Direct Starlink | Simulated route uses HaLow relay |
-| Complete partition | Cached authority, then contingency/safe hold |
+| Shore loss with mesh | Complete approved program continues under group decision node |
+| Complete vessel isolation | Complete approved program continues locally inside the same guardrails |
+| Program expiry / unsafe guardrail | Signed contingency, normally safe hold or authorized recovery |
 | GNSS spoof | Observation excluded; fused marker does not jump |
 | Core restart | Health returns; non-persisted demo state resets honestly |

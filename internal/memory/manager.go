@@ -1158,10 +1158,10 @@ func (m *Manager) health(ctx context.Context) {
 
 func (m *Manager) ensureFixtures(ctx context.Context) {
 	fixtures := []struct{ kind, content, source string }{
-		{"runbook", "On communications loss, continue only validated unexpired cached authority. At tape empty, enter bounded safe hold and never invent new work.", "runbook-comms-loss-r1"},
+		{"runbook", "On communications loss, continue the complete signed and unexpired onboard program within its authority envelope. At mission expiry or an unsafe guardrail, enter the signed contingency and never invent new work.", "runbook-comms-loss-r2"},
 		{"runbook", "Reject a GNSS jump when velocity and authenticated corroboration disagree. Keep the raw fix as evidence, exclude it from fusion, and expand uncertainty until corroboration returns.", "runbook-gnss-anomaly-r1"},
 		{"runbook", "After reconnection, exchange high-water marks, apply tombstones first, expire stale segments, and bridge from the actual fused pose to future authorized work.", "runbook-stale-safe-rejoin-r1"},
-		{"incident", "Vessel 4 exhausted pre-authorized tape after partition, rejected a 650 meter GNSS jump, entered safe hold, and rejoined through a future bridge without stale replay.", "fixture-vessel-4-incident"},
+		{"incident", "Vessel 4 continued its complete program beyond one minute after partition, rejected a 650 meter GNSS jump, entered its signed safe-hold contingency, and reconciled without stale movement replay.", "fixture-vessel-4-incident"},
 		{"mission_outcome", "Worker 2 termination caused cooperative partition reassignment and temporary lag; database idempotency prevented duplicate logical projection updates during recovery.", "fixture-worker-rebalance"},
 	}
 	for _, fixture := range fixtures {

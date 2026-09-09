@@ -6,7 +6,7 @@ const labels: Record<string, [string,string]> = {
   enter_mode: ["Enter Quiet Fleet", "Open the signed low-duty cell"],
   inject_slowdown: ["Slow Vessel 4", "Evaluate the first redistribution"],
   submit_revision: ["Revise proposal", "Respect every local speed envelope"],
-  commit_proposal: ["Commit exact hash", "Arm a future tape boundary"],
+  commit_proposal: ["Commit exact hash", "Arm a future segment boundary"],
   advance_to_activation: ["Advance to activation", "Switch all assignments atomically"],
 };
 

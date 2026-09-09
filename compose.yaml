@@ -45,7 +45,7 @@ services:
     build: &app-build
       context: .
       dockerfile: Dockerfile
-    image: keelmesh/core:m13
+    image: keelmesh/core:m14
     command: ["--role", "migrate"]
     environment: &app-env
       KEELMESH_DATABASE_URL: postgres://keelmesh:keelmesh@postgres:5432/keelmesh?sslmode=disable
@@ -60,13 +60,14 @@ services:
       KEELMESH_OTLP_ENDPOINT: http://trace-collector:4318/v1/traces
       KEELMESH_OTLP_TOKEN_FILE: /run/keelmesh-auth/otel/token
       KEELMESH_PLATFORM_EVIDENCE_DIR: /var/lib/keelmesh/evidence
+      KEELMESH_EXECUTION_MODE: ${KEELMESH_EXECUTION_MODE:-full_program_shadow}
     depends_on:
       postgres:
         condition: service_healthy
     restart: "no"
 
   topic-init:
-    image: keelmesh/core:m13
+    image: keelmesh/core:m14
     command: ["--role", "topic-init"]
     environment: *app-env
     depends_on:
@@ -121,7 +122,7 @@ services:
 
   core:
     build: *app-build
-    image: keelmesh/core:m13
+    image: keelmesh/core:m14
     restart: unless-stopped
     environment:
       <<: *app-env
@@ -154,7 +155,7 @@ services:
       start_period: 5s
 
   player-b-ingress:
-    image: keelmesh/core:m13
+    image: keelmesh/core:m14
     entrypoint: ["/usr/local/bin/keelmesh-ingress"]
     environment:
       KEELMESH_CORE_URL: http://core:8080
@@ -167,7 +168,7 @@ services:
     restart: unless-stopped
 
   loadgen:
-    image: keelmesh/core:m13
+    image: keelmesh/core:m14
     command: ["--role", "loadgen"]
     environment: *app-env
     volumes:
@@ -181,7 +182,7 @@ services:
     restart: unless-stopped
 
   worker-1: &worker
-    image: keelmesh/core:m13
+    image: keelmesh/core:m14
     command: ["--role", "worker-supervisor"]
     environment:
       <<: *app-env
@@ -208,7 +209,7 @@ services:
       KEELMESH_WORKER_ID: worker-3
 
   memory-worker:
-    image: keelmesh/core:m13
+    image: keelmesh/core:m14
     command: ["--role", "memory-worker"]
     environment: *app-env
     depends_on:
@@ -217,7 +218,7 @@ services:
     restart: unless-stopped
 
   trace-collector:
-    image: keelmesh/core:m13
+    image: keelmesh/core:m14
     command: ["--role", "trace-collector"]
     environment: *app-env
     depends_on:
@@ -240,7 +241,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ai
-    image: keelmesh/ai:m13
+    image: keelmesh/ai:m14
     command: ["python", "-m", "keelmesh_ai.index"]
     depends_on:
       ai-auth-init:
@@ -254,7 +255,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ai
-    image: keelmesh/ai:m13
+    image: keelmesh/ai:m14
     restart: unless-stopped
     environment:
       OPENAI_API_KEY_FILE: /run/keelmesh-auth/openai/token
@@ -336,7 +337,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.memory-lab
-    image: keelmesh/memory-lab:m13
+    image: keelmesh/memory-lab:m14
     command: ["mlflow", "server", "--host", "0.0.0.0", "--port", "5000", "--allowed-hosts", "mlflow,mlflow:5000,localhost,127.0.0.1", "--backend-store-uri", "postgresql+psycopg2://keelmesh:keelmesh@postgres:5432/keelmesh", "--artifacts-destination", "s3://keelmesh-memory"]
     environment:
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
@@ -351,7 +352,7 @@ services:
 
   dagster:
     profiles: ["memory-lab"]
-    image: keelmesh/memory-lab:m13
+    image: keelmesh/memory-lab:m14
     command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000", "-f", "/opt/keelmesh-memory-lab/memorylab/definitions.py"]
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000

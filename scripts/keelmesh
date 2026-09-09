@@ -17,6 +17,7 @@ verify_scenarios() {
   python3 "$ROOT/scripts/verify_m11.py" "$BASE_URL"
   python3 "$ROOT/scripts/verify_m12.py" "$BASE_URL"
   python3 "$ROOT/scripts/verify_m13.py" "$BASE_URL"
+  python3 "$ROOT/scripts/verify_m14.py" "$BASE_URL"
 }
 case "${1:-status}" in
   start)
@@ -61,6 +62,7 @@ proof=json.load(urllib.request.urlopen(base+'/api/v6/platform/summary'))
 healthy=sum(1 for plane in proof.get('planes',[]) if plane.get('state')=='healthy')
 measured=sum(1 for slo in proof.get('slos',[]) if slo.get('status') not in {'unmeasured','unavailable'})
 print(f"  M13 Platform Proof: {healthy}/{len(proof.get('planes',[]))} planes healthy, {measured}/{len(proof.get('slos',[]))} SLOs measured")
+print(f"  M14 Edge Autonomy: {fleet.get('execution_mode', 'unknown')} mode, complete finite programs with legacy buffer depth zero")
 PY
     docker system df
     ;;
@@ -195,6 +197,12 @@ PY
   platform-proof-verify)
     python3 "$ROOT/scripts/verify_m13.py" "$BASE_URL" "${@:2}"
     ;;
+  edge-autonomy-status)
+    python3 "$ROOT/scripts/verify_m14.py" "$BASE_URL"
+    ;;
+  edge-autonomy-verify)
+    python3 "$ROOT/scripts/verify_m14.py" "$BASE_URL" --exercise
+    ;;
   stop) "${OFFLINE_COMPOSE[@]}" stop ;;
-  *) echo "usage: scripts/keelmesh {start|status|reset-demo|verify|offline-verify|restart-verify|export-evidence|rehearse|memory-status|memory-verify|memory-export|m12-local-verify|coordination-verify|platform-proof-status|platform-proof-verify|stop}" >&2; exit 2 ;;
+  *) echo "usage: scripts/keelmesh {start|status|reset-demo|verify|offline-verify|restart-verify|export-evidence|rehearse|memory-status|memory-verify|memory-export|m12-local-verify|coordination-verify|platform-proof-status|platform-proof-verify|edge-autonomy-status|edge-autonomy-verify|stop}" >&2; exit 2 ;;
 esac

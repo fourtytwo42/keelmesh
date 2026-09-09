@@ -26,7 +26,7 @@ func (m *Manager) MCPControlHandler(fleet *fleetops.Manager, arenaManager *arena
 		{"fleet.get_vessel", "Read one operator-visible vessel profile.", idSchema("vessel_id")},
 		{"fleet.get_reachability", "Read direct, relayed, and unreachable peers for one vessel.", idSchema("vessel_id")},
 		{"mission.get", "Read one mission workspace.", idSchema("mission_id")},
-		{"mission.get_trajectory", "Read hot tape, lifecycle, bounded adaptations, and execution cursor.", idSchema("mission_id")},
+		{"mission.get_program", "Read the complete onboard mission program, authorization expiry, execution cursor, and bounded adaptations.", idSchema("mission_id")},
 		{"mission.create_draft", "Create a persistent mission draft from exact vessel IDs; no movement authority is issued.", `{"type":"object","additionalProperties":false,"properties":{"request_id":{"type":"string","minLength":1},"idempotency_key":{"type":"string","minLength":1},"expected_version":{"type":"integer","minimum":1},"name":{"type":"string","maxLength":80},"objective":{"type":"string","maxLength":2000},"target_ids":{"type":"array","minItems":1,"maxItems":48,"uniqueItems":true,"items":{"type":"string"}}},"required":["request_id","idempotency_key","expected_version","objective","target_ids"]}`},
 		{"mission.compile_intent", "Compile bounded natural-language intent into an immutable command draft.", `{"type":"object","additionalProperties":false,"properties":{"mission_id":{"type":"string"},"request_id":{"type":"string"},"idempotency_key":{"type":"string"},"expected_version":{"type":"integer","minimum":1},"text":{"type":"string","minLength":1,"maxLength":4000},"target_ids":{"type":"array","maxItems":48,"items":{"type":"string"}},"guidance_kind":{"type":"string"},"formation":{"type":"string"},"waypoints":{"type":"array","maxItems":64,"items":{"type":"array","minItems":2,"maxItems":2,"items":{"type":"number"}}}},"required":["mission_id","request_id","idempotency_key","expected_version","text"]}`},
 		{"mission.generate_plans", "Generate deterministic policy-checked candidates from an immutable draft.", `{"type":"object","additionalProperties":false,"properties":{"mission_id":{"type":"string"},"request_id":{"type":"string"},"idempotency_key":{"type":"string"},"expected_version":{"type":"integer","minimum":1},"draft_id":{"type":"string"}},"required":["mission_id","request_id","idempotency_key","expected_version","draft_id"]}`},
@@ -119,8 +119,8 @@ func (m *Manager) callControlTool(ctx context.Context, fleet *fleetops.Manager, 
 				break
 			}
 		}
-	case "mission.get_trajectory":
-		value, err = fleet.TrajectoryProgram(args.MissionID)
+	case "mission.get_program":
+		value, err = fleet.FullTrajectoryProgram(args.MissionID)
 	case "mission.create_draft":
 		value, err = fleet.CreateMission(fleetops.CreateMissionRequest{Mutation: mutation, Name: args.Name, NamingMode: "ai", Objective: args.Objective, TargetIDs: args.TargetIDs})
 	case "mission.compile_intent":

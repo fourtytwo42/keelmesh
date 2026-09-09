@@ -15,7 +15,7 @@
   "duplicate_deliveries": 0,
   "discarded_sequences": [],
   "pnt_transitions": [],
-  "summary": "All nodes have direct reachability and a validated 60-second mission tape.",
+  "summary": "Every vessel has the complete signed two-hour mission program installed locally.",
   "next_action": "fail_starlink",
   "auto_run_available": true
 }

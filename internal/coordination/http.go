@@ -2,6 +2,10 @@ package coordination
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +15,7 @@ import (
 	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/edgeexec"
 )
 
 const maxCoordinationBody = 1 << 20
@@ -54,7 +59,140 @@ func (m *Manager) InternalHandler() http.Handler {
 	mux.HandleFunc("POST /internal/v1/coordination/cross-cell:prepare", m.handleCrossCell("cross_cell.prepare"))
 	mux.HandleFunc("POST /internal/v1/coordination/cross-cell:certify", m.handleCrossCell("cross_cell.certify"))
 	mux.HandleFunc("POST /internal/v1/coordination/cross-cell:abort", m.handleCrossCell("cross_cell.abort"))
+	mux.HandleFunc("POST /internal/v1/execution/programs:install", m.handleProgramInstall)
+	mux.HandleFunc("GET /internal/v1/execution/programs/{id}", m.handleProgramGet)
+	mux.HandleFunc("POST /internal/v1/execution/adaptations", m.handleAdaptation)
+	mux.HandleFunc("POST /internal/v1/execution/reconcile", m.handleExecutionReconciliation)
 	return mux
+}
+
+type programInstallRequestV1 struct {
+	Program domain.TrajectoryProgramV2 `json:"program"`
+	Proof   domain.QuorumCommitProofV1 `json:"proof"`
+}
+
+func (m *Manager) handleProgramInstall(w http.ResponseWriter, r *http.Request) {
+	if m.execution == nil {
+		respondCoordination(w, nil, fmt.Errorf("PROGRAM_NOT_INSTALLED: node execution store is unavailable"), http.StatusCreated)
+		return
+	}
+	var request programInstallRequestV1
+	if !decodeExecution(w, r, &request) {
+		return
+	}
+	if err := m.verifyProgramProof(request.Program, request.Proof); err != nil {
+		respondCoordination(w, nil, err, http.StatusCreated)
+		return
+	}
+	receipt, err := m.execution.Install(request.Program)
+	if err == nil {
+		payload := receipt
+		payload.Signature = ""
+		raw, _ := json.Marshal(payload)
+		receipt.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(m.signKey, raw))
+	}
+	respondCoordination(w, receipt, err, http.StatusCreated)
+}
+
+func (m *Manager) handleProgramGet(w http.ResponseWriter, r *http.Request) {
+	if m.execution == nil {
+		respondCoordination(w, nil, fmt.Errorf("PROGRAM_NOT_INSTALLED: node execution store is unavailable"), http.StatusOK)
+		return
+	}
+	program, ok, err := m.execution.Program(r.PathValue("id"))
+	if err == nil && !ok {
+		err = fmt.Errorf("PROGRAM_NOT_INSTALLED: %s", r.PathValue("id"))
+	}
+	respondCoordination(w, program, err, http.StatusOK)
+}
+
+func (m *Manager) handleAdaptation(w http.ResponseWriter, r *http.Request) {
+	if m.execution == nil {
+		respondCoordination(w, nil, fmt.Errorf("PROGRAM_NOT_INSTALLED: node execution store is unavailable"), http.StatusCreated)
+		return
+	}
+	var value domain.GroupAdaptationV1
+	if !decodeExecution(w, r, &value) {
+		return
+	}
+	if err := m.verifyAdaptation(value); err != nil {
+		respondCoordination(w, nil, err, http.StatusCreated)
+		return
+	}
+	err := m.execution.Adapt(value)
+	respondCoordination(w, map[string]any{"adaptation_id": value.AdaptationID, "state": "accepted"}, err, http.StatusCreated)
+}
+
+func (m *Manager) handleExecutionReconciliation(w http.ResponseWriter, r *http.Request) {
+	if m.execution == nil {
+		respondCoordination(w, nil, fmt.Errorf("PROGRAM_NOT_INSTALLED: node execution store is unavailable"), http.StatusCreated)
+		return
+	}
+	var value domain.ExecutionReconciliationV1
+	if !decodeExecution(w, r, &value) {
+		return
+	}
+	err := m.execution.Reconcile(value)
+	respondCoordination(w, value, err, http.StatusCreated)
+}
+
+func (m *Manager) verifyProgramProof(program domain.TrajectoryProgramV2, proof domain.QuorumCommitProofV1) error {
+	raw, _ := json.Marshal(program)
+	digest := sha256.Sum256(raw)
+	if proof.CellID != m.cfg.Identity.CellID || proof.State != "verified" || proof.CommandHash != hex.EncodeToString(digest[:]) || proof.Required != m.cfg.Manifest.Quorum {
+		return fmt.Errorf("COMMIT_PROOF_INVALID: proof does not bind this program and cell")
+	}
+	receipt := domain.AppliedCommandReceiptV1{CommandID: proof.CommandID, CellID: proof.CellID, Term: proof.Term, LogIndex: proof.LogIndex, AuthorityEpoch: proof.AuthorityEpoch, CommandHash: proof.CommandHash, ResultingStateHash: proof.ResultingStateHash}
+	seen := map[string]bool{}
+	for _, acknowledgement := range proof.Acknowledgements {
+		if seen[acknowledgement.NodeID] || verifyAcknowledgement(m.cfg.Manifest, receipt, acknowledgement) != nil {
+			return fmt.Errorf("COMMIT_PROOF_INVALID: duplicate or invalid acknowledgement")
+		}
+		seen[acknowledgement.NodeID] = true
+	}
+	if len(seen) < m.cfg.Manifest.Quorum {
+		return fmt.Errorf("COMMIT_PROOF_INVALID: need %d valid signatures", m.cfg.Manifest.Quorum)
+	}
+	return nil
+}
+
+func (m *Manager) verifyAdaptation(value domain.GroupAdaptationV1) error {
+	if err := edgeexec.ValidateAdaptationContent(value); err != nil {
+		return err
+	}
+	payload := value
+	payload.Signature = ""
+	raw, _ := json.Marshal(payload)
+	signature, err := base64.StdEncoding.DecodeString(value.Signature)
+	if err != nil {
+		return fmt.Errorf("PEER_IDENTITY_INVALID: adaptation signature is invalid")
+	}
+	for _, member := range m.cfg.Manifest.Members {
+		if member.NodeID != value.DecisionNodeID {
+			continue
+		}
+		key, keyErr := decodePublicKey(member.SigningPublicKey)
+		if keyErr != nil || !ed25519.Verify(key, raw, signature) {
+			return fmt.Errorf("PEER_IDENTITY_INVALID: adaptation signature is invalid")
+		}
+		return nil
+	}
+	return fmt.Errorf("CELL_MEMBERSHIP_DENIED: adaptation signer is not in this cell")
+}
+
+func decodeExecution(w http.ResponseWriter, r *http.Request, destination any) bool {
+	body := http.MaxBytesReader(w, r.Body, 32<<20)
+	decoder := json.NewDecoder(body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		writeCoordinationJSON(w, http.StatusBadRequest, domain.APIError{Code: "TOOL_ARGUMENT_INVALID", Message: err.Error()})
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		writeCoordinationJSON(w, http.StatusBadRequest, domain.APIError{Code: "TOOL_ARGUMENT_INVALID", Message: "only one JSON object is permitted"})
+		return false
+	}
+	return true
 }
 
 func (m *Manager) handlePropose(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, KeelMeshError, requestID } from "./api";
-import type { AgentSnapshot, CapacityCostEvidenceV1, CoordinationOverviewV1, EvalCandidate, EvalRun, InvestigationRun, MemorySnapshotV1, PlatformDrillReceiptV1, PlatformProofSummaryV1, PlatformSnapshot, ReplayResult } from "./types";
+import type { AgentSnapshot, CapacityCostEvidenceV1, CoordinationOverviewV1, EvalCandidate, EvalRun, FleetSnapshotV2, InvestigationRun, MemorySnapshotV1, PlatformDrillReceiptV1, PlatformProofSummaryV1, PlatformSnapshot, ReplayResult } from "./types";
 
 type Props = { value: AgentSnapshot; platform:PlatformSnapshot|null; memory:MemorySnapshotV1|null; coordination:CoordinationOverviewV1|null; onChange:(next:AgentSnapshot)=>void; onOpenSystem:()=>void; onError:(message:string)=>void };
 
@@ -10,6 +10,7 @@ export function EngineerView({ value, platform, memory, coordination, onChange, 
 	const [capacity, setCapacity] = useState<CapacityCostEvidenceV1|null>(null);
 	const [cost, setCost] = useState<CapacityCostEvidenceV1|null>(null);
 	const [drills, setDrills] = useState<PlatformDrillReceiptV1[]>([]);
+	const [fleet, setFleet] = useState<FleetSnapshotV2|null>(null);
 	const [drillBusy, setDrillBusy] = useState(false);
   const incident = value.incidents[0];
   const receipts = value.investigation?.tool_receipts ?? [];
@@ -29,7 +30,7 @@ export function EngineerView({ value, platform, memory, coordination, onChange, 
 	const trace = proof?.latest_trace ?? platform?.real_trace;
 	useEffect(()=>{
 		let active=true;
-		const load=()=>Promise.all([api<PlatformProofSummaryV1>("/api/v6/platform/summary"),api<CapacityCostEvidenceV1>("/api/v6/platform/capacity"),api<CapacityCostEvidenceV1>("/api/v6/platform/cost-model"),api<{drills:PlatformDrillReceiptV1[]}>("/api/v6/platform/drills")]).then(([nextProof,nextCapacity,nextCost,nextDrills])=>{if(active){setProof(nextProof);setCapacity(nextCapacity);setCost(nextCost);setDrills(nextDrills.drills)}}).catch(()=>undefined);
+		const load=()=>Promise.all([api<PlatformProofSummaryV1>("/api/v6/platform/summary"),api<CapacityCostEvidenceV1>("/api/v6/platform/capacity"),api<CapacityCostEvidenceV1>("/api/v6/platform/cost-model"),api<{drills:PlatformDrillReceiptV1[]}>("/api/v6/platform/drills"),api<FleetSnapshotV2>("/api/v2/fleet")]).then(([nextProof,nextCapacity,nextCost,nextDrills,nextFleet])=>{if(active){setProof(nextProof);setCapacity(nextCapacity);setCost(nextCost);setDrills(nextDrills.drills);setFleet(nextFleet)}}).catch(()=>undefined);
 		void load();
 		const timer=window.setInterval(load,10000);
 		return()=>{active=false;window.clearInterval(timer)};
@@ -60,6 +61,10 @@ export function EngineerView({ value, platform, memory, coordination, onChange, 
         <div className="memory-evidence-strip">{cells.map(cell=><div key={cell.id}><small>CELL {cell.id} · TERM {cell.leader?.term??"—"}</small><b>{cell.leader?.leader_node_id??"electing"}</b><em>{cell.leader?.reachable_voters??0}/{cell.leader?.quorum_required??4} proof quorum · index {cell.leader?.commit_index??0}</em></div>)}</div>
         <div className="memory-hit-list">{cells.map(cell=><div key={cell.id}><span className={cell.leader?.state==="leader"?"verified":"inferred"}>{cell.leader?.state??"unavailable"}</span><b>epoch {cell.leader?.authority_epoch??0}</b><em>{cell.leader?.last_election_ms??0} ms election · {cell.leader?.state_hash?.slice(0,12)??"no checksum"}</em></div>)}{!cells.length&&<p>Raft telemetry is unavailable; simulated authority remains the rollback path.</p>}</div>
         <p>Radio-plane Raft and application signatures are independent of management, AI, memory, and telemetry.</p>
+      </article>
+      <article className="engineer-card execution-card"><header><span>M14</span><div><small>EDGE EXECUTION</small><h2>Full-program autonomy</h2></div><strong>{fleet?.missions.filter(mission=>mission.execution?.complete_program_onboard).length??0} active</strong></header>
+        <div className="memory-evidence-strip">{(fleet?.missions??[]).filter(mission=>mission.execution).slice(0,3).map(mission=><div key={mission.id}><small>{mission.name}</small><b>R{mission.execution!.active_revision} · {mission.execution!.total_segments} segments</b><em>{Math.ceil(mission.execution!.authorized_time_remaining_seconds/60)} min authority · {mission.execution!.terminal_contingency.replaceAll("_"," ")}</em></div>)}{!fleet?.missions.some(mission=>mission.execution)&&<div><small>PROGRAM STORE</small><b>NO ACTIVE PROGRAM</b><em>Idle vessels hold without execution authority.</em></div>}</div>
+        <p>Each assigned node stores the complete finite program before readiness. Group or isolated-node adaptations remain inside the same signed geography, reserve, PNT, separation, and expiry envelope.</p>
       </article>
       <article className="engineer-card memory-card"><header><span>M11</span><div><small>RETRIEVAL EVIDENCE</small><h2>Scoped context assembly</h2></div><strong>{memory?.retrieval_mode ?? "offline"}</strong></header>
         <div className="memory-evidence-strip"><div><small>EXACT TURNS</small><b>{memory?.last_context?.recent_turns.length??0}</b></div><div><small>SEMANTIC</small><b>{memory?.last_context?.semantic_memories.length??0}</b></div><div><small>RUNBOOK</small><b>{memory?.last_context?.procedural_chunks.length??0}</b></div><div><small>EPISODES</small><b>{memory?.last_context?.operational_episodes.length??0}</b></div></div>

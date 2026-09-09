@@ -7,6 +7,7 @@ import quietFleetJSON from "../../contracts/fixtures/quiet-fleet-snapshot-v1.jso
 import memoryJSON from "../../contracts/fixtures/memory-snapshot-v1.json";
 import platformProofJSON from "../../contracts/fixtures/platform-proof-summary-v1.json";
 import platformDrillJSON from "../../contracts/fixtures/platform-drill-receipt-v1.json";
+import executionV7JSON from "../../contracts/fixtures/execution-v7.json";
 import type { AgentSnapshot, MemorySnapshotV1, MissionIntent, PlatformDrillReceiptV1, PlatformProofSummaryV1, PlatformSnapshot, QuietFleetSnapshot, ResilienceSnapshot } from "./types";
 
 describe("shared contract fixtures", () => {
@@ -61,5 +62,12 @@ describe("shared contract fixtures", () => {
     expect(proof.slos.find((item)=>item.id==="duplicate-effects")?.measured).toBe(false);
     expect(drill.outcome).toBe("passed");
     expect(drill.expected_invariants).toContain("committed edge missions continue");
+  });
+  it("reads M14 full-program execution fixtures", () => {
+    const fixture = executionV7JSON as { authority: { complete_program_onboard: boolean; authorized_time_remaining_seconds: number }; decision: { decision_node_id: string; decision_scope: string }; install_receipt: { state: string } };
+    expect(fixture.authority.complete_program_onboard).toBe(true);
+    expect(fixture.authority.authorized_time_remaining_seconds).toBeGreaterThan(60);
+    expect(fixture.decision).toMatchObject({ decision_node_id: "node-a-01", decision_scope: "group" });
+    expect(fixture.install_receipt.state).toBe("installed");
   });
 });

@@ -7,20 +7,21 @@ type TapeSummaryV1 struct {
 }
 
 type NodeSnapshotV1 struct {
-	SchemaVersion      int                `json:"schema_version"`
-	ID                 string             `json:"id"`
-	Name               string             `json:"name"`
-	Position           Point              `json:"position"`
-	Behavior           string             `json:"behavior"`
-	ActiveLeaseID      string             `json:"active_lease_id,omitempty"`
-	Tape               TapeSummaryV1      `json:"tape"`
-	ActiveRoute        []string           `json:"active_route"`
-	BufferedBundles    int                `json:"buffered_bundles"`
-	BufferedEvents     int                `json:"buffered_events"`
-	ExecutionWatermark int                `json:"execution_watermark"`
-	PNT                PntEstimateV1      `json:"pnt"`
-	PNTObservations    []PntObservationV1 `json:"pnt_observations"`
-	LocalSequence      int64              `json:"local_sequence"`
+	SchemaVersion      int                   `json:"schema_version"`
+	ID                 string                `json:"id"`
+	Name               string                `json:"name"`
+	Position           Point                 `json:"position"`
+	Behavior           string                `json:"behavior"`
+	ActiveLeaseID      string                `json:"active_lease_id,omitempty"`
+	Tape               TapeSummaryV1         `json:"tape"` // Deprecated in v7; always zero/empty.
+	Execution          *ExecutionAuthorityV1 `json:"execution,omitempty"`
+	ActiveRoute        []string              `json:"active_route"`
+	BufferedBundles    int                   `json:"buffered_bundles"`
+	BufferedEvents     int                   `json:"buffered_events"`
+	ExecutionWatermark int                   `json:"execution_watermark"`
+	PNT                PntEstimateV1         `json:"pnt"`
+	PNTObservations    []PntObservationV1    `json:"pnt_observations"`
+	LocalSequence      int64                 `json:"local_sequence"`
 }
 
 type LinkStateV1 struct {

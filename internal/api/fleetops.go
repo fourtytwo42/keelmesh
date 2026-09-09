@@ -66,7 +66,24 @@ func (s *Server) missionV2(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) trajectoryV2(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Deprecation", "true")
+	w.Header().Set("Link", `</api/v7/missions/`+r.PathValue("id")+`/program>; rel="successor-version"`)
 	value, err := s.fleetops.TrajectoryProgram(r.PathValue("id"))
+	respondV2(w, value, err, http.StatusOK)
+}
+
+func (s *Server) missionProgramV7(w http.ResponseWriter, r *http.Request) {
+	value, err := s.fleetops.FullTrajectoryProgram(r.PathValue("id"))
+	respondV2(w, value, err, http.StatusOK)
+}
+
+func (s *Server) vesselExecutionV7(w http.ResponseWriter, r *http.Request) {
+	value, err := s.fleetops.VesselExecution(r.PathValue("id"))
+	respondV2(w, value, err, http.StatusOK)
+}
+
+func (s *Server) groupDecisionStateV7(w http.ResponseWriter, r *http.Request) {
+	value, err := s.fleetops.GroupDecisionState(r.PathValue("id"))
 	respondV2(w, value, err, http.StatusOK)
 }
 

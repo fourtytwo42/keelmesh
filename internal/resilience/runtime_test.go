@@ -30,8 +30,11 @@ func TestDeterministicIncidentEndsInBridgeWithoutReplay(t *testing.T) {
 		}
 	}
 	s := r.Snapshot()
-	if s.Phase != "rejoined" || s.Bridge == nil || s.Bridge.TargetSequence != 9 || len(s.DiscardedSequences) != 3 {
+	if s.Phase != "rejoined" || s.Bridge == nil || s.Bridge.TargetSequence != 9 || len(s.DiscardedSequences) != 0 {
 		t.Fatalf("snapshot=%#v", s)
+	}
+	if s.MissionTick <= 60 || s.Nodes[4].Execution == nil || !s.Nodes[4].Execution.CompleteProgramOnboard {
+		t.Fatalf("full program did not continue beyond one minute: %#v", s.Nodes[4].Execution)
 	}
 	if s.RawGNSSPosition == nil || s.Nodes[4].PNT.Position == *s.RawGNSSPosition {
 		t.Fatal("spoof affected fused position")

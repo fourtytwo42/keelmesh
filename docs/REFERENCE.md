@@ -12,7 +12,7 @@
 
 ## Compatibility
 
-KeelMesh preserves `/api/v1` through `/api/v6`. Public contracts are versioned, mirrored across languages where applicable, and exercised through fixtures.
+KeelMesh preserves `/api/v1` through `/api/v7`. Public contracts are versioned, mirrored across languages where applicable, and exercised through fixtures.
 
 ## API families
 
@@ -24,6 +24,7 @@ KeelMesh preserves `/api/v1` through `/api/v6`. Public contracts are versioned, 
 | `/api/v4` | Assistant turns, A2UI scenes, history, catalog |
 | `/api/v5` | Memory, candidates, contexts, entities, sync, replay |
 | `/api/v6` | Coordination cells, logs, quorum proofs, cross-cell state, security |
+| `/api/v7` | Complete mission programs, vessel execution authority, group decision state |
 
 Prometheus metrics are at `/metrics`. WebSocket/SSE extensions preserve earlier fields.
 
@@ -68,7 +69,9 @@ Mutations require request ID, idempotency key, actor identity where applicable, 
 |---|---|
 | `cmd/keelmesh-core` | Executable roles and embedded UI |
 | `internal/fleetops` | Fleet, groups, contacts, missions, energy |
-| `internal/resilience` | Tape, PNT, communication incidents |
+| `internal/trajectory` | Complete signed programs, ten-second segments, revision activation |
+| `internal/edgeexec` | Node-local program persistence, adaptation validation, reconciliation |
+| `internal/resilience` | Full-program, PNT, partition, and reconciliation incidents |
 | `internal/platform` | Kafka/PostgreSQL scale path |
 | `internal/ai` | AI contracts, incidents, scenes, traces |
 | `internal/memory` | Scoped memory and node stores |

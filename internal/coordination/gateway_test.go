@@ -3,9 +3,13 @@ package coordination
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 )
@@ -43,5 +47,26 @@ func TestAcceptEffectRequiresFourDistinctValidSigners(t *testing.T) {
 	tampered.Acknowledgements[0].ResultingStateHash = "tampered"
 	if err := gateway.AcceptEffect(tampered); err == nil {
 		t.Fatal("tampered acknowledgement was accepted")
+	}
+}
+
+func TestProgramInstallReceiptBindsNodeProgramAndSignature(t *testing.T) {
+	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+	manifest := domain.CoordinationCellManifestV1{SchemaVersion: 1, CellID: "A", Quorum: 4, Members: []domain.CoordinationCellMemberV1{{NodeID: "node-a-01", Faction: "A", SigningPublicKey: base64.StdEncoding.EncodeToString(publicKey)}}}
+	program := domain.TrajectoryProgramV2{SchemaVersion: 2, ProgramID: "program-1", MissionID: "mission-1", ActiveRevision: 1, ContentHash: "sha256:program"}
+	receipt := domain.ProgramInstallReceiptV1{SchemaVersion: 1, ProgramID: program.ProgramID, MissionID: program.MissionID, NodeID: "node-a-01", Revision: 1, ProgramHash: program.ContentHash, InstalledAt: time.Unix(100, 0).UTC(), State: "installed"}
+	hashPayload := receipt
+	raw, _ := json.Marshal(hashPayload)
+	digest := sha256.Sum256(raw)
+	receipt.ReceiptHash = "sha256:" + hex.EncodeToString(digest[:])
+	signedRaw, _ := json.Marshal(receipt)
+	receipt.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, signedRaw))
+	if err := verifyProgramInstallReceipt(manifest, "node-a-01", program, receipt); err != nil {
+		t.Fatal(err)
+	}
+	tampered := receipt
+	tampered.ProgramHash = "sha256:tampered"
+	if err := verifyProgramInstallReceipt(manifest, "node-a-01", program, tampered); err == nil {
+		t.Fatal("tampered install receipt was accepted")
 	}
 }

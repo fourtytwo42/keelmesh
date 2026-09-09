@@ -59,6 +59,15 @@ it is never stored in Git or rendered through application interfaces.
 binary, helper, token, and drop-in installation and restores the previous node
 binary automatically if the M13 health check fails.
 
+M14 adds `infrastructure/systemd/keelmesh-node-m14-execution.conf` and
+`infrastructure/install-m14-node-release`. The installer accepts only
+`full_program_shadow` or `full_program`, verifies that the radio interface is
+not the default route, deploys one node at a time, and restores both the prior
+binary and execution-mode drop-in if the M14 health check fails. The Compose
+deployment defaults to `full_program_shadow`; promotion to `full_program` is
+explicit and occurs only after receipt-backed program installation succeeds on
+all assigned nodes.
+
 Player B traffic enters VM 214 on the private `player-b-ingress` Compose service.
 The ingress pins all `/api/v3` requests to faction B and follows the currently
 advertised B coordinator. The Cloudflare systemd unit publishes that ingress;

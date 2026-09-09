@@ -20,6 +20,7 @@ import type {
   Point,
   ReachabilityV2,
   SurfaceContactV2,
+  TrajectoryProgramSummaryV2,
   VesselProfileV2,
   WorkspaceAssistantActionV1,
   WorkspaceAssistantResponseV1,
@@ -2240,6 +2241,7 @@ export function FleetWorkspace() {
           pirate={pirate}
           vessel={vessel}
           lookup={vesselsByID}
+          execution={fleet.missions.find((mission) => mission.id === vessel.telemetry.mission_id)?.execution}
           onRename={(name) => renameVessel(vessel.id, name)}
         />
       ),
@@ -3672,11 +3674,13 @@ function VesselInspectorWindow({
   pirate,
   vessel,
   lookup,
+  execution,
   onRename,
 }: {
   pirate: boolean;
   vessel: VesselProfileV2;
   lookup: Map<string, VesselProfileV2>;
+  execution?: TrajectoryProgramSummaryV2;
   onRename: (name: string) => void;
 }) {
   const [reachability, setReachability] = useState<ReachabilityV2 | null>(null);
@@ -3688,26 +3692,28 @@ function VesselInspectorWindow({
       .catch(() => { if (active) setReachability(null); });
     return () => { active = false; };
   }, [vessel.id]);
-  return <VesselInspector pirate={pirate} vessel={vessel} reachability={reachability} lookup={lookup} onRename={onRename} />;
+  return <VesselInspector pirate={pirate} vessel={vessel} reachability={reachability} lookup={lookup} execution={execution} onRename={onRename} />;
 }
 function VesselInspector({
   pirate,
   vessel,
   reachability,
   lookup,
+  execution,
   onRename,
 }: {
   pirate: boolean;
   vessel: VesselProfileV2;
   reachability: ReachabilityV2 | null;
   lookup: Map<string, VesselProfileV2>;
+  execution?: TrajectoryProgramSummaryV2;
   onRename: (name: string) => void;
 }) {
   const t = vessel.telemetry;
   const currentEnergyState = t.energy_state || "balanced";
   const reserveValue = Math.max(0, Math.min(100, t.reserve * 100));
   const projectedValue = Math.max(0, Math.min(100, t.projected_reserve * 100));
-  const bufferPercent = Math.min(100, Math.round((t.tape_depth_seconds / 60) * 100));
+  const authorityPercent = execution ? Math.max(0, Math.min(100, Math.round((execution.authorized_time_remaining_seconds / Math.max(1, execution.authorization_expiry_tick - (execution.activation_tick ?? 0))) * 100))) : 0;
   return (
     <div className="vessel-inspector">
       <div className="vessel-hero">
@@ -3735,12 +3741,12 @@ function VesselInspector({
         </div>
         <div className="readiness-bars">
           <StatusBar icon={<BatteryCharging />} label="PROJECTED MISSION END" value={`${reservePercent(t.projected_reserve)}%`} percent={projectedValue} />
-          <StatusBar icon={<Route />} label="HOT EXECUTION BUFFER" value={`${t.tape_depth_seconds}s`} percent={bufferPercent} />
+          <StatusBar icon={<Route />} label={execution ? "AUTHORIZED TIME REMAINING" : "EXECUTION AUTHORITY"} value={execution ? `${Math.ceil(execution.authorized_time_remaining_seconds / 60)} min` : "NONE"} percent={authorityPercent} />
           <StatusBar icon={<Gauge />} label="BATTERY-ONLY RANGE" value={`${(t.reserve * vessel.class.nominal_range_nm).toFixed(1)} nm`} percent={reserveValue} />
         </div>
       </div>
       <div className="hot-buffer-note">
-        <Route /><span><b>FULL MISSION PROGRAM</b><small>The route may be arbitrarily long. This vessel keeps the next 60 seconds validated and armed as a rolling resilient buffer.</small></span>
+        <Route /><span><b>{execution ? "FULL PROGRAM ONBOARD" : "NO ACTIVE PROGRAM"}</b><small>{execution ? `Revision ${execution.active_revision} · ${execution.total_segments} deterministic segments · bounded decisions validated onboard.` : "This vessel has no active execution authority and will not invent movement commands."}</small></span>
       </div>
       <div className="vessel-nav-grid">
         <Insight icon={<BatteryCharging />} label="BATTERY FLOW" value={`${currentEnergyState.replaceAll("_", " ")} · ${signedPower(t.net_power_kw ?? 0)}`} detail={`${(t.solar_input_kw ?? 0).toFixed(2)} kW solar · ${(t.power_draw_kw ?? 0).toFixed(2)} kW load`} tone={currentEnergyState === "charging" ? "good" : currentEnergyState === "discharging" ? "bad" : ""} />
@@ -3876,6 +3882,22 @@ function Peer({
 }
 function StatusBar({ icon, label, value, percent }: { icon: ReactNode; label: string; value: string; percent: number }) {
   return <div className="status-bar"><header>{icon}<span>{label}</span><b>{value}</b></header><i><span style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} /></i></div>;
+}
+function ProgramSummary({ execution }: { execution: TrajectoryProgramSummaryV2 }) {
+  const adaptation = Object.values(execution.last_adaptations ?? {}).sort((a, b) => b.tick - a.tick)[0];
+  return <div className="trajectory-program-summary">
+    <header><Route /><b>{execution.complete_program_onboard ? "FULL PROGRAM ONBOARD" : "PROGRAM INSTALL PENDING"} · REVISION {execution.active_revision}</b>{execution.pending_revision && <em>R{execution.pending_revision} ARMED · T+{execution.activation_tick}</em>}</header>
+    <dl>
+      <span><small>PROGRAM</small>{Math.ceil(execution.duration_seconds / 60)} min</span>
+      <span><small>SEGMENTS</small>{execution.total_segments}</span>
+      <span><small>INSTALLED</small>{execution.installed_node_count} nodes</span>
+      <span><small>AUTHORITY LEFT</small>{Math.ceil(execution.authorized_time_remaining_seconds / 60)} min</span>
+      <span><small>EXPIRY</small>T+{execution.authorization_expiry_tick}s</span>
+      <span><small>COMPLETION</small>{execution.completion_policy.replaceAll("_", " ")}</span>
+      <span><small>CONTINGENCY</small>{execution.terminal_contingency.replaceAll("_", " ")}</span>
+    </dl>
+    <p>{adaptation ? `Last bounded adaptation: ${adaptation.kind.replaceAll("_", " ")} · ${adaptation.decision_scope} decision by ${adaptation.decision_node_id}.` : "Every assigned vessel stores the complete finite program and independently enforces its signed authority envelope."}</p>
+  </div>;
 }
 function Insight({ icon, label, value, detail, tone = "" }: { icon: ReactNode; label: string; value: string; detail: string; tone?: string }) {
   return <div className={`insight-tile ${tone}`}>{icon}<span><small>{label}</small><strong>{value}</strong></span><em>{detail}</em></div>;
@@ -4053,7 +4075,7 @@ function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool,
       </section>}
       {workspaceTab === "route" && <section className="mission-route-workspace">
         <div className="mission-section-heading"><span><ShieldCheck /><b>Review &amp; execute</b><small>{plans.length > 1 ? `${plans.length} validated alternatives · select one to preview` : plans.length === 1 ? "One validated route ready for review" : "Build a route from the Plan tab first."}</small></span>{activePlan && <em>{activePlan.advisor_source === "deterministic" ? "MANUAL" : "AI REFINED"}</em>}</div>
-        {mission.trajectory && <div className="trajectory-program-summary"><header><Route /><b>ACTIVE PROGRAM · REVISION {mission.trajectory.active_revision}</b>{mission.trajectory.pending_revision && <em>R{mission.trajectory.pending_revision} ARMED · T+{mission.trajectory.activation_tick}</em>}</header><dl><span><small>PROGRAM</small>{Math.ceil(mission.trajectory.duration_seconds / 60)} min</span><span><small>SEGMENTS</small>{mission.trajectory.total_segments}</span><span><small>BUFFER</small>{mission.trajectory.hot_tape_horizon_seconds}s</span><span><small>CURSOR</small>T+{mission.trajectory.mission_tick}s</span></dl></div>}
+        {mission.execution && <ProgramSummary execution={mission.execution} />}
         {plans.length === 0 ? <div className="route-workbench-empty"><Route /><b>No routes yet</b><span>Return to Plan, define the task, and build validated routes.</span><button onClick={() => setWorkspaceTab("plan")}>Open Plan</button></div> : <div className="candidate-list mission-route-choices" aria-label="Mission route options">{plans.slice(0, 3).map((plan, index) => { const expanded = expandedPlans.has(plan.id), label = String.fromCharCode(65 + index); return <article key={plan.id} className={`${activePlan?.id === plan.id ? "selected" : ""} ${expanded ? "expanded" : "collapsed"} ${plan.policy_status}`}><header><button className="candidate-select" aria-label={`Preview option ${label}: ${plan.name}`} aria-pressed={activePlan?.id === plan.id} disabled={busy || plan.policy_status === "prohibited"} onClick={() => onChoose(plan.id)}><span className="option-letter">{label}</span><b>{plan.name}</b></button>{plan.recommended && <em>{pirate ? "CAPTAIN'S PICK" : "RECOMMENDED"}</em>}<button className="candidate-expand" aria-label={`${expanded ? "Collapse" : "Expand"} option ${label}`} onClick={() => setExpandedPlans((current) => { const next = new Set(current); next.has(plan.id) ? next.delete(plan.id) : next.add(plan.id); return next; })}>{expanded ? <ChevronUp /> : <ChevronDown />}</button></header><div className="candidate-quick-metrics"><span>{plan.duration_minutes.toFixed(0)} min</span><span>{reservePercent(plan.minimum_reserve)}% reserve</span><span>{plan.minimum_separation_m} m sep</span></div><div className="candidate-detail"><p>{plan.description}</p><small>{plan.maneuvers.join(" → ")}</small><code>{plan.content_hash.slice(0, 18)}…</code></div></article>; })}</div>}
         {activePlan && <button className="mission-start-action" disabled={busy || activePlan.policy_status === "prohibited"} onClick={() => onConfirmPlan(activePlan.id)}><ShieldCheck />Confirm and start selected route</button>}
         <details className="ai-refine-panel" open={aiRefineOpen} onToggle={(event) => setAIRefineOpen(event.currentTarget.open)}><summary><Sparkles /><span><b>AI mission assistant</b><small>Optionally improve this plan without changing the authority boundary.</small></span><em>{aiRefineOpen ? "CLOSE" : "OPEN"}</em></summary><div><label>WHAT SHOULD AI IMPROVE?<textarea aria-label="AI refinement instruction" value={aiInstruction} onChange={(event) => setAIInstruction(event.target.value)} placeholder="Example: reduce shallow-water exposure and preserve more reserve." /></label><label className="ai-alternatives-toggle"><input type="checkbox" checked={aiAlternatives} onChange={(event) => setAIAlternatives(event.target.checked)} /><span><b>Offer alternatives</b><small>Return three routes instead of one recommendation.</small></span></label><button className="wide" disabled={busy || mission.target_ids.length === 0} onClick={() => onRefineAI(missionType, manualObjective, aiInstruction, aiAlternatives)}><Sparkles />{aiAlternatives ? "Generate alternatives" : "Refine selected mission"}</button>{busy && <div className="agent-work-chips"><span><Sparkles /> Reviewing mission</span><span>Checking constraints</span><span>Validating route</span></div>}</div></details>
@@ -4356,27 +4378,7 @@ function LegacyMissionCanvas({
       )}
       </section>
       <section className="planner-options-pane">
-      {mission.trajectory && (
-        <div className="trajectory-program-summary">
-          <header>
-            <Route />
-            <b>TRAJECTORY PROGRAM · REVISION {mission.trajectory.active_revision}</b>
-            {mission.trajectory.pending_revision && (
-              <em>R{mission.trajectory.pending_revision} ARMED · T+{mission.trajectory.activation_tick}</em>
-            )}
-          </header>
-          <dl>
-            <span><small>FULL PROGRAM</small>{Math.ceil(mission.trajectory.duration_seconds / 60)} min</span>
-            <span><small>SEGMENTS</small>{mission.trajectory.total_segments}</span>
-            <span><small>HOT TAPE</small>{mission.trajectory.hot_tape_horizon_seconds}s rolling</span>
-            <span><small>CURSOR</small>T+{mission.trajectory.mission_tick}s</span>
-          </dl>
-          <p>
-            The complete signed mission is retained; each node materializes the
-            next bounded execution window and may adjust only inside its active envelope.
-          </p>
-        </div>
-      )}
+      {mission.execution && <ProgramSummary execution={mission.execution} />}
       {contactSeed && (
         <div className="planner-contact-seed">
           <i style={{ background: contactSeed.color }} />
@@ -4531,7 +4533,6 @@ function Constraints({
     ["maximum_pnt_uncertainty_m", "Maximum PNT uncertainty", "m"],
     ["maximum_duration_minutes", "Maximum duration", "min"],
     ["maximum_route_distance_km", "Maximum route distance", "km"],
-    ["minimum_tape_watermark_seconds", "Minimum mission tape", "s"],
     ["formation_spacing_m", "Formation spacing", "m"],
     ["regroup_threshold_m", "Regroup threshold", "m"],
   ];

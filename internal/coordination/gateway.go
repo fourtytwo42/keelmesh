@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,6 +24,7 @@ import (
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
 	"github.com/fourtytwo42/keelmesh/internal/observability"
+	"github.com/fourtytwo42/keelmesh/internal/trajectory"
 )
 
 type GatewayConfig struct {
@@ -359,6 +362,81 @@ func (g *Gateway) Proof(commandID string) (domain.QuorumCommitProofV1, bool) {
 	defer g.mu.RUnlock()
 	proof, ok := g.proofs[commandID]
 	return proof, ok
+}
+
+// InstallProgram quorum-commits the exact immutable program bytes and then
+// requires every node in the cell to durably install those bytes before the
+// caller may report execution readiness.
+func (g *Gateway) InstallProgram(ctx context.Context, cellID string, program domain.TrajectoryProgramV2) ([]domain.ProgramInstallReceiptV1, error) {
+	manifest, ok := g.cfg.Manifests[cellID]
+	if !ok {
+		return nil, fmt.Errorf("CELL_MEMBERSHIP_DENIED: unknown cell %s", cellID)
+	}
+	installRevision := trajectory.ProgramInstallRevision(program)
+	commandID := fmt.Sprintf("program-%s-r%d-%s", program.ProgramID, installRevision, strings.ToLower(cellID))
+	command, err := g.CanonicalCommand(cellID, commandID, commandID, commandID, "execution-program-distributor", "execution.program_install", program.ProgramID, 0, program, nil)
+	if err != nil {
+		return nil, err
+	}
+	_, proof, err := g.Commit(ctx, command)
+	if err != nil {
+		return nil, err
+	}
+	if err = g.AcceptEffect(proof); err != nil {
+		return nil, err
+	}
+	receipts := make([]domain.ProgramInstallReceiptV1, 0, len(manifest.Members))
+	for _, member := range manifest.Members {
+		var receipt domain.ProgramInstallReceiptV1
+		request := programInstallRequestV1{Program: program, Proof: proof}
+		if err = g.requestJSON(ctx, http.MethodPost, "https://"+member.ManagementAddress+"/internal/v1/execution/programs:install", request, &receipt); err != nil {
+			return receipts, fmt.Errorf("PROGRAM_NOT_INSTALLED: %s: %w", member.NodeID, err)
+		}
+		if err = verifyProgramInstallReceipt(manifest, member.NodeID, program, receipt); err != nil {
+			return receipts, err
+		}
+		receipts = append(receipts, receipt)
+	}
+	return receipts, nil
+}
+
+func verifyProgramInstallReceipt(manifest domain.CoordinationCellManifestV1, expectedNodeID string, program domain.TrajectoryProgramV2, receipt domain.ProgramInstallReceiptV1) error {
+	if receipt.NodeID != expectedNodeID || receipt.ProgramID != program.ProgramID || receipt.MissionID != program.MissionID || receipt.Revision != trajectory.ProgramInstallRevision(program) || receipt.ProgramHash != program.ContentHash || (receipt.State != "installed" && receipt.State != "already_installed") {
+		return fmt.Errorf("PROGRAM_NOT_INSTALLED: node receipt does not match the requested program")
+	}
+	hashPayload := receipt
+	hashPayload.ReceiptHash = ""
+	hashPayload.Signature = ""
+	raw, _ := json.Marshal(hashPayload)
+	digest := sha256.Sum256(raw)
+	if receipt.ReceiptHash != "sha256:"+hex.EncodeToString(digest[:]) {
+		return fmt.Errorf("PROGRAM_HASH_MISMATCH: node install receipt hash is invalid")
+	}
+	var publicKey ed25519.PublicKey
+	for _, member := range manifest.Members {
+		if member.NodeID == receipt.NodeID {
+			var err error
+			publicKey, err = decodePublicKey(member.SigningPublicKey)
+			if err != nil {
+				return err
+			}
+			break
+		}
+	}
+	if len(publicKey) == 0 {
+		return fmt.Errorf("CELL_MEMBERSHIP_DENIED: install receipt signer is not a member")
+	}
+	signature, err := base64.StdEncoding.DecodeString(receipt.Signature)
+	if err != nil {
+		return fmt.Errorf("PEER_IDENTITY_INVALID: install receipt signature is invalid")
+	}
+	signedPayload := receipt
+	signedPayload.Signature = ""
+	signedRaw, _ := json.Marshal(signedPayload)
+	if !ed25519.Verify(publicKey, signedRaw, signature) {
+		return fmt.Errorf("PEER_IDENTITY_INVALID: install receipt signature is invalid")
+	}
+	return nil
 }
 
 func (g *Gateway) Mode() Mode { return g.cfg.Mode }

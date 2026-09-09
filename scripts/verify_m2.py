@@ -53,7 +53,9 @@ request(f"/api/v1/missions/{lease['mission_id']}:start", {
 
 state = request("/api/v1/resilience")
 initial_fused = next(node for node in state["nodes"] if node["id"] == "vessel-04")["pnt"]["position"]
-assert state["phase"] == "ready" and next(node for node in state["nodes"] if node["id"] == "vessel-04")["tape"]["depth_seconds"] == 60
+initial_node = next(node for node in state["nodes"] if node["id"] == "vessel-04")
+assert state["phase"] == "ready" and initial_node["execution"]["complete_program_onboard"]
+assert initial_node["tape"]["depth_seconds"] == 0
 
 schedule = ["fail_starlink", "partition_vessel4", "inject_gnss_spoof", "restore_contact"]
 snapshots = [state]
@@ -69,23 +71,24 @@ relay, partitioned, held, rejoined = snapshots[1:]
 assert relay["active_path"] == ["operator", "vessel-03", "vessel-04"]
 assert relay["duplicate_deliveries"] == 1 and len(relay["hop_receipts"]) == 2
 partition_node = next(node for node in partitioned["nodes"] if node["id"] == "vessel-04")
-assert partitioned["active_path"] == [] and partition_node["tape"]["depth_seconds"] == 30
+assert partitioned["active_path"] == [] and partitioned["mission_tick"] > 60
+assert partition_node["execution"]["status"] == "active" and partition_node["execution"]["decision_scope"] == "local"
 held_node = next(node for node in held["nodes"] if node["id"] == "vessel-04")
-assert held_node["behavior"] == "safe_hold" and held_node["tape"]["watermark"] == "empty"
+assert held_node["behavior"] == "safe_hold" and held_node["execution"]["terminal_contingency"] == "safe_hold"
 assert held["raw_gnss_position"] != held_node["pnt"]["position"]
 assert held_node["pnt"]["position"] == initial_fused and held_node["pnt"]["uncertainty_m"] > 45
 final_node = next(node for node in rejoined["nodes"] if node["id"] == "vessel-04")
-assert rejoined["phase"] == "rejoined" and rejoined["discarded_sequences"] == [6, 7, 8]
+assert rejoined["phase"] == "rejoined" and rejoined["discarded_sequences"] == []
 assert rejoined["bridge"]["route"][0] == final_node["pnt"]["position"]
 assert rejoined["bridge"]["target_sequence"] == 9 and not rejoined["bridge"]["requires_approval"]
-assert [segment["sequence"] for segment in final_node["tape"]["segments"]] == [9, 10, 11, 12, 13, 14]
+assert final_node["tape"]["segments"] == [] and final_node["execution"]["decision_scope"] == "group"
 assert "gnss" in final_node["pnt"]["excluded_sources"] and final_node["pnt"]["integrity"] == "trusted"
 assert [transition["integrity"] for transition in rejoined["pnt_transitions"]] == ["trusted", "suspect", "denied", "unsafe", "trusted"]
 
 print(json.dumps({
     "status": "pass", "route_changes": 2, "duplicate_count": relay["duplicate_deliveries"],
-    "tape_depths": [next(node for node in item["nodes"] if node["id"] == "vessel-04")["tape"]["depth_seconds"] for item in snapshots],
-    "expired_segments": len(rejoined["discarded_sequences"]),
+    "authorized_time_remaining": [next(node for node in item["nodes"] if node["id"] == "vessel-04")["execution"]["authorized_time_remaining_seconds"] for item in snapshots],
+    "discarded_stale_movements": len(rejoined["discarded_sequences"]),
     "maximum_uncertainty_m": max(next(node for node in item["nodes"] if node["id"] == "vessel-04")["pnt"]["uncertainty_m"] for item in snapshots),
     "contingency_tick": held["mission_tick"], "bridge_target": rejoined["bridge"]["target_sequence"], "final_state": rejoined["phase"],
 }))

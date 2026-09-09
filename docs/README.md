@@ -20,6 +20,7 @@ This is the maintained documentation portal for operators, engineers, reviewers,
 - [Operations](OPERATIONS.md): secrets, deployment, health, reset, recovery, and evidence.
 - [Security](SECURITY.md): trust boundaries, authorization, networks, credentials, and abuse resistance.
 - [Platform proof operations](PLATFORM_PROOF.md): M13 evidence APIs, tracing, drill execution, and GNSS evaluation.
+- [Full-program edge autonomy](FULL_PROGRAM_EDGE_AUTONOMY.md): M14 execution authority, node storage, group decisions, expiry, and reconciliation.
 - [Verification](VERIFICATION.md): test layers, gates, evidence, and known coverage debt.
 - [Reference](REFERENCE.md): APIs, service roles, ports, compatibility, and source layout.
 - [Status](STATUS.md): delivered milestones, limitations, and roadmap.

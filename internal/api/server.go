@@ -74,6 +74,21 @@ func New(engine *core.Engine, logger *slog.Logger, web fs.FS, managers ...any) *
 		}
 	}
 	server := &Server{engine: engine, logger: logger, web: web, startedAt: time.Now().UTC(), platform: manager, agent: agentManager, fleetops: fleetManager, arena: arenaManager, memory: memoryManager, coordination: coordinationManager, coordGateway: coordinationGateway, tracer: tracer, speechURL: strings.TrimRight(os.Getenv("KEELMESH_SPEECH_URL"), "/")}
+	if fleetManager != nil && coordinationGateway != nil && coordinationGateway.Mode() != coordination.ModeSimulated {
+		fleetManager.SetProgramInstaller(func(program domain.TrajectoryProgramV2, cells []string) ([]domain.ProgramInstallReceiptV1, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			receipts := make([]domain.ProgramInstallReceiptV1, 0, len(cells)*6)
+			for _, cellID := range cells {
+				cellReceipts, err := coordinationGateway.InstallProgram(ctx, cellID, program)
+				if err != nil {
+					return nil, err
+				}
+				receipts = append(receipts, cellReceipts...)
+			}
+			return receipts, nil
+		})
+	}
 	if manager != nil {
 		registry := prometheus.NewRegistry()
 		gauges := []struct {
@@ -232,6 +247,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v6/coordination/commands/{id}/proof", s.coordinationProofV6)
 	mux.HandleFunc("GET /api/v6/coordination/cross-cell/{id}", s.crossCellV6)
 	mux.HandleFunc("GET /api/v6/coordination/security", s.coordinationSecurityV6)
+	mux.HandleFunc("GET /api/v7/missions/{id}/program", s.missionProgramV7)
+	mux.HandleFunc("GET /api/v7/vessels/{id}/execution", s.vesselExecutionV7)
+	mux.HandleFunc("GET /api/v7/groups/{id}/decision-state", s.groupDecisionStateV7)
 	mux.Handle("GET /", spaHandler(s.web))
 	handler := requestLog(s.logger, s.coordinationMutationMiddleware(mux))
 	if s.tracer != nil {
@@ -241,7 +259,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m13", "started_at": s.startedAt.Format(time.RFC3339)})
+	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m14", "started_at": s.startedAt.Format(time.RFC3339)})
 }
 func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
