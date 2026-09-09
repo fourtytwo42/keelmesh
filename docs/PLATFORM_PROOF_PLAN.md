@@ -481,25 +481,31 @@ All mutations require request ID, idempotency key, actor identity, expected plat
 
 ## Acceptance criteria
 
-- [ ] One mission command produces a complete cross-service trace from operator request through durable projection.
-- [ ] Every displayed trace stage corresponds to a real span, receipt, command, or event.
-- [ ] Trace collection failure cannot stop or delay committed mission execution.
-- [ ] The leader-failure drill recovers without duplicate effects and records measured recovery time.
-- [ ] A 4/2 partition permits only the majority; a 3/3 partition rejects all new authority.
-- [ ] Radio drills cannot target management or intentional provider connectivity.
-- [ ] Worker/Kafka interruption does not stop committed edge execution.
-- [ ] Backlog recovery produces matching projection counts and checksums without duplicate logical effects.
-- [ ] A GNSS spoof incident becomes a source-linked, replayable evaluation artifact.
-- [ ] Baseline and candidate policies run against the same immutable episode and seed.
-- [ ] Policy promotion requires a privileged exact-hash human decision.
-- [ ] SLO values identify source, workload, window, environment, and freshness.
-- [ ] Twelve-node capacity results are measured; 100/1,000-asset extrapolations are visibly labeled.
-- [ ] Cost projections expose every material assumption.
-- [ ] Engineer provides live health, SLO, topology, traces, drills, and capacity/cost evidence.
-- [ ] Cutaway explains state ownership, failure boundaries, deployed versus production shape, and evidence chains.
-- [ ] The guided Platform Proof completes without manual repair and leaves no residual fault, focus, speed, or scene state.
-- [ ] Existing M1–M12 behavior remains compatible.
-- [ ] No GitHub-hosted workflow or Proxmox snapshot is created.
+- [x] One mission command produces a complete cross-service trace from operator request through durable projection.
+- [x] Every displayed trace stage corresponds to a real span, receipt, command, or event.
+- [x] Trace collection failure cannot stop or delay committed mission execution.
+- [x] The leader-failure drill recovers without duplicate effects and records measured recovery time.
+- [x] A 4/2 partition permits only the majority; a 3/3 partition rejects all new authority.
+- [x] Radio drills cannot target management or intentional provider connectivity.
+- [x] Worker/Kafka interruption does not stop committed edge execution.
+- [x] Backlog recovery produces matching projection counts and checksums without duplicate logical effects.
+- [x] A GNSS spoof incident becomes a source-linked, replayable evaluation artifact.
+- [x] Baseline and candidate policies run against the same immutable episode and seed.
+- [x] Policy promotion requires a privileged exact-hash human decision.
+- [x] SLO values identify source, workload, window, environment, and freshness.
+- [x] Twelve-node capacity results are measured; 100/1,000-asset extrapolations are visibly labeled.
+- [x] Cost projections expose every material assumption.
+- [x] Engineer provides live health, SLO, topology, traces, drills, and capacity/cost evidence.
+- [x] Cutaway explains state ownership, failure boundaries, deployed versus production shape, and evidence chains.
+- [x] The guided Platform Proof completes without manual repair and leaves no residual fault, focus, speed, or scene state.
+- [x] Existing M1–M12 behavior remains compatible.
+- [x] No GitHub-hosted workflow or Proxmox snapshot is created.
+
+Acceptance was closed on 2026-09-09 against release commit `9da7042`. The final
+mission-draft probe produced trace `af627f5dbae13f2d09778fa5760eb781`
+across core, the coordination gateway, and a Raft node, with quorum proof
+`http-2bec2891c2f89faa791ad5e6-a`; the temporary draft was then deleted. The
+release receipts are retained on VM 214 under `evidence/runtime/`.
 
 ## Explicitly deferred work
 

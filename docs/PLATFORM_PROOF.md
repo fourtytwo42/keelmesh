@@ -14,9 +14,11 @@ The current twelve-node release was verified on 2026-09-09. These values are evi
 | Radio 4/2 partition | Four-voter side committed; two-voter side did not; management/provider interruptions zero |
 | Radio 3/3 partition | Both sides rejected new authority; all six voters reconverged after rollback |
 | GNSS evaluation | Source-linked MinIO artifact, successful Dagster materialization, finished MLflow comparison, promotion still human-gated |
-| Cross-process trace | Core, coordination gateway, node mTLS/Raft apply, and signed proof collection represented by stored OTLP spans |
+| Cross-process trace | Trace `af627f5dbae13f2d09778fa5760eb781`: core → coordination gateway → node mTLS/Raft apply, with signed quorum proof `http-2bec2891c2f89faa791ad5e6-a` |
 
 The API supplies exact timestamps, hashes, run IDs, workload labels, and freshness. Engineer and System render that same state rather than a separate demonstration fixture.
+
+The final trace probe created and immediately deleted an unassigned mission draft; it issued no movement. A post-deployment check also verified all twelve node exporters against the private collector, followed by one-at-a-time service restarts and full two-cell convergence.
 
 ## Evidence surfaces
 
