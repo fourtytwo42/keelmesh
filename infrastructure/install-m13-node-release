@@ -36,7 +36,7 @@ trap rollback ERR
 
 install -o root -g root -m 0755 "$binary" "$installed_binary"
 install -o root -g root -m 0755 "$fault_helper" /usr/local/sbin/m7-radio-fault
-install -d -o root -g root -m 0700 /etc/keelmesh/secrets
+install -d -o keelmesh -g keelmesh -m 0700 /etc/keelmesh/secrets
 install -o keelmesh -g keelmesh -m 0400 "$token" /etc/keelmesh/secrets/otel_token
 install -d -o root -g root -m 0755 /etc/systemd/system/keelmesh-node.service.d
 install -o root -g root -m 0644 "$dropin" "$installed_dropin"
