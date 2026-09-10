@@ -59,6 +59,8 @@ type Props = {
   sceneCameraRequest?: number;
   vesselCameraID?: string;
   vesselCameraRequest?: number;
+  missionFramePoints?: Point[];
+  missionFrameRequest?: number;
 };
 const empty: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
@@ -569,6 +571,8 @@ export function OperationsMap({
   sceneCameraRequest,
   vesselCameraID,
   vesselCameraRequest,
+  missionFramePoints,
+  missionFrameRequest,
 }: Props) {
   const host = useRef<HTMLDivElement>(null),
     mapRef = useRef<MLMap | null>(null),
@@ -1273,6 +1277,26 @@ export function OperationsMap({
     });
   }, [ready, vesselCameraID, vesselCameraRequest]);
   useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !missionFrameRequest || !missionFramePoints?.length) return;
+    if (missionFramePoints.length === 1) {
+      map.easeTo({ center: missionFramePoints[0], zoom: 12, duration: 650 });
+      return;
+    }
+    const bounds = new maplibregl.LngLatBounds(
+      missionFramePoints[0],
+      missionFramePoints[0],
+    );
+    for (const point of missionFramePoints.slice(1)) bounds.extend(point);
+    const width = map.getContainer().clientWidth;
+    const sidePadding = width >= 1300 ? Math.min(520, Math.round(width * 0.27)) : Math.max(48, Math.round(width * 0.08));
+    map.fitBounds(bounds, {
+      padding: { top: 120, right: sidePadding, bottom: 110, left: sidePadding },
+      maxZoom: 12,
+      duration: 800,
+    });
+  }, [ready, missionFrameRequest]);
+  useEffect(() => {
     if (!ready || !mapRef.current || !mission || !focusedGeometry) return;
     let point: Point | undefined;
     if (focusedGeometry.kind === "waypoint") point = mission.geometry.waypoints[focusedGeometry.index];
@@ -1969,6 +1993,8 @@ export function OperationsMap({
       data-command-scene-camera-request={sceneCameraRequest || undefined}
       data-vessel-camera-request={vesselCameraRequest || undefined}
       data-vessel-camera-id={vesselCameraID || undefined}
+      data-mission-frame-request={missionFrameRequest || undefined}
+      data-mission-frame-points={missionFramePoints?.length || undefined}
       data-visible-hold-groups={visibleHoldGroups.features.length}
       data-remaining-route-points={remainingMissionRoutes.features.reduce(
         (count, feature) => count + (feature.geometry.type === "LineString" ? feature.geometry.coordinates.length : 0),

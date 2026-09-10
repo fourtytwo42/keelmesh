@@ -36,6 +36,10 @@ test("guided demo exposes complete-program authority during execution", async ({
     await expect(hud).toContainText("Complete signed program onboard", { timeout: 150_000 });
     await expect(page.getByRole("region", { name: "Mission" })).toBeVisible();
     await expect(page.locator('[class*="window-inspector-"]')).toBeVisible();
+    await expect(page.locator(".operations-map")).toHaveAttribute("data-vessel-camera-request", /\d+/);
+    await expect(page.locator(".operations-map")).toHaveAttribute("data-mission-frame-request", /\d+/);
+    const framedPoints = Number(await page.locator(".operations-map").getAttribute("data-mission-frame-points"));
+    expect(framedPoints).toBeGreaterThan(3);
     await expect(page.getByText("FULL PROGRAM ONBOARD").first()).toBeVisible();
     await expect(page.getByText("AUTHORITY LEFT")).toBeVisible();
     await expect(page.getByText("CONTINGENCY", { exact: true })).toBeVisible();

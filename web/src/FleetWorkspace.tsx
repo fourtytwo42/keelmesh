@@ -220,6 +220,10 @@ export function FleetWorkspace() {
       vesselID: string;
       token: number;
     } | null>(null),
+    [missionFrameRequest, setMissionFrameRequest] = useState<{
+      points: Point[];
+      token: number;
+    } | null>(null),
     [assistantTurns, setAssistantTurns] = useState<ConversationTurnV1[]>([]),
     [assistantChatInput, setAssistantChatInput] = useState(""),
     [assistantChatBusy, setAssistantChatBusy] = useState(false),
@@ -518,6 +522,32 @@ export function FleetWorkspace() {
       token: (current?.token ?? 0) + 1,
     }));
   }, [openVesselInspector]);
+  const frameMission = useCallback((
+    target: MissionWorkspaceV2,
+    plan: FleetPlanV2 | undefined,
+    snapshot: FleetSnapshotV2,
+  ) => {
+    const points: Point[] = [];
+    for (const id of target.target_ids) {
+      const vessel = snapshot.vessels.find((item) => item.id === id);
+      if (vessel) points.push(vessel.telemetry.position);
+    }
+    for (const assignment of plan?.assignments ?? []) points.push(...assignment.route);
+    points.push(...target.geometry.waypoints);
+    for (const poi of target.geometry.pois) points.push(poi.position);
+    for (const area of target.geometry.included_areas) {
+      for (const point of area) points.push([point[0], point[1]]);
+    }
+    for (const area of target.geometry.exclusion_areas) {
+      for (const point of area) points.push([point[0], point[1]]);
+    }
+    if (!points.length) return;
+    setSceneCameraRequest(null);
+    setMissionFrameRequest((current) => ({
+      points,
+      token: (current?.token ?? 0) + 1,
+    }));
+  }, []);
   const openContactInspector = useCallback((id: string) => {
     open(`contact-inspector-${id}`);
   }, [open]);
@@ -1956,6 +1986,7 @@ export function FleetWorkspace() {
     setActiveMissionID(created.id);
     setTool("select");
     open("planner");
+    frameMission(updated ?? created, undefined, snapshot);
     await refresh();
   }
 
@@ -2022,13 +2053,15 @@ export function FleetWorkspace() {
       await createPlans(created, intent, "ai_assisted", "patrol", "", true, 1, false);
       const state = await waitForDemo(demoMissionAndPlans, (value) => Boolean(value.mission && value.plans.length));
       if (state.mission) {
+        const chosen = state.plans.find((item) => item.recommended) ?? state.plans[0];
         setFleet(state.snapshot);
         setActiveMissionID(state.mission.id);
         setSelected(new Set(state.mission.target_ids));
         setPlans(state.plans);
-        setPlanID((state.plans.find((item) => item.recommended) ?? state.plans[0])?.id ?? "");
+        setPlanID(chosen?.id ?? "");
         setWindows(new Set(["fleet", "planner"]));
         open("planner");
+        frameMission(state.mission, chosen, state.snapshot);
       }
     }
     if (action === "review-plan") {
@@ -2041,6 +2074,7 @@ export function FleetWorkspace() {
       setPlanID(chosen.id);
       setPendingPlanID(chosen.id);
       open("planner");
+      frameMission(state.mission, chosen, state.snapshot);
     }
     if (action === "execute-plan") {
       const state = await demoMissionAndPlans();
@@ -2055,7 +2089,8 @@ export function FleetWorkspace() {
       setSelected(new Set(mission?.target_ids ?? state.mission.target_ids));
       setWindows(new Set(["fleet", "planner", ...(vesselID ? [`inspector-${vesselID}`] : [])]));
       open("planner");
-      if (vesselID) inspectAndFrameVessel(vesselID);
+      if (vesselID) openVesselInspector(vesselID);
+      frameMission(mission ?? state.mission, chosen, executing);
     }
     if (action === "author-manual-mission") await authorGuidedManualMission();
     if (action === "run-resilience") await runGuidedResilience();
@@ -2681,6 +2716,8 @@ export function FleetWorkspace() {
         sceneCameraRequest={sceneCameraRequest?.token}
         vesselCameraID={vesselCameraRequest?.vesselID}
         vesselCameraRequest={vesselCameraRequest?.token}
+        missionFramePoints={missionFrameRequest?.points}
+        missionFrameRequest={missionFrameRequest?.token}
       />
       <button className="assistant-chat-trigger" aria-label="Toggle text chat with KeelMesh AI" title="Open or close text chat" onClick={() => toggleWindow("assistant-chat")}><MessageCircle /><span className="assistant-chat-dots" aria-hidden="true"><i /><i /><i /></span></button>
       {pendingDeleteMission && (
