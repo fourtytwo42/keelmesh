@@ -52,11 +52,17 @@ assert len({v["callsign"] for v in fleet["vessels"]}) == 12
 assert all(v["node_id"] and v["vm_id"] and not v["group_id"] for v in fleet["vessels"])
 assert fleet["environment"]["label"] == "NOAA-derived simulation fixture"
 contacts = fleet["surface_contacts"]
-assert len(contacts) == 16
-assert len({contact["boat_id"] for contact in contacts}) == 16
-assert len({contact["color_name"] for contact in contacts}) == 16
-assert {contact["class"] for contact in contacts} == {"container", "tanker", "ferry", "trawler", "patrol", "yacht"}
-contact = call(f"/api/v2/surface-contacts/{contacts[0]['id']}")
+assert len(contacts) == 33
+assert len({contact["boat_id"] for contact in contacts}) == 33
+assert len({contact["color_name"] for contact in contacts}) == 33
+hostiles = [contact for contact in contacts if contact.get("hostility") == "hostile"]
+npc_contacts = [contact for contact in contacts if contact.get("hostility") != "hostile"]
+assert len(hostiles) == 1 and hostiles[0]["id"] == "HOSTILE-0001"
+assert len(npc_contacts) == 32
+assert {contact["class"] for contact in npc_contacts} == {"container", "tanker", "ferry", "trawler", "patrol", "yacht"}
+assert sum(contact["speed_mps"] == 0 for contact in npc_contacts) == 4
+assert sum(contact["speed_mps"] > 0 for contact in npc_contacts) == 28
+contact = call(f"/api/v2/surface-contacts/{npc_contacts[0]['id']}")
 assert contact["boat_id"] == "NPC-4101" and contact["looping"] and len(contact["route"]) >= 2
 
 group_specs = [
