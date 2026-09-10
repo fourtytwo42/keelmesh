@@ -39,6 +39,7 @@ test("Mission and plus reuse an unsaved draft, then create after it is saved", a
   await expect(mission.getByRole("button", { name: /2 Review & Run/ })).toBeVisible();
   await expect(mission.getByText("No assets selected", { exact: true })).toBeVisible();
   await expect(mission.getByRole("textbox", { name: "Search mission assets" })).toHaveCount(0);
+  await expect(mission.getByRole("combobox", { name: "Mission defensive response" })).toHaveValue("notify_only");
 
   const fleet = page.getByRole("region", { name: "Fleet" });
   await fleet.getByRole("checkbox", { name: "Select Gannet" }).click();
