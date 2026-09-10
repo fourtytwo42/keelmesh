@@ -388,7 +388,8 @@ test("mission planner owns map authoring and presents alternatives only when req
   await expect(rail.getByRole("button", { name: "Return to floating" })).toBeVisible();
   await rail.getByRole("button", { name: "Return to floating" }).click();
   await expect(rail.getByRole("button", { name: "Snap left" })).toBeVisible();
-  await rail.getByRole("button", { name: "C01 Watch Shoal", exact: true }).click();
+  await rail.getByPlaceholder("Callsign, class, group, status…").fill("Petrel");
+  await rail.locator(".fleet-vessel-row", { hasText: "Petrel" }).getByRole("checkbox").check();
   await createSelectedMission(page);
   const planner = page.getByRole("region", { name: "Mission" });
   await expect(planner).toBeVisible();
