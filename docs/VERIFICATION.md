@@ -63,9 +63,9 @@ Evidence exports are bounded JSON, Markdown, and checksum manifests. They exclud
 
 ## Current status
 
-The frontend passes strict TypeScript, 18 Vitest assertions, production Vite/Docker builds, and focused deployed Playwright workflows for manual Mission editing and corrected phone gestures. M15 adds focused Go coverage for balance, deterministic effects, approval, repair, regeneration, and respawn plus assistant/MCP boundary tests.
+The frontend passes strict TypeScript, 18 Vitest assertions, production Vite/Docker builds, and the complete 34-scenario deployed Playwright matrix across combat, guided demonstration, Mission/Fleet workflows, A2UI scenes, desktop, tablet, phone, keyboard, mouse, and touch. Rapid Fleet-to-Mission membership changes additionally pass five consecutive end-to-end repetitions. M15 adds Go coverage for balance, deterministic effects, exact-hash approval, repair, regeneration, sinking, recovery, respawn, assistant/MCP boundaries, and restart-safe combat persistence.
 
-The broad legacy Playwright suite still contains assertions for the removed embedded Mission chat. The last full run recorded 13 passing and 11 failing tests. This is visible migration debt; superseded UI must not be restored to hide it.
+The complete M1–M15 compatibility chain passes twice against the authoritative VM 214 deployment. Both runs include measured 1,000-producer Kafka processing with zero dropped events and matching replay checksums, twelve-node health, two converged six-voter Raft cells, zero legacy tape depth, and the live 45-entity combat projection.
 
 GitHub-hosted workflows are intentionally unused. Verification runs on VM 214 and twelve vessel nodes to avoid hosted cost and measure the real environment.
 

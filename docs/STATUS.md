@@ -31,7 +31,7 @@ M13 unifies the four operational planes in Engineer and System: edge mission exe
 
 M14 is deployed in authoritative `full_program` execution mode on VM 214 and all twelve vessel nodes. A live quorum-backed proof installed one exact 3,663-segment program on all six Cell A nodes and continued to mission tick 108 without a rolling authority refill. The compatibility sweep passed twice; every legacy tape-depth projection is zero.
 
-M15 adds the persistent Blackwake hostile and a fictional combat workload to Fleet Operations. The software implementation and local deterministic verification are complete; deployment evidence and the final all-node binary hash are recorded here only after rollout.
+M15 is deployed. Fleet Operations now includes 45 combat entities: twelve controlled vessels, 32 neutral or defensive surface contacts, and the persistent hostile pirate raider Blackwake. Engagement approval, deterministic effects, component damage, world-time regeneration and repair, sinking, recovery, respawn, AI/MCP boundaries, and restart-safe persistence are verified. Combat remains explicitly fictional simulation behavior.
 
 ## Deployment
 
@@ -42,8 +42,8 @@ M15 adds the persistent Blackwake hostile and a fictional combat workload to Fle
 - PostgreSQL/pgvector, Kafka, workers, AI, and speech remain private.
 - Builds and verification run on VM 214/nodes.
 - M13's private OTLP collector, MinIO, Dagster, and MLflow services are deployed without publishing additional ports.
-- M14 complete-program storage and validation are active on all twelve nodes; the identical node binary SHA-256 is `03f522dad5ca7e3430a268e5e805d892c35f87ea418cfc40bec9f5370df06879`.
-- Latest measured scale run: 1,000 logical producers, approximately 2,020 events/second, zero dropped events, and matching replay checksums on VM 214.
+- M14 complete-program execution and M15 combat-aware node/API/UI behavior are active on all twelve nodes; VM 214 and every vessel node use the identical binary SHA-256 `fab98cde0dceae8a9abc49e2d79a2ee8559d2489024822b08ea0fa1fb0456883`.
+- Latest measured scale verification ran twice at 1,000 logical producers, approximately 2,004–2,233 events/second, zero dropped events, and matching replay checksums on VM 214.
 - GitHub-hosted workflows remain disabled.
 - No snapshot is authorized by documentation or deployment operations.
 
@@ -56,15 +56,13 @@ M15 adds the persistent Blackwake hostile and a fictional combat workload to Fle
 - Separate GPU LLM/STT/TTS services do not run on every node.
 - Kafka is single-broker and does not demonstrate broker HA.
 - Map, environment, contacts, navigation, and effects are simulation-only.
-- Some legacy Playwright tests still target removed Mission chat.
 - Cloudflare Quick Tunnel URLs are ephemeral.
 - The 100- and 1,000-asset capacity extrapolations and all cloud-cost rows are planning projections, not production benchmarks or vendor quotes.
 
 ## Next investments
 
-1. Migrate legacy browser tests to global Assistant plus manual Mission semantics.
-2. Complete radio-plane memory synchronization on the authenticated M12 transport.
-3. Finish browser/node STT benchmarks and trusted-peer routing.
-4. Replace remaining fixture retrieval with bundled ONNX indexing.
-5. Add stable named HTTPS ingress after domain/account selection.
-6. Validate the production-shape Kubernetes design in a disposable local cluster without replacing the stable interview appliance.
+1. Complete radio-plane memory synchronization on the authenticated M12 transport.
+2. Finish browser/node STT benchmarks and trusted-peer routing.
+3. Replace remaining fixture retrieval with bundled ONNX indexing.
+4. Add stable named HTTPS ingress after domain/account selection.
+5. Validate the production-shape Kubernetes design in a disposable local cluster without replacing the stable interview appliance.
