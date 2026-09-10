@@ -11,7 +11,7 @@ test("renders a trusted live A2UI scene and restores it after reload", async ({ 
   const suffix = `${Date.now()}-${Math.random()}`;
   const response = await page.request.post("/api/v4/assistant/turns", { data: {
     schema_version: 1, request_id: `scene-${suffix}`, idempotency_key: `scene-key-${suffix}`,
-    text: "Show me Yellow Group status", persona: "navy", selected_ids: [], open_windows: ["fleet"],
+    text: "Show me Gannet status", persona: "navy", selected_ids: [], open_windows: ["fleet"],
     active_mission_id: "", plan_options: [], actor_identity: "demo-operator", session_id: sessionID, workspace_version: fleet.fleet_version,
   } });
   expect(response.ok()).toBeTruthy();
@@ -21,7 +21,7 @@ test("renders a trusted live A2UI scene and restores it after reload", async ({ 
   const artifact = page.getByRole("region", { name: "Status Matrix" });
   const map = page.getByRole("application", { name: /Fleet operating map/i });
   await expect(artifact).toBeVisible();
-  await expect(artifact.getByText(/Yellow Group/i).first()).toBeVisible();
+  await expect(artifact.getByText(/Gannet/i).first()).toBeVisible();
   await expect(map).toHaveAttribute("data-command-scene-camera-request", /\d+/);
   const surface = artifact.locator(".km-a2ui-surface");
   await surface.evaluate((element) => { element.setAttribute("data-mount-proof", "retained"); });
