@@ -586,6 +586,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .window-engineer .engineer-action>div{min-width:0}
 .window-engineer .engineer-action span{overflow-wrap:anywhere}
 .window-engineer .engineer-action button{flex:0 1 auto;max-width:48%;white-space:normal}
+.window-engineer .memory-evidence-strip{grid-template-columns:repeat(auto-fit,minmax(82px,1fr))}
+.window-engineer .memory-evidence-strip>div{min-width:0}
+.window-engineer .memory-evidence-strip b,.window-engineer .memory-evidence-strip em{overflow-wrap:anywhere}
 
 @container workspace-window (max-width:900px){
   .window-engineer .engineer-hero{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px}
