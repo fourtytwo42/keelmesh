@@ -33,6 +33,8 @@ M14 is deployed in authoritative `full_program` execution mode on VM 214 and all
 
 M15 is deployed. Fleet Operations now includes 45 combat entities: twelve controlled vessels, 32 neutral or defensive surface contacts, and the persistent hostile pirate raider Blackwake. Engagement approval, deterministic effects, component damage, world-time regeneration and repair, sinking, recovery, respawn, AI/MCP boundaries, and restart-safe persistence are verified. Mission rules of engagement bind target scope, designated contacts, geography, range, duration, effect count, reserve, and disengagement state into the exact approved hash. Controlled vessels expose an explicit armed/weapons-safe state: armed vessels may return fire against a recent attacker but cannot initiate or pursue without mission authority, while engagement missions auto-arm only their assigned participants. Combat remains explicitly fictional simulation behavior.
 
+Station keeping uses a 25% low-duty-cycle base electrical load. This reduces overnight station-keeping draw by 75% without changing underway propulsion consumption or daylight solar collection.
+
 ## Deployment
 
 - VM 214 hosts the core appliance and LAN endpoint.
@@ -42,7 +44,7 @@ M15 is deployed. Fleet Operations now includes 45 combat entities: twelve contro
 - PostgreSQL/pgvector, Kafka, workers, AI, and speech remain private.
 - Builds and verification run on VM 214/nodes.
 - M13's private OTLP collector, MinIO, Dagster, and MLflow services are deployed without publishing additional ports.
-- M14 complete-program execution and M15 combat-aware node/API/UI behavior are active on all twelve nodes; VM 214 and every vessel node use the identical binary SHA-256 `9246c791eb7cdb4e58214c27518b2bdc6513a435cc02e92cf1a14a5838c1c8aa`.
+- M14 complete-program execution and M15 combat-aware node/API/UI behavior are active on all twelve nodes; VM 214 and every vessel node use the identical binary SHA-256 `99b8445ee9902076ddc725be550893e60f1d12b8f69d5b38470bf885203824e3`.
 - Latest measured scale verification ran twice at 1,000 logical producers, approximately 2,004–2,233 events/second, zero dropped events, and matching replay checksums on VM 214.
 - GitHub-hosted workflows remain disabled.
 - No snapshot is authorized by documentation or deployment operations.
