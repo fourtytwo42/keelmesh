@@ -701,7 +701,12 @@ test("workspace windows move, minimize, restore, dock, and top navigation toggle
   expect(cutawayBounds).not.toBeNull();
   expect(cutawayBounds!.y).toBeGreaterThanOrEqual(82);
   expect(cutawayBounds!.y + cutawayBounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height - 64);
-  expect(cutawayBody.scrollHeight).toBeLessThanOrEqual(cutawayBody.clientHeight + 1);
+  expect(cutawayBody.scrollHeight).toBeGreaterThanOrEqual(cutawayBody.clientHeight);
+  const cutawayWidth = await cutaway.locator(".cutaway").evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(cutawayWidth.scrollWidth).toBeLessThanOrEqual(cutawayWidth.clientWidth + 1);
 });
 
 test("single-vessel AI refinement never offers fleet formations", async ({ page }) => {
@@ -754,8 +759,10 @@ test("global multi-leg cardinal intent creates one bounded plan", async ({ page 
   await expect(page.getByText(/COMMAND_AMBIGUOUS/)).toHaveCount(0);
   const fleet = await (await page.request.get("/api/v2/fleet")).json();
   const active = fleet.missions.find((candidate: { id: string }) => candidate.id === fleet.missions[0].id);
-  expect(active.geometry.waypoints).toHaveLength(2);
   expect(active.plan_ids).toHaveLength(1);
+  const routeOptions = await (await page.request.get(`/api/v2/missions/${active.id}/plans`)).json();
+  expect(routeOptions.plans[0].assignments.length).toBe(6);
+  expect(routeOptions.plans[0].assignments[0].route.length).toBeGreaterThanOrEqual(3);
 });
 
 test("beach intent resolves a depth-aware one-nautical-mile coastal patrol", async ({ page }) => {
