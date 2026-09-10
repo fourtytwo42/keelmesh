@@ -522,6 +522,19 @@ export function FleetWorkspace() {
       token: (current?.token ?? 0) + 1,
     }));
   }, [openVesselInspector]);
+  const frameVessels = useCallback((ids: string[], snapshot: FleetSnapshotV2) => {
+    const points: Point[] = [];
+    for (const id of ids) {
+      const vessel = snapshot.vessels.find((item) => item.id === id);
+      if (vessel) points.push(vessel.telemetry.position);
+    }
+    if (!points.length) return;
+    setSceneCameraRequest(null);
+    setMissionFrameRequest((current) => ({
+      points,
+      token: (current?.token ?? 0) + 1,
+    }));
+  }, []);
   const frameMission = useCallback((
     target: MissionWorkspaceV2,
     plan: FleetPlanV2 | undefined,
@@ -2029,6 +2042,8 @@ export function FleetWorkspace() {
       inspectAndFrameVessel(vessel.id);
     }
     if (action === "create-group") {
+      setWindows(new Set(window.innerWidth >= 740 ? ["fleet", "assistant-chat"] : ["fleet"]));
+      open("fleet");
       const current = await api<FleetSnapshotV2>("/api/v2/fleet");
       const demoVessels = [...current.vessels]
         .sort((left, right) => right.telemetry.reserve - left.telemetry.reserve)
@@ -2039,14 +2054,20 @@ export function FleetWorkspace() {
         false,
         demoVessels.map((item) => item.id),
       );
-      const updated = await api<FleetSnapshotV2>("/api/v2/fleet");
-      if (!updated.groups.some((item) => item.name.toLowerCase().includes("harbor sentinel")))
+      let updated = await api<FleetSnapshotV2>("/api/v2/fleet");
+      if (!updated.groups.some((item) => item.name.toLowerCase().includes("harbor sentinel"))) {
         await createGroupFor(demoVessels.map((item) => item.id), "Harbor Sentinel");
-      setWindows(new Set(window.innerWidth >= 740 ? ["fleet", "assistant-chat"] : ["fleet"]));
-      open("fleet");
-      await refresh();
+        updated = await api<FleetSnapshotV2>("/api/v2/fleet");
+      }
+      const group = updated.groups.find((item) => item.name.toLowerCase().includes("harbor sentinel"));
+      setFleet(updated);
+      if (group) {
+        setSelected(new Set(group.member_ids));
+        frameVessels(group.member_ids, updated);
+      }
     }
     if (action === "create-ai-mission") {
+      setWindows(new Set(window.innerWidth >= 740 ? ["fleet"] : []));
       const intent = "Create one mission for Harbor Sentinel to patrol two nautical miles east, preserve at least thirty percent battery, maintain safe depth and separation, then hold position. Do not offer alternatives.";
       await askWorkspaceAssistant(intent, false);
       const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
@@ -2078,6 +2099,7 @@ export function FleetWorkspace() {
       setPlans(state.plans);
       setPlanID(chosen.id);
       setPendingPlanID(chosen.id);
+      setWindows(new Set(window.innerWidth >= 740 ? ["fleet", "planner"] : ["planner"]));
       open("planner");
       frameMission(state.mission, chosen, state.snapshot);
     }
@@ -2088,18 +2110,11 @@ export function FleetWorkspace() {
       await executeGuidedDemoPlan(state.mission, chosen);
       const executing = await api<FleetSnapshotV2>("/api/v2/fleet");
       const mission = executing.missions.find((item) => item.id === state.mission?.id);
-      const vesselID = mission?.target_ids[0];
       setFleet(executing);
       setActiveMissionID(mission?.id ?? state.mission.id);
       setSelected(new Set(mission?.target_ids ?? state.mission.target_ids));
-      const executionWindows = window.innerWidth >= 1000
-        ? ["fleet", "planner", ...(vesselID ? [`inspector-${vesselID}`] : [])]
-        : window.innerWidth >= 740
-          ? ["planner", ...(vesselID ? [`inspector-${vesselID}`] : [])]
-          : ["planner"];
-      setWindows(new Set(executionWindows));
+      setWindows(new Set(window.innerWidth >= 740 ? ["fleet", "planner"] : ["planner"]));
       open("planner");
-      if (vesselID) openVesselInspector(vesselID);
       frameMission(mission ?? state.mission, chosen, executing);
     }
     if (action === "author-manual-mission") {
@@ -2232,9 +2247,7 @@ export function FleetWorkspace() {
   const demoViewportWidth = window.innerWidth;
   const demoViewportHeight = window.innerHeight;
   const demoAvailableHeight = Math.max(300, demoViewportHeight - 154);
-  const demoSideWidth = Math.min(430, Math.floor((demoViewportWidth - 48) / 2));
   const demoCanTile = demoState.running && demoViewportWidth >= 740;
-  const demoWide = demoState.running && demoViewportWidth >= 1000;
   if (windows.has("fleet"))
     defs.push({
       id: "fleet",
@@ -2304,17 +2317,6 @@ export function FleetWorkspace() {
       title: vessel.display_name,
       icon: <Eye />,
       initial: { x: 310 + (index % 7) * 26, y: 92 + (index % 7) * 22, width: 390, height: 610 },
-      transientLayout: demoWide && demoState.focus === "execution" ? {
-        x: 265, y: 140, width: Math.min(390, demoViewportWidth - 660),
-        height: Math.min(610, demoAvailableHeight - 58),
-        dock: undefined, minimized: false, closed: false, maximized: false,
-      } : demoCanTile && demoState.focus === "execution" ? {
-        x: demoViewportWidth - Math.min(390, demoSideWidth) - 14,
-        y: 140,
-        width: Math.min(390, demoSideWidth),
-        height: Math.min(610, demoAvailableHeight - 58),
-        dock: undefined, minimized: false, closed: false, maximized: false,
-      } : undefined,
       content: (
         <VesselInspectorWindow
           pirate={pirate}
@@ -2353,10 +2355,7 @@ export function FleetWorkspace() {
       title: pirate ? "Voyage" : "Mission",
       icon: <Route />,
       initial: { x: window.innerWidth - 370, y: 92, width: 350, height: 680 },
-      transientLayout: demoCanTile && demoState.focus === "execution" && !demoWide ? {
-        x: 14, y: 140, width: demoSideWidth, height: Math.min(680, demoAvailableHeight - 58),
-        dock: undefined, minimized: false, closed: false, maximized: false,
-      } : demoCanTile ? {
+      transientLayout: demoCanTile ? {
         x: demoViewportWidth - 350, y: 82, width: 350, height: demoAvailableHeight,
         dock: "right", minimized: false, closed: false, maximized: false,
       } : undefined,

@@ -23,7 +23,8 @@ test("guided demo exposes complete-program authority during execution", async ({
     localStorage.removeItem("keelmesh.theme");
     HTMLMediaElement.prototype.play = function acceleratedDemoPlayback() {
       const source = this.currentSrc || this.src;
-      const holdMS = source.includes("06-execution") ? 15_000 : source.includes("02-vessel-intelligence") ? 4_000 : 500;
+      const heldBeat = ["02-vessel-intelligence", "03-group", "04-ai-mission", "07-manual"].some((name) => source.includes(name));
+      const holdMS = source.includes("06-execution") ? 15_000 : heldBeat ? 8_000 : 500;
       window.setTimeout(() => this.dispatchEvent(new Event("ended")), holdMS);
       return Promise.resolve();
     };
@@ -46,9 +47,20 @@ test("guided demo exposes complete-program authority during execution", async ({
       const overlapHeight = Math.max(0, Math.min(chatBox.y + chatBox.height, vesselBox.y + vesselBox.height) - Math.max(chatBox.y, vesselBox.y));
       expect(overlapWidth * overlapHeight).toBe(0);
     }
+    await expect(hud).toContainText("AI-operated fleet organization", { timeout: 60_000 });
+    await expect(page.locator('[class*="window-inspector-"]')).toHaveCount(0);
+    await expect(page.locator(".window-assistant-chat")).toHaveClass(/docked right/);
+    await expect(page.locator(".operations-map")).toHaveAttribute("data-mission-frame-points", "3", { timeout: 60_000 });
+
+    await expect(hud).toContainText("Natural language to an exact plan", { timeout: 60_000 });
+    await expect(page.locator(".window-assistant-chat")).toHaveCount(0);
+    await expect(page.locator('[class*="window-inspector-"]')).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Mission" })).toBeVisible({ timeout: 60_000 });
+    const aiMissionBox = await page.getByRole("region", { name: "Mission" }).boundingBox();
+    expect(aiMissionBox).not.toBeNull();
     await expect(hud).toContainText("Complete signed program onboard", { timeout: 150_000 });
     await expect(page.getByRole("region", { name: "Mission" })).toBeVisible();
-    await expect(page.locator('[class*="window-inspector-"]')).toBeVisible();
+    await expect(page.locator('[class*="window-inspector-"]')).toHaveCount(0);
     await expect(page.locator(".operations-map")).toHaveAttribute("data-vessel-camera-request", /\d+/);
     await expect(page.locator(".operations-map")).toHaveAttribute("data-mission-frame-request", /\d+/);
     const framedPoints = Number(await page.locator(".operations-map").getAttribute("data-mission-frame-points"));
@@ -56,6 +68,11 @@ test("guided demo exposes complete-program authority during execution", async ({
     await expect(page.getByText("FULL PROGRAM ONBOARD").first()).toBeVisible();
     await expect(page.getByText("AUTHORITY LEFT")).toBeVisible();
     await expect(page.getByText("CONTINGENCY", { exact: true })).toBeVisible();
+
+    await expect(hud).toContainText("Manual planning has full parity", { timeout: 60_000 });
+    const manualMissionBox = await page.getByRole("region", { name: "Mission" }).boundingBox();
+    expect(manualMissionBox).not.toBeNull();
+    if (aiMissionBox && manualMissionBox) expect(manualMissionBox.width).toBe(aiMissionBox.width);
 
     await page.getByRole("button", { name: "Stop guided demo" }).click();
     await expect(hud).toBeHidden();
