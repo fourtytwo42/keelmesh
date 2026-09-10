@@ -2017,7 +2017,7 @@ export function FleetWorkspace() {
   async function performGuidedDemoAction(action: GuidedDemoAction) {
     if (action === "reset") await resetGuidedDemo();
     if (action === "inspect-vessel") {
-      if (window.innerWidth >= 740) open("assistant-chat");
+      if (window.innerWidth >= 1130) open("assistant-chat");
       else setWindows((current) => {
         const next = new Set(current);
         next.delete("assistant-chat");
@@ -2304,13 +2304,7 @@ export function FleetWorkspace() {
       title: vessel.display_name,
       icon: <Eye />,
       initial: { x: 310 + (index % 7) * 26, y: 92 + (index % 7) * 22, width: 390, height: 610 },
-      transientLayout: demoCanTile && demoState.focus === "assistant" ? {
-        x: demoViewportWidth - Math.min(390, demoSideWidth) - 14,
-        y: 140,
-        width: Math.min(390, demoSideWidth),
-        height: Math.min(610, demoAvailableHeight - 58),
-        dock: undefined, minimized: false, closed: false, maximized: false,
-      } : demoWide && demoState.focus === "execution" ? {
+      transientLayout: demoWide && demoState.focus === "execution" ? {
         x: 265, y: 140, width: Math.min(390, demoViewportWidth - 660),
         height: Math.min(610, demoAvailableHeight - 58),
         dock: undefined, minimized: false, closed: false, maximized: false,
@@ -2585,9 +2579,9 @@ export function FleetWorkspace() {
       id: "assistant-chat", kind: "context", title: pirate ? "Ship's Intelligence" : "KeelMesh Assistant", icon: <MessageCircle />,
       toggleActivation: windowToggleActivations["assistant-chat"],
       initial: { x: Math.max(20, window.innerWidth - 470), y: Math.max(90, window.innerHeight - 620), width: 430, height: 520 }, minWidth: 310, minHeight: 260,
-      transientLayout: demoCanTile && demoState.focus === "assistant" ? {
-        x: 14, y: 140, width: demoSideWidth, height: Math.min(520, demoAvailableHeight - 58),
-        dock: undefined, minimized: false, closed: false, maximized: false,
+      transientLayout: demoState.running && demoState.focus === "assistant" && demoViewportWidth >= 1130 ? {
+        x: demoViewportWidth - 430, y: 82, width: 430, height: demoAvailableHeight,
+        dock: "right", minimized: false, closed: false, maximized: false,
       } : demoCanTile && demoState.focus === "fleet" ? {
         x: demoViewportWidth - 430, y: 82, width: 430, height: demoAvailableHeight,
         dock: "right", minimized: false, closed: false, maximized: false,

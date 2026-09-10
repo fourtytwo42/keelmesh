@@ -19,6 +19,7 @@ test("guided demo exposes complete-program authority during execution", async ({
   });
   await page.addInitScript(() => {
     localStorage.removeItem("keelmesh.m6.window-layout.v1");
+    localStorage.removeItem("keelmesh.m6.window-layout.v3");
     localStorage.removeItem("keelmesh.theme");
     HTMLMediaElement.prototype.play = function acceleratedDemoPlayback() {
       const source = this.currentSrc || this.src;
@@ -37,6 +38,7 @@ test("guided demo exposes complete-program authority during execution", async ({
     await expect(hud).toContainText("Ask the fleet, not a static dashboard", { timeout: 60_000 });
     const chatBox = await page.locator(".window-assistant-chat").boundingBox();
     const vesselBox = await page.locator('[class*="window-inspector-"]').boundingBox();
+    await expect(page.locator(".window-assistant-chat")).toHaveClass(/docked right/);
     expect(chatBox).not.toBeNull();
     expect(vesselBox).not.toBeNull();
     if (chatBox && vesselBox) {
