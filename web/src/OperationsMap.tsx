@@ -164,7 +164,9 @@ function surfaceContactData(fleet: FleetSnapshotV2, visualPositions?: Map<string
         colorName: contact.color_name,
         heading: contact.heading_deg,
         speed: contact.speed_knots,
-        scale: ["container", "tanker"].includes(contact.class)
+        scale: contact.class === "pirate-raider"
+          ? 0.65
+          : ["container", "tanker"].includes(contact.class)
           ? 1.45
           : contact.class === "trawler" || contact.class === "yacht"
             ? 0.78
