@@ -1396,6 +1396,7 @@ func TestMoveGroupMemberFailsClosedDuringMission(t *testing.T) {
 func TestSurfaceTrafficHasStableIdentityAndProgrammedTracks(t *testing.T) {
 	first := surfaceContactsAt(time.Unix(1_800_000_000, 0))
 	second := surfaceContactsAt(time.Unix(1_800_000_030, 0))
+	land := testLandPolygons(t)
 	if len(first) != 16 || len(second) != 16 {
 		t.Fatalf("expected sixteen surface contacts, got %d and %d", len(first), len(second))
 	}
@@ -1414,13 +1415,35 @@ func TestSurfaceTrafficHasStableIdentityAndProgrammedTracks(t *testing.T) {
 			continue
 		}
 		moving++
-		if first[i].SpeedMPS > 2.8 || first[i].Position == second[i].Position || len(first[i].Route) < 2 || !first[i].Looping {
+		if first[i].SpeedMPS > 2.8 || first[i].Position == second[i].Position || len(first[i].Route) < 4 || !first[i].Looping {
 			t.Fatalf("moving contact exceeded its speed envelope or stopped looping: %#v", first[i])
+		}
+		if first[i].Route[0] != first[i].Route[len(first[i].Route)-1] {
+			t.Fatalf("surface contact route is not explicitly closed: %s", first[i].BoatID)
 		}
 		for _, point := range first[i].Route {
 			if !withinMapBounds(point) {
 				t.Fatalf("surface contact route leaves the operating picture: %s at %v", first[i].BoatID, point)
 			}
+		}
+		for segment := 1; segment < len(first[i].Route); segment++ {
+			start, end := first[i].Route[segment-1], first[i].Route[segment]
+			for sample := 0; sample <= 64; sample++ {
+				fraction := float64(sample) / 64
+				point := domain.GeoPointV2{start[0] + (end[0]-start[0])*fraction, start[1] + (end[1]-start[1])*fraction}
+				if pointOnLand(point, land) || distanceToShore(point, land) < .004 {
+					t.Fatalf("surface contact route approaches/crosses rendered land: %s segment %d at %v", first[i].BoatID, segment, point)
+				}
+			}
+		}
+		spec := surfaceTraffic[i]
+		totalM := routeDistance(spec.Route) * 1000
+		baseM := float64(len(spec.ID)) * 731
+		wrapOffset := (totalM - math.Mod(baseM, totalM)) / spec.SpeedMPS
+		before := surfaceContactAt(spec, time.Unix(0, 0), wrapOffset-.5)
+		after := surfaceContactAt(spec, time.Unix(0, 0), wrapOffset+.5)
+		if jumpM := routeDistance([]domain.GeoPointV2{before.Position, after.Position}) * 1000; jumpM > spec.SpeedMPS*1.05 {
+			t.Fatalf("surface contact teleported at loop boundary: %s jumped %.2f m", first[i].BoatID, jumpM)
 		}
 	}
 	if moving != 12 || anchored != 4 {
