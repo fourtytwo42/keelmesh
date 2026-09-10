@@ -3364,6 +3364,7 @@ func (m *Manager) tick() {
 
 func (m *Manager) tickStepLocked() {
 	m.simTickMS += 200
+	m.reconcileNavigationPositionsLocked()
 	for mid, program := range m.programs {
 		mission, exists := m.missions[mid]
 		if !exists || mission.Status == "paused" || mission.Status == "ended" || mission.Status == "completed" {
@@ -3408,17 +3409,8 @@ func (m *Manager) tickStepLocked() {
 				target = lateralPoint(segment.Start, segment.End, adjustment.LateralOffsetM)
 			}
 			speed := math.Min(segment.MaximumSpeedMPS, segment.TargetSpeedMPS*adjustment.SpeedFactor)
-			step := speed * .2 / 111_000
-			dx, dy := target[0]-v.Telemetry.Position[0], target[1]-v.Telemetry.Position[1]
-			d := math.Hypot(dx, dy)
-			if d <= step {
-				v.Telemetry.Position = target
-			} else {
-				v.Telemetry.Position[0] += dx / d * step
-				v.Telemetry.Position[1] += dy / d * step
-			}
-			v.Telemetry.HeadingDeg = math.Mod(math.Atan2(dx, dy)*180/math.Pi+360+adjustment.HeadingDelta, 360)
-			v.Telemetry.SpeedMPS = speed
+			v.Telemetry.Position, v.Telemetry.HeadingDeg, v.Telemetry.SpeedMPS = navigationMove(v.Telemetry.Position, target, speed, .2)
+			v.Telemetry.HeadingDeg = normalizeHeading(v.Telemetry.HeadingDeg + adjustment.HeadingDelta)
 			v.Telemetry.TapeDepthSeconds = 0
 			v.Telemetry.Mode = "mission"
 			if adjustment.Kind != "nominal" {
@@ -3497,6 +3489,32 @@ func (m *Manager) tickUnassignedVesselsLocked() {
 		vessel.Telemetry.Reserve = m.advanceEnergy(vessel, 0, m.simTickMS/1000, .2)
 		vessel.Telemetry.Environment = environmentAt(vessel.Telemetry.Position, float64(m.simTickMS/1000))
 		m.vessels[id] = vessel
+	}
+}
+
+// reconcileNavigationPositionsLocked repairs legacy/persisted states before
+// any movement is applied. It is intentionally independent of mission and
+// combat authority: being on land is invalid state, and moving to the nearest
+// safe-water point is a bounded safety correction rather than a new command.
+func (m *Manager) reconcileNavigationPositionsLocked() {
+	for id, vessel := range m.vessels {
+		if combatPositionInBounds(vessel.Telemetry.Position) && !navigationPointOnLand(vessel.Telemetry.Position) {
+			continue
+		}
+		vessel.Telemetry.Position = nearestNavigationSafePoint(vessel.Telemetry.Position)
+		vessel.Telemetry.SpeedMPS = 0
+		vessel.Telemetry.Route = nil
+		vessel.Telemetry.Mode = "navigation recovery · safe water"
+		m.vessels[id] = vessel
+	}
+	for id, entity := range m.combatEntities {
+		if entity.Damage.Sunk || (combatPositionInBounds(entity.Position) && !navigationPointOnLand(entity.Position)) {
+			continue
+		}
+		entity.Position = nearestNavigationSafePoint(entity.Position)
+		entity.SpeedMPS = 0
+		entity.StateVersion++
+		m.combatEntities[id] = entity
 	}
 }
 
@@ -4027,21 +4045,16 @@ func (m *Manager) tickIdleGroupsLocked() bool {
 				continue
 			}
 			offset := orientedFormationOffset(group.Formation, index, len(group.MemberIDs), group.FormationSpacingM, center[1], group.FormationHeadingDeg)
-			target := domain.GeoPointV2{center[0] + offset[0], center[1] + offset[1]}
+			target := nearestNavigationSafePoint(domain.GeoPointV2{center[0] + offset[0], center[1] + offset[1]})
 			distance := geoDistanceM(vessel.Telemetry.Position, target)
 			if distance > 2 {
 				allArrived = false
-				dx, dy := target[0]-vessel.Telemetry.Position[0], target[1]-vessel.Telemetry.Position[1]
-				length := math.Hypot(dx, dy)
 				speed := math.Min(vessel.Class.MaxSpeedMPS*.7, math.Max(.8, distance/25))
-				step := speed * movementSeconds / 111_000
-				vessel.Telemetry.Position[0] += dx / length * math.Min(step, length)
-				vessel.Telemetry.Position[1] += dy / length * math.Min(step, length)
+				vessel.Telemetry.Position, _, vessel.Telemetry.SpeedMPS = navigationMove(vessel.Telemetry.Position, target, speed, movementSeconds)
 				// Formation heading is group state, not the last bearing each hull
 				// happened to take toward its own slot. Keeping one heading makes
 				// the station geometry legible and prevents the converging-star look.
 				vessel.Telemetry.HeadingDeg = normalizeHeading(group.FormationHeadingDeg)
-				vessel.Telemetry.SpeedMPS = speed
 				if routing {
 					vessel.Telemetry.Mode = fmt.Sprintf("group route · waypoint %d/%d", group.RouteIndex+1, len(group.RouteWaypoints))
 				} else {

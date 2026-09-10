@@ -35,6 +35,8 @@ M15 is deployed. Fleet Operations now includes 45 combat entities: twelve contro
 
 The operating picture uses purposeful speed bands. NPC traffic ranges from 1.0 m/s working craft to 3.4 m/s fast traffic; seventeen moving contacts are slower than Blackwake and eleven are equal or faster. Blackwake retains a 3.0 m/s ceiling, projects contacts along their known closed routes, selects the earliest reachable weapon-range intercept, abandons infeasible pursuits, and only chases near-equal or faster contacts when crossing geometry creates a short intercept. Controlled Kestrel, Mariner, and Atlas classes retain 4.1, 3.8, and 3.6 m/s ceilings so every Fleet class can overtake the fastest NPC when mission authority and energy permit. Blackwake now withdraws for offshore repair after material propulsion, sensor, or weapon degradation instead of continuing a permanently crippled pursuit.
 
+Land is a hard movement exclusion. The node runtime embeds the exact map coastline and applies swept-segment validation to mission, formation, evasion, engagement, and raider motion. Blocked direct paths steer around shore, and invalid persisted land positions reconcile to nearest safe water before execution continues.
+
 Station keeping uses a 25% low-duty-cycle base electrical load. This reduces overnight station-keeping draw by 75% without changing underway propulsion consumption or daylight solar collection. Group removal now atomically stops missionless members, clears their route, and returns them to station keeping; the simulation loop also repairs legacy orphaned motion before charging energy so stale formation speed cannot drain an unassigned vessel.
 
 ## Deployment

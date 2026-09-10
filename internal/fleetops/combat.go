@@ -1276,17 +1276,7 @@ func clearOneComponent(damage *domain.DamageStateV1) string {
 	return ""
 }
 func moveCombatEntity(entity *domain.CombatEntityStateV1, destination domain.GeoPointV2, speed, seconds float64) {
-	distance := combatDistanceM(entity.Position, destination)
-	if distance <= 1 {
-		entity.SpeedMPS = 0
-		return
-	}
-	step := math.Min(distance, speed*seconds)
-	dx, dy := destination[0]-entity.Position[0], destination[1]-entity.Position[1]
-	entity.Position[0] += dx * (step / distance)
-	entity.Position[1] += dy * (step / distance)
-	entity.HeadingDeg = math.Mod(math.Atan2(dx*math.Cos(entity.Position[1]*math.Pi/180), dy)*180/math.Pi+360, 360)
-	entity.SpeedMPS = speed
+	entity.Position, entity.HeadingDeg, entity.SpeedMPS = navigationMove(entity.Position, destination, speed, seconds)
 }
 func combatDistanceM(a, b domain.GeoPointV2) float64 {
 	latitude := (a[1] + b[1]) / 2 * math.Pi / 180
