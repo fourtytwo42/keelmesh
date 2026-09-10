@@ -76,6 +76,10 @@ test("guided demo exposes complete-program authority during execution", async ({
 
     await page.getByRole("button", { name: "Stop guided demo" }).click();
     await expect(hud).toBeHidden();
+    await expect.poll(async () => {
+      const value = await (await page.request.get("/api/v2/fleet")).json();
+      return [value.groups.length, value.missions.length];
+    }, { timeout: 30_000 }).toEqual([0, 0]);
   } finally {
     const stop = page.getByRole("button", { name: "Stop guided demo" });
     if (await stop.isVisible().catch(() => false)) await stop.click();
