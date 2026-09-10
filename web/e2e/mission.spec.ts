@@ -602,15 +602,18 @@ test("dragged geometry follows deterministic planning and the preview boundary",
 });
 
 test("mission numbering, direct controls, window restore, and confirmed draft deletion are coherent", async ({ page }) => {
-  const fleet = await (await page.request.get("/api/v2/fleet")).json();
   const create = async (suffix: string, vessel: string) => {
+    const currentFleet = await (await page.request.get("/api/v2/fleet")).json();
+    const key = `mission-ui-${suffix}-${Date.now()}-${Math.random()}`;
     const response = await page.request.post("/api/v2/missions", { data: {
-      request_id: `mission-ui-${suffix}`, idempotency_key: `mission-ui-${suffix}`,
-      expected_version: fleet.fleet_version, name: "Mission 1", objective: "Lifecycle test", target_ids: [vessel],
+      request_id: key, idempotency_key: key,
+      expected_version: currentFleet.fleet_version, name: "Mission 1", objective: "Lifecycle test", target_ids: [vessel],
     }});
-    expect(response.ok()).toBeTruthy();
-    return response.json();
+    const body = await response.json();
+    expect(response.ok(), JSON.stringify(body)).toBeTruthy();
+    return body;
   };
+  const fleet = await (await page.request.get("/api/v2/fleet")).json();
   const firstMission = await create("one", fleet.vessels[0].id);
   const secondMission = await create("two", fleet.vessels[1].id);
   expect(firstMission.name).toBe("Mission 1");

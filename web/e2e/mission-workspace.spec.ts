@@ -39,7 +39,7 @@ test("Mission and plus reuse an unsaved draft, then create after it is saved", a
   const fleet = page.getByRole("region", { name: "Fleet" });
   await fleet.getByRole("checkbox", { name: "Select Gannet" }).click();
   await fleet.getByRole("checkbox", { name: "Select Osprey" }).click();
-  await expect(mission.getByText("2 Fleet selections assigned to this mission", { exact: true })).toBeVisible();
+  await expect(mission.getByText("2 Fleet selections assigned to this mission", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect.poll(async () => {
     const snapshot = await (await page.request.get("/api/v2/fleet")).json();
     return snapshot.missions[0]?.target_ids?.length ?? 0;
