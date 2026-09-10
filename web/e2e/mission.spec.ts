@@ -110,7 +110,7 @@ test("map-first workspace exposes the persistent operating picture without heade
   await page.goto("/");
   await expect(page.getByText("KEELMESH", { exact: true })).toBeVisible();
   const fleet = await (await page.request.get("/api/v2/fleet")).json();
-  expect(fleet.vessels).toHaveLength(48);
+  expect(fleet.vessels).toHaveLength(12);
   expect(fleet.groups).toHaveLength(8);
   await expect(page.getByText("48 VESSELS", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Fleet Arena" })).toHaveCount(0);
@@ -211,17 +211,23 @@ test("fictional surface traffic moves on stable identified routes", async ({ pag
   await page.goto("/");
   await expect(page.getByText(/28 underway · 4 anchored contacts/)).toBeVisible();
   const first = await (await page.request.get("/api/v2/fleet")).json();
-  expect(first.surface_contacts).toHaveLength(32);
-  expect(new Set(first.surface_contacts.map((contact: { boat_id: string }) => contact.boat_id)).size).toBe(32);
-  expect(first.surface_contacts.filter((contact: { speed_mps: number }) => contact.speed_mps > 0)).toHaveLength(28);
-  expect(first.surface_contacts.filter((contact: { speed_mps: number }) => contact.speed_mps === 0)).toHaveLength(4);
-  expect(Math.max(...first.surface_contacts.map((contact: { speed_mps: number }) => contact.speed_mps))).toBeLessThanOrEqual(2.8);
-  const contact = await (await page.request.get(`/api/v2/surface-contacts/${first.surface_contacts[0].id}`)).json();
+  expect(first.surface_contacts).toHaveLength(33);
+  expect(new Set(first.surface_contacts.map((contact: { boat_id: string }) => contact.boat_id)).size).toBe(33);
+  const neutralContacts = first.surface_contacts.filter((contact: { hostility?: string }) => contact.hostility !== "hostile");
+  const hostileContacts = first.surface_contacts.filter((contact: { hostility?: string }) => contact.hostility === "hostile");
+  expect(neutralContacts).toHaveLength(32);
+  expect(hostileContacts).toHaveLength(1);
+  expect(hostileContacts[0].name).toBe("Blackwake");
+  expect(neutralContacts.filter((contact: { speed_mps: number }) => contact.speed_mps > 0)).toHaveLength(28);
+  expect(neutralContacts.filter((contact: { speed_mps: number }) => contact.speed_mps === 0)).toHaveLength(4);
+  expect(Math.max(...neutralContacts.map((contact: { speed_mps: number }) => contact.speed_mps))).toBeLessThanOrEqual(2.8);
+  const contact = await (await page.request.get(`/api/v2/surface-contacts/${neutralContacts[0].id}`)).json();
   expect(contact.route.length).toBeGreaterThan(1);
   expect(contact.looping).toBe(true);
   await page.waitForTimeout(1100);
   const second = await (await page.request.get("/api/v2/fleet")).json();
-  expect(second.surface_contacts[0].position).not.toEqual(first.surface_contacts[0].position);
+  const movedNeutral = second.surface_contacts.find((candidate: { id: string }) => candidate.id === neutralContacts[0].id);
+  expect(movedNeutral.position).not.toEqual(neutralContacts[0].position);
 });
 
 test("contact rendezvous shows a live ETA and suppresses the idle hold marker", async ({ page }) => {
@@ -326,11 +332,11 @@ test("map multi-click gestures expand selection from viewport to accessible flee
   await expect(rail).not.toBeVisible();
   await canvas.dispatchEvent("click", { detail: 3, bubbles: true, clientX: 700, clientY: 250 });
   await expect(rail).toBeVisible();
-  await expectSelected(page, 48);
+  await expectSelected(page, 12);
   await page.keyboard.press("Escape");
   await expectSelected(page, 0);
   await canvas.dispatchEvent("click", { detail: 4, bubbles: true, clientX: 700, clientY: 250 });
-  await expectSelected(page, 48);
+  await expectSelected(page, 12);
   await page.keyboard.press("Escape");
   const locationMenu = await openLocationInspection(page);
   await expect(locationMenu).toBeVisible();
