@@ -281,6 +281,10 @@ func TestWorkspaceCombatActionsRemainBounded(t *testing.T) {
 	if engage.Mode != "workspace" || !strings.Contains(strings.ToLower(engage.Speech), "confirm") {
 		t.Fatalf("engagement response crossed or obscured approval boundary: %#v", engage)
 	}
+	inspect, err := manager.WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{Text: "Show me Blackwake"}, fleet)
+	if err != nil || len(inspect.Actions) != 1 || inspect.Actions[0].Kind != "inspect_contact" || inspect.Actions[0].Target != "HOSTILE-0001" {
+		t.Fatalf("hostile inspection did not survive deterministic provider fallback: %#v %v", inspect, err)
+	}
 }
 
 func TestHoldPositionOrderIsNotMisclassifiedAsPositionQuestion(t *testing.T) {

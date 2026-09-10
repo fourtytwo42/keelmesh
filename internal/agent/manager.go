@@ -775,6 +775,25 @@ func deterministicWorkspaceCommand(request domain.WorkspaceAssistantRequestV1, f
 		}
 	}
 	mentionedVessels = uniqueWorkspaceIDs(mentionedVessels)
+	mentionedContactID := ""
+	for _, contact := range fleet.SurfaceContacts {
+		for _, alias := range []string{contact.ID, contact.Name, contact.BoatID, contact.Callsign} {
+			if alias != "" && strings.Contains(lower, strings.ToLower(alias)) {
+				mentionedContactID = contact.ID
+				break
+			}
+		}
+		if mentionedContactID != "" {
+			break
+		}
+	}
+	inspectionIntent := strings.Contains(lower, "show") || strings.Contains(lower, "inspect") || strings.Contains(lower, "open") || strings.Contains(lower, "status") || strings.Contains(lower, "tell me about")
+	if mentionedContactID != "" && inspectionIntent {
+		result.Mode = "workspace"
+		result.Speech = "I opened the requested vessel contact and its current operational details."
+		result.Actions = []domain.WorkspaceAssistantActionV1{{Kind: "inspect_contact", Target: mentionedContactID}}
+		return result
+	}
 	if (strings.Contains(lower, "repair") || strings.Contains(lower, "restore hull") || strings.Contains(lower, "fix ")) && len(mentionedVessels) == 1 {
 		result.Mode = "workspace"
 		result.Speech = "I am applying the bounded twenty-percent hull repair if the vessel is eligible."
