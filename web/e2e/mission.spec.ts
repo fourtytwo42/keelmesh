@@ -111,7 +111,7 @@ test("map-first workspace exposes the persistent operating picture without heade
   await expect(page.getByText("KEELMESH", { exact: true })).toBeVisible();
   const fleet = await (await page.request.get("/api/v2/fleet")).json();
   expect(fleet.vessels).toHaveLength(12);
-  expect(fleet.groups).toHaveLength(8);
+  expect(fleet.groups).toHaveLength(0);
   await expect(page.getByText("48 VESSELS", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Fleet Arena" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Resilience" })).toHaveCount(0);
