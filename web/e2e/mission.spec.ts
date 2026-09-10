@@ -10,7 +10,47 @@ async function resetFleet(page: import("@playwright/test").Page) {
 }
 
 async function restoreFixtureGroups(page: import("@playwright/test").Page) {
-  for (const [callsign, code] of [["Gannet", "WS"], ["Tern", "WS"], ["Jaeger", "BG"]]) {
+  const fixtures = [
+    { name: "Watch Shoal", code: "WS", color: "#d7c24a", pattern: "wedge", members: ["Gannet", "Tern"] },
+    { name: "Block Guard", code: "BG", color: "#9f73c9", pattern: "column", members: ["Harrier"] },
+    { name: "Block Line", code: "BL", color: "#62a9d8", pattern: "line_abreast", members: ["Osprey"] },
+  ];
+  for (const fixture of fixtures) {
+    let fleet = await (await page.request.get("/api/v2/fleet")).json();
+    let group = fleet.groups.find((candidate: { code: string }) => candidate.code === fixture.code);
+    if (!group) {
+      const memberIDs = fixture.members.map((callsign) =>
+        fleet.vessels.find((candidate: { callsign: string }) => candidate.callsign === callsign)?.id,
+      ).filter(Boolean);
+      const key = `e2e-create-${fixture.code.toLowerCase()}-${Date.now()}-${Math.random()}`;
+      const response = await page.request.post("/api/v2/groups", {
+        data: {
+          request_id: key,
+          idempotency_key: key,
+          expected_version: fleet.fleet_version,
+          name: fixture.name,
+          color: fixture.color,
+          pattern: fixture.pattern,
+          member_ids: memberIDs,
+        },
+      });
+      expect(response.ok()).toBeTruthy();
+      fleet = await (await page.request.get("/api/v2/fleet")).json();
+      group = fleet.groups.find((candidate: { code: string }) => candidate.code === fixture.code);
+    }
+    for (const callsign of fixture.members) {
+      fleet = await (await page.request.get("/api/v2/fleet")).json();
+      const vessel = fleet.vessels.find((candidate: { callsign: string }) => candidate.callsign === callsign);
+      group = fleet.groups.find((candidate: { code: string }) => candidate.code === fixture.code);
+      if (!vessel || !group || vessel.group_id === group.id) continue;
+      const key = `e2e-restore-${callsign.toLowerCase()}-${Date.now()}-${Math.random()}`;
+      const response = await page.request.post(`/api/v2/groups/${group.id}/members:move`, {
+        data: { request_id: key, idempotency_key: key, expected_version: group.revision, vessel_id: vessel.id },
+      });
+      expect(response.ok()).toBeTruthy();
+    }
+  }
+  for (const [callsign, code] of [["Gannet", "WS"], ["Tern", "WS"], ["Harrier", "BG"]]) {
     const fleet = await (await page.request.get("/api/v2/fleet")).json();
     const vessel = fleet.vessels.find((candidate: { callsign: string }) => candidate.callsign === callsign);
     const group = fleet.groups.find((candidate: { code: string }) => candidate.code === code);
@@ -23,7 +63,7 @@ async function restoreFixtureGroups(page: import("@playwright/test").Page) {
   }
   for (;;) {
     const fleet = await (await page.request.get("/api/v2/fleet")).json();
-    const detachment = fleet.groups.find((group: { name: string }) => group.name === "E2E Jaeger Detachment");
+    const detachment = fleet.groups.find((group: { name: string }) => group.name === "E2E Harrier Detachment");
     if (!detachment) break;
     const key = `e2e-group-cleanup-${Date.now()}-${Math.random()}`;
     const response = await page.request.delete(`/api/v2/groups/${detachment.id}`, {
@@ -111,7 +151,7 @@ test("map-first workspace exposes the persistent operating picture without heade
   await expect(page.getByText("KEELMESH", { exact: true })).toBeVisible();
   const fleet = await (await page.request.get("/api/v2/fleet")).json();
   expect(fleet.vessels).toHaveLength(12);
-  expect(fleet.groups).toHaveLength(0);
+  expect(fleet.groups).toHaveLength(3);
   await expect(page.getByText("48 VESSELS", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Fleet Arena" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Resilience" })).toHaveCount(0);
@@ -474,32 +514,32 @@ test("fleet rail is the single selection and group-reassignment surface", async 
   test.setTimeout(60_000);
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet" });
-  await rail.getByPlaceholder("Callsign, class, group, status…").fill("Jaeger");
-  await rail.locator(".fleet-vessel-row", { hasText: "Jaeger" }).getByRole("checkbox").check();
+  await rail.getByPlaceholder("Callsign, class, group, status…").fill("Harrier");
+  await rail.locator(".fleet-vessel-row", { hasText: "Harrier" }).getByRole("checkbox").check();
   await expectSelected(page, 1);
   await expect(page.locator(".selection-stack, .selection-drawer, .selection-ribbon")).toHaveCount(0);
 
   // Selected rows move directly between ordinary group sections.
-  const jaeger = rail.locator(".fleet-vessel-row", { hasText: "Jaeger" });
-  await jaeger.dragTo(rail.locator('[data-group-drop="BL"]'));
+  const harrier = rail.locator(".fleet-vessel-row", { hasText: "Harrier" });
+  await harrier.dragTo(rail.locator('[data-group-drop="BL"]'));
   await expect.poll(async () => {
     const fleet = await (await page.request.get("/api/v2/fleet")).json();
-    return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger")?.group_code;
+    return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Harrier")?.group_code;
   }).toBe("BL");
-  await rail.locator(".fleet-vessel-row", { hasText: "Jaeger" }).click({ button: "right" });
-  const railMenu = page.getByRole("menu", { name: "Assign Jaeger to group" });
+  await rail.locator(".fleet-vessel-row", { hasText: "Harrier" }).click({ button: "right" });
+  const railMenu = page.getByRole("menu", { name: "Assign Harrier to group" });
   await expect(railMenu).toBeVisible();
   await railMenu.getByRole("menuitem", { name: /BG Block Guard/ }).click();
   await expect.poll(async () => {
     const fleet = await (await page.request.get("/api/v2/fleet")).json();
-    return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger")?.group_code;
+    return fleet.vessels.find((v: { callsign: string }) => v.callsign === "Harrier")?.group_code;
   }).toBe("BG");
 
-  await rail.locator(".fleet-vessel-row", { hasText: "Jaeger" }).click({ button: "right" });
+  await rail.locator(".fleet-vessel-row", { hasText: "Harrier" }).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Create new group with this vessel" }).click();
   await expect(page.getByPlaceholder("New group name")).toBeFocused();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("menu", { name: "Assign Jaeger to group" })).not.toBeVisible();
+  await expect(page.getByRole("menu", { name: "Assign Harrier to group" })).not.toBeVisible();
 
   await rail.getByRole("button", { name: "View status of BG Block Guard", exact: true }).click();
   const groupInspector = page.getByRole("region", { name: "Group · BG", exact: true });
@@ -509,23 +549,23 @@ test("fleet rail is the single selection and group-reassignment surface", async 
   await groupInspector.getByRole("button", { name: "Close" }).click();
 
   // Creation uses the same exclusive-membership API, then this test restores its fixture.
-  await rail.locator(".fleet-vessel-row", { hasText: "Jaeger" }).click({ button: "right" });
+  await rail.locator(".fleet-vessel-row", { hasText: "Harrier" }).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Create new group with this vessel" }).click();
-  await page.getByPlaceholder("New group name").fill("E2E Jaeger Detachment");
+  await page.getByPlaceholder("New group name").fill("E2E Harrier Detachment");
   await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect.poll(async () => {
     const fleet = await (await page.request.get("/api/v2/fleet")).json();
-    const vessel = fleet.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger");
+    const vessel = fleet.vessels.find((v: { callsign: string }) => v.callsign === "Harrier");
     return fleet.groups.find((group: { id: string }) => group.id === vessel?.group_id)?.name;
-  }).toBe("E2E Jaeger Detachment");
+  }).toBe("E2E Harrier Detachment");
 
   let current = await (await page.request.get("/api/v2/fleet")).json();
-  const jaegerRecord = current.vessels.find((v: { callsign: string }) => v.callsign === "Jaeger");
+  const harrierRecord = current.vessels.find((v: { callsign: string }) => v.callsign === "Harrier");
   const blockGuard = current.groups.find((group: { code: string }) => group.code === "BG");
-  const restoreKey = `e2e-jaeger-return-${Date.now()}`;
-  expect((await page.request.post(`/api/v2/groups/${blockGuard.id}/members:move`, { data: { request_id: restoreKey, idempotency_key: restoreKey, expected_version: blockGuard.revision, vessel_id: jaegerRecord.id } })).ok()).toBeTruthy();
+  const restoreKey = `e2e-harrier-return-${Date.now()}`;
+  expect((await page.request.post(`/api/v2/groups/${blockGuard.id}/members:move`, { data: { request_id: restoreKey, idempotency_key: restoreKey, expected_version: blockGuard.revision, vessel_id: harrierRecord.id } })).ok()).toBeTruthy();
   current = await (await page.request.get("/api/v2/fleet")).json();
-  const detachment = current.groups.find((group: { name: string }) => group.name === "E2E Jaeger Detachment");
+  const detachment = current.groups.find((group: { name: string }) => group.name === "E2E Harrier Detachment");
   const deleteKey = `e2e-group-delete-${Date.now()}`;
   expect((await page.request.delete(`/api/v2/groups/${detachment.id}`, { data: { request_id: deleteKey, idempotency_key: deleteKey, expected_version: detachment.revision } })).ok()).toBeTruthy();
 });
