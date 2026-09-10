@@ -31,7 +31,7 @@ M13 unifies the four operational planes in Engineer and System: edge mission exe
 
 M14 is deployed in authoritative `full_program` execution mode on VM 214 and all twelve vessel nodes. A live quorum-backed proof installed one exact 3,663-segment program on all six Cell A nodes and continued to mission tick 108 without a rolling authority refill. The compatibility sweep passed twice; every legacy tape-depth projection is zero.
 
-M15 is deployed. Fleet Operations now includes 45 combat entities: twelve controlled vessels, 32 neutral or defensive surface contacts, and the persistent hostile pirate raider Blackwake. Engagement approval, deterministic effects, component damage, world-time regeneration and repair, sinking, recovery, respawn, AI/MCP boundaries, and restart-safe persistence are verified. Combat remains explicitly fictional simulation behavior.
+M15 is deployed. Fleet Operations now includes 45 combat entities: twelve controlled vessels, 32 neutral or defensive surface contacts, and the persistent hostile pirate raider Blackwake. Engagement approval, deterministic effects, component damage, world-time regeneration and repair, sinking, recovery, respawn, AI/MCP boundaries, and restart-safe persistence are verified. Mission rules of engagement bind target scope, designated contacts, geography, range, duration, effect count, reserve, and disengagement state into the exact approved hash. Controlled vessels expose an explicit armed/weapons-safe state: armed vessels may return fire against a recent attacker but cannot initiate or pursue without mission authority, while engagement missions auto-arm only their assigned participants. Combat remains explicitly fictional simulation behavior.
 
 ## Deployment
 
@@ -42,7 +42,7 @@ M15 is deployed. Fleet Operations now includes 45 combat entities: twelve contro
 - PostgreSQL/pgvector, Kafka, workers, AI, and speech remain private.
 - Builds and verification run on VM 214/nodes.
 - M13's private OTLP collector, MinIO, Dagster, and MLflow services are deployed without publishing additional ports.
-- M14 complete-program execution and M15 combat-aware node/API/UI behavior are active on all twelve nodes; VM 214 and every vessel node use the identical binary SHA-256 `b7cd7f3d084e87dbafbd1180cc72053c4db63c39da938ed47ee193037d8908a7`.
+- M14 complete-program execution and M15 combat-aware node/API/UI behavior are active on all twelve nodes; VM 214 and every vessel node use the identical binary SHA-256 `91442ad62fdfea414e10073f48c6d1a9cc80fc799aac81a566a8f4a3ba17b684`.
 - Latest measured scale verification ran twice at 1,000 logical producers, approximately 2,004–2,233 events/second, zero dropped events, and matching replay checksums on VM 214.
 - GitHub-hosted workflows remain disabled.
 - No snapshot is authorized by documentation or deployment operations.
