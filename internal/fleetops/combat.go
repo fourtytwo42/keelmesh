@@ -548,13 +548,19 @@ func (m *Manager) advanceBlackwakeLocked(deltaMS int64) {
 	if raider.Damage.Sunk {
 		return
 	}
-	if raider.Damage.IntegrityPercent < 25 || m.raiderOvermatchedLocked(raider) {
+	if raider.Damage.IntegrityPercent < 25 || raider.Damage.PropulsionPercent < 55 || raider.Damage.SensorsPercent < 40 || raider.Damage.WeaponsPercent < 40 || m.raiderOvermatchedLocked(raider) {
 		raider.BehaviorState, raider.CurrentTargetID = "withdraw_repair", ""
-		raider.LastDecision = &domain.RaiderDecisionV1{ID: fmt.Sprintf("raider-%d", m.simTickMS), State: "withdraw_repair", Destination: blackwakePatrol[0], Reason: "hull below withdrawal threshold", WorldTickMS: m.simTickMS, Seed: raider.RandomSeed}
+		raider.LastDecision = &domain.RaiderDecisionV1{ID: fmt.Sprintf("raider-%d", m.simTickMS), State: "withdraw_repair", Destination: blackwakePatrol[0], Reason: "damage or opposing strength exceeded the raider envelope", WorldTickMS: m.simTickMS, Seed: raider.RandomSeed}
 	}
-	if raider.BehaviorState == "withdraw_repair" && combatDistanceM(raider.Position, blackwakePatrol[0]) < 20 && raider.Damage.IntegrityPercent >= 40 {
-		raider.BehaviorState = "roam"
-		raider.LastDecision = nil
+	if raider.BehaviorState == "withdraw_repair" && combatDistanceM(raider.Position, blackwakePatrol[0]) < 20 {
+		repair := 10 * float64(deltaMS) / 60000
+		raider.Damage.PropulsionPercent = math.Min(100, raider.Damage.PropulsionPercent+repair)
+		raider.Damage.SensorsPercent = math.Min(100, raider.Damage.SensorsPercent+repair)
+		raider.Damage.WeaponsPercent = math.Min(100, raider.Damage.WeaponsPercent+repair)
+		if raider.Damage.IntegrityPercent >= 40 && raider.Damage.PropulsionPercent >= 90 && raider.Damage.SensorsPercent >= 90 && raider.Damage.WeaponsPercent >= 90 {
+			raider.BehaviorState = "roam"
+			raider.LastDecision = nil
+		}
 	}
 	if raider.CurrentTargetID == "" && raider.BehaviorState != "withdraw_repair" {
 		if target := m.selectRaiderTargetLocked(raider); target != "" {

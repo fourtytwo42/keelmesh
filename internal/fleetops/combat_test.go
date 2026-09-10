@@ -165,6 +165,26 @@ func TestBlackwakeChoosesReachablePredictedIntercept(t *testing.T) {
 	}
 }
 
+func TestBlackwakeWithdrawsAndRepairsDegradedSystems(t *testing.T) {
+	m := New("", slog.Default())
+	m.mu.Lock()
+	raider := m.combatEntities[blackwakeID]
+	raider.Position = blackwakePatrol[0]
+	raider.Damage.PropulsionPercent = 50
+	raider.Damage.SensorsPercent = 70
+	raider.Damage.WeaponsPercent = 80
+	m.combatEntities[blackwakeID] = raider
+	m.advanceBlackwakeLocked(60000)
+	after := m.combatEntities[blackwakeID]
+	m.mu.Unlock()
+	if after.BehaviorState != "withdraw_repair" || after.CurrentTargetID != "" {
+		t.Fatalf("degraded Blackwake did not enter bounded repair withdrawal: %#v", after)
+	}
+	if after.Damage.PropulsionPercent != 60 || after.Damage.SensorsPercent != 80 || after.Damage.WeaponsPercent != 90 {
+		t.Fatalf("Blackwake did not repair systems at its recovery point: %#v", after.Damage)
+	}
+}
+
 func TestMissionEngagementAutoArmsOnlyAssignedParticipants(t *testing.T) {
 	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
 	m := New("", slog.Default())
