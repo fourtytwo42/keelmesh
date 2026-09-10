@@ -4,6 +4,7 @@ test.use({ channel: "chrome" });
 
 async function resetFleet(page: Page) {
   const fleet = await (await page.request.get("/api/v2/fleet")).json();
+  if (fleet.groups.length === 0 && fleet.missions.length === 0) return;
   const key = `guided-demo-m14-reset-${Date.now()}-${Math.random()}`;
   const response = await page.request.post("/api/v2/scenarios/fleet-operations:reset", {
     data: { request_id: key, idempotency_key: key, expected_version: fleet.fleet_version },
