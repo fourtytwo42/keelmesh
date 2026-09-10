@@ -81,13 +81,18 @@ test("Fleet inspector keeps automatic defense opt-in and separate from weapons",
   await expect(response).toBeDisabled();
   await expect(inspector).toContainText("Off · notify and station-keep until ordered.");
 
-  await autoDefense.check();
-  await expect(response).toBeEnabled();
+  await autoDefense.click();
   await expect.poll(async () => {
     const combat = await (await page.request.get("/api/v8/combat")).json();
     return combat.entities.find((entity: { entity_id: string }) => entity.entity_id === "vm-vessel-220")?.auto_defense;
   }).toBe(true);
-  await autoDefense.uncheck();
+  await expect(autoDefense).toBeChecked();
+  await expect(response).toBeEnabled();
+  await autoDefense.click();
+  await expect.poll(async () => {
+    const combat = await (await page.request.get("/api/v8/combat")).json();
+    return combat.entities.find((entity: { entity_id: string }) => entity.entity_id === "vm-vessel-220")?.auto_defense;
+  }).toBe(false);
   await expect(autoDefense).not.toBeChecked();
 });
 
