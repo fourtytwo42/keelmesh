@@ -60,7 +60,7 @@ services:
       KEELMESH_OTLP_ENDPOINT: http://trace-collector:4318/v1/traces
       KEELMESH_OTLP_TOKEN_FILE: /run/keelmesh-auth/otel/token
       KEELMESH_PLATFORM_EVIDENCE_DIR: /var/lib/keelmesh/evidence
-      KEELMESH_EXECUTION_MODE: ${KEELMESH_EXECUTION_MODE:-full_program_shadow}
+      KEELMESH_EXECUTION_MODE: ${KEELMESH_EXECUTION_MODE:-full_program}
     depends_on:
       postgres:
         condition: service_healthy

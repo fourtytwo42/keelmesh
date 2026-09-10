@@ -2,7 +2,7 @@ services:
   core:
     image: ${KEELMESH_CORE_IMAGE:-keelmesh/core:m14}
     environment:
-      KEELMESH_COORDINATION_MODE: ${KEELMESH_COORDINATION_MODE:-shadow}
+      KEELMESH_COORDINATION_MODE: ${KEELMESH_COORDINATION_MODE:-raft}
       KEELMESH_COORDINATION_REFEREE_PKI_DIR: /etc/keelmesh/coordination/referee
       KEELMESH_COORDINATION_CELL_A_MANIFEST: /etc/keelmesh/coordination/cells/a/manifest.json
       KEELMESH_COORDINATION_CELL_B_MANIFEST: /etc/keelmesh/coordination/cells/b/manifest.json
