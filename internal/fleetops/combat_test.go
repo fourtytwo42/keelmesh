@@ -188,6 +188,38 @@ func TestBlackwakePatrolAndRespawnRemainOffshoreAndVaried(t *testing.T) {
 	}
 }
 
+func TestLongRunningCombatPursuitStaysInsideOperatingChart(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	m := New("", slog.Default())
+	for step := 0; step < 180; step++ {
+		m.mu.Lock()
+		m.simTickMS += 100000 // one 500x display tick
+		m.advanceCombatLocked(100000)
+		for id, entity := range m.combatEntities {
+			if !combatPositionInBounds(entity.Position) {
+				m.mu.Unlock()
+				t.Fatalf("%s escaped the operating chart at step %d: %v", id, step, entity.Position)
+			}
+		}
+		m.mu.Unlock()
+	}
+}
+
+func TestCommercialEscapeRepairsLegacyOutOfBoundsCheckpoint(t *testing.T) {
+	m := New("", slog.Default())
+	m.mu.Lock()
+	entity := m.combatEntities["surface-27"]
+	entity.Position = domain.GeoPointV2{-61.9, 40.2}
+	entity.BehaviorState = "escape"
+	m.combatEntities[entity.EntityID] = entity
+	m.advanceCommercialEscapeLocked(100000)
+	repaired := m.combatEntities[entity.EntityID]
+	m.mu.Unlock()
+	if !combatPositionInBounds(repaired.Position) || repaired.BehaviorState != "operational" {
+		t.Fatalf("legacy pursuit checkpoint was not reconciled: %#v", repaired)
+	}
+}
+
 func TestDisabledControlledVesselRecoversWithoutMissionRejoin(t *testing.T) {
 	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
 	m := New("", slog.Default())

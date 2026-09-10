@@ -510,7 +510,7 @@ func (m *Manager) advanceBlackwakeLocked(deltaMS int64) {
 	if raider.LastDecision != nil {
 		destination = raider.LastDecision.Destination
 	}
-	if target, ok := m.combatEntities[raider.CurrentTargetID]; ok && !target.Damage.Sunk {
+	if target, ok := m.combatEntities[raider.CurrentTargetID]; ok && !target.Damage.Sunk && combatPositionInBounds(target.Position) && (raider.LastDecision == nil || m.simTickMS-raider.LastDecision.WorldTickMS <= 10*60*1000) {
 		destination = target.Position
 		distance := combatDistanceM(raider.Position, target.Position)
 		if raider.BehaviorState == "stalk" && distance > maxWeaponRange(raider.Profile.Weapons) {
@@ -524,6 +524,7 @@ func (m *Manager) advanceBlackwakeLocked(deltaMS int64) {
 		raider.CurrentTargetID, raider.BehaviorState = "", "roam"
 		raider.LastDecision = nil
 	}
+	destination = clampCombatPosition(destination)
 	moveCombatEntity(&raider, destination, 2.6*math.Max(.35, raider.Damage.PropulsionPercent/100), float64(deltaMS)/1000)
 	raider.StateVersion++
 	raider.UpdatedAt = time.Now().UTC()
@@ -578,6 +579,11 @@ func (m *Manager) raiderOvermatchedLocked(raider domain.CombatEntityStateV1) boo
 
 func (m *Manager) advanceCommercialEscapeLocked(deltaMS int64) {
 	raider := m.combatEntities[blackwakeID]
+	at := time.UnixMilli(m.simulationEpochMS + m.simTickMS).UTC()
+	baseline := map[string]domain.SurfaceContactV2{}
+	for _, contact := range surfaceContactsAt(at) {
+		baseline[contact.ID] = contact
+	}
 	for id, entity := range m.combatEntities {
 		if entity.Profile.Controlled {
 			if raider.CurrentTargetID == id && entity.ActiveEngagementID == "" && !entity.Damage.Sunk && combatDistanceM(entity.Position, raider.Position) <= 3000 {
@@ -593,6 +599,19 @@ func (m *Manager) advanceCommercialEscapeLocked(deltaMS int64) {
 		if entity.Profile.Hostility != "neutral" || len(entity.Profile.Weapons) > 0 || entity.Damage.Sunk {
 			continue
 		}
+		contact, knownContact := baseline[id]
+		if !combatPositionInBounds(entity.Position) {
+			// A stale pre-M15 checkpoint may contain an unbounded pursuit. Rejoin
+			// at the contact's deterministic water-safe route projection instead
+			// of spending simulated days crossing back through unknown water.
+			if knownContact {
+				entity.Position, entity.HeadingDeg, entity.SpeedMPS = contact.Position, contact.HeadingDeg, contact.SpeedMPS
+				entity.BehaviorState = "operational"
+				entity.StateVersion++
+				m.combatEntities[id] = entity
+			}
+			continue
+		}
 		if raider.CurrentTargetID != id {
 			if entity.BehaviorState == "escape" {
 				entity.BehaviorState = "rejoining_route"
@@ -600,12 +619,17 @@ func (m *Manager) advanceCommercialEscapeLocked(deltaMS int64) {
 			}
 			continue
 		}
+		if knownContact && combatDistanceM(entity.Position, contact.Position) >= 2500 {
+			entity.BehaviorState = "rejoining_route"
+			m.combatEntities[id] = entity
+			continue
+		}
 		if combatDistanceM(entity.Position, raider.Position) > 5000 {
 			continue
 		}
 		entity.BehaviorState = "escape"
 		away := combatBearingDeg(raider.Position, entity.Position)
-		destination := pointAtBearing(entity.Position, away, 6000)
+		destination := clampCombatPosition(pointAtBearing(entity.Position, away, 2500))
 		moveCombatEntity(&entity, destination, math.Min(2.8, combatContactSpeed(id)*1.15), float64(deltaMS)/1000)
 		entity.StateVersion++
 		m.combatEntities[id] = entity
@@ -615,7 +639,7 @@ func (m *Manager) advanceCommercialEscapeLocked(deltaMS int64) {
 func (m *Manager) selectRaiderTargetLocked(raider domain.CombatEntityStateV1) string {
 	bestID, bestScore := "", math.MaxFloat64
 	for id, target := range m.combatEntities {
-		if id == blackwakeID || target.Profile.Hostility == "hostile" || target.Damage.Sunk || target.Damage.Disabled {
+		if id == blackwakeID || target.Profile.Hostility == "hostile" || target.Damage.Sunk || target.Damage.Disabled || !combatPositionInBounds(target.Position) {
 			continue
 		}
 		distance := combatDistanceM(raider.Position, target.Position)
@@ -841,6 +865,15 @@ func moveCombatEntity(entity *domain.CombatEntityStateV1, destination domain.Geo
 func combatDistanceM(a, b domain.GeoPointV2) float64 {
 	latitude := (a[1] + b[1]) / 2 * math.Pi / 180
 	return math.Hypot((b[0]-a[0])*111000*math.Cos(latitude), (b[1]-a[1])*111000)
+}
+func combatPositionInBounds(point domain.GeoPointV2) bool {
+	return point[0] >= -72.08 && point[0] <= -70.57 && point[1] >= 40.76 && point[1] <= 42.03
+}
+func clampCombatPosition(point domain.GeoPointV2) domain.GeoPointV2 {
+	return domain.GeoPointV2{
+		math.Max(-72.08, math.Min(-70.57, point[0])),
+		math.Max(40.76, math.Min(42.03, point[1])),
+	}
 }
 func combatBearingDeg(a, b domain.GeoPointV2) float64 {
 	return math.Mod(math.Atan2((b[0]-a[0])*math.Cos((a[1]+b[1])/2*math.Pi/180), b[1]-a[1])*180/math.Pi+360, 360)

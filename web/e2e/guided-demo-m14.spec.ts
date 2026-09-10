@@ -64,7 +64,9 @@ test("guided demo exposes complete-program authority during execution", async ({
     await expect(page.locator(".operations-map")).toHaveAttribute("data-mission-frame-request", /\d+/);
     const framedPoints = Number(await page.locator(".operations-map").getAttribute("data-mission-frame-points"));
     expect(framedPoints).toBeGreaterThan(3);
-    await expect(page.getByText("FULL PROGRAM ONBOARD").first()).toBeVisible();
+    // Cross-cell start waits for both quorum proofs and six node installs. The
+    // narration intentionally begins while that visible authority work runs.
+    await expect(page.getByText("FULL PROGRAM ONBOARD").first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("AUTHORITY LEFT")).toBeVisible();
     await expect(page.getByText("CONTINGENCY", { exact: true })).toBeVisible();
 
