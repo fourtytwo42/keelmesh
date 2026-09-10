@@ -2160,7 +2160,9 @@ export function FleetWorkspace() {
     }
     if (action === "create-ai-mission") {
       setWindows(new Set(window.innerWidth >= 740 ? ["fleet"] : []));
-      const intent = "Create one mission for Harbor Sentinel to patrol two nautical miles east, preserve at least thirty percent battery, maintain safe depth and separation, then hold position. Do not offer alternatives.";
+      // Keep the 100x execution beat active for the full natural-cadence
+      // narration so the program authority and moving formation remain visible.
+      const intent = "Create one mission for Harbor Sentinel to patrol twelve nautical miles east, preserve at least thirty percent battery, maintain safe depth and separation, then hold position. Do not offer alternatives.";
       await askWorkspaceAssistant(intent, false);
       const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
       const group = snapshot.groups.find((item) => item.name.toLowerCase().includes("harbor sentinel"));

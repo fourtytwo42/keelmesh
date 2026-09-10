@@ -780,6 +780,10 @@ test("beach intent resolves a depth-aware one-nautical-mile coastal patrol", asy
   await assistant.getByRole("textbox", { name: "Message KeelMesh AI" }).fill("Give me three options to patrol the beach, stay within 1nm from the beach as long as ocean depth permits");
   await assistant.getByRole("button", { name: "Send text message" }).click();
   await expect(assistant.locator("article.assistant").last()).toContainText(/Option A.*B.*C/i, { timeout: 60_000 });
+  await expect.poll(async () => {
+    const snapshot = await (await page.request.get("/api/v2/fleet")).json();
+    return snapshot.missions[0]?.plan_ids?.length ?? 0;
+  }, { timeout: 30_000 }).toBe(3);
   const fleet = await (await page.request.get("/api/v2/fleet")).json();
   expect(fleet.missions[0].geometry.included_areas).toHaveLength(1);
   expect(fleet.missions[0].geometry.waypoints).toHaveLength(13);
