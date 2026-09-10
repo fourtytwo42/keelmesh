@@ -251,7 +251,8 @@ export function FleetWorkspace() {
     recordingChunks = useRef<BlobPart[]>([]),
     stopRequested = useRef(false),
     geometryHistory = useRef<Record<string, MissionWorkspaceV2["geometry"][]>>({}),
-    missionSelectionSync = useRef("");
+    missionSelectionSync = useRef(""),
+    pendingMissionSelection = useRef<{ missionID: string; targetKey: string } | null>(null);
   const [windowActivations, setWindowActivations] = useState<
       Record<string, number>
     >({}),
@@ -416,6 +417,11 @@ export function FleetWorkspace() {
   useEffect(() => {
     if (!plannerVisible || !mission) return;
     const marker = `${mission.id}:${missionTargetKey}`;
+    const pending = pendingMissionSelection.current;
+    if (pending?.missionID === mission.id) {
+      if (pending.targetKey !== missionTargetKey) return;
+      pendingMissionSelection.current = null;
+    }
     missionSelectionSync.current = marker;
     setSelected(new Set(mission.target_ids));
   }, [plannerVisible, mission?.id, missionTargetKey]);
@@ -459,6 +465,7 @@ export function FleetWorkspace() {
       return;
     }
     if (selectedKey === missionTargetKey) return;
+    pendingMissionSelection.current = { missionID: mission.id, targetKey: selectedKey };
     const timer = window.setTimeout(() => {
       setPlans([]);
       setDraft(null);
@@ -893,6 +900,8 @@ export function FleetWorkspace() {
       );
       await refresh();
     } catch {
+      if (pendingMissionSelection.current?.missionID === missionID && pendingMissionSelection.current.targetKey === next.join(","))
+        pendingMissionSelection.current = null;
       missionSelectionSync.current = `${missionID}:${existing.join(",")}`;
       setSelected(new Set(existing));
     }
