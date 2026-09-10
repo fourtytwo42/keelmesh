@@ -215,7 +215,7 @@ function surfaceRouteData(
 ): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
-    features: contacts.filter((contact) => contact.speed_mps > 0 && contact.route.length > 1).map((contact) => ({
+    features: contacts.filter((contact) => contact.speed_mps > 0 && (contact.route?.length ?? 0) > 1).map((contact) => ({
       type: "Feature",
       properties: { id: contact.id, color: contact.color },
       geometry: { type: "LineString", coordinates: contact.route },

@@ -24,6 +24,16 @@ func TestCombatProfilesAndBlackwakeBalance(t *testing.T) {
 	if raider.Profile.Weapons[0].EffectiveRangeM != 750 || raider.Profile.Weapons[1].EffectiveRangeM != 1400 || raider.SpeedMPS > 2.6 {
 		t.Fatalf("unexpected Blackwake armament or speed: %#v", raider)
 	}
+	foundSurfaceProjection := false
+	for _, contact := range m.Snapshot().SurfaceContacts {
+		if contact.ID == blackwakeID && contact.Route == nil {
+			t.Fatal("Blackwake surface projection must serialize an empty route, not null")
+		}
+		foundSurfaceProjection = foundSurfaceProjection || contact.ID == blackwakeID
+	}
+	if !foundSurfaceProjection {
+		t.Fatal("Blackwake surface projection missing")
+	}
 }
 
 func TestControlledEngagementRequiresExactHash(t *testing.T) {

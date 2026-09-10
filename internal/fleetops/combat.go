@@ -142,7 +142,7 @@ func blackwakeContact(state domain.CombatEntityStateV1, now time.Time) domain.Su
 	if state.Damage.Sunk {
 		navigation = "sunk · respawn pending"
 	}
-	return domain.SurfaceContactV2{ID: state.EntityID, BoatID: state.BoatID, Name: state.Name, Callsign: "BLACKWAKE", Class: "pirate-raider", Activity: "persistent hostile raider · fictional simulation", ColorName: "hostile red", Color: "#e3544f", Position: state.Position, HeadingDeg: state.HeadingDeg, SpeedMPS: state.SpeedMPS, SpeedKnots: state.SpeedMPS * 1.94384, LengthM: 46, DraftM: 4.8, NavigationState: navigation, RouteName: "adaptive offshore hunt", Route: nil, Looping: false, Hostility: "hostile", Combat: cloneCombatEntity(&state), UpdatedAt: now}
+	return domain.SurfaceContactV2{ID: state.EntityID, BoatID: state.BoatID, Name: state.Name, Callsign: "BLACKWAKE", Class: "pirate-raider", Activity: "persistent hostile raider · fictional simulation", ColorName: "hostile red", Color: "#e3544f", Position: state.Position, HeadingDeg: state.HeadingDeg, SpeedMPS: state.SpeedMPS, SpeedKnots: state.SpeedMPS * 1.94384, LengthM: 46, DraftM: 4.8, NavigationState: navigation, RouteName: "adaptive offshore hunt", Route: []domain.GeoPointV2{}, Looping: false, Hostility: "hostile", Combat: cloneCombatEntity(&state), UpdatedAt: now}
 }
 
 func (m *Manager) combatSnapshotLocked() domain.CombatSnapshotV1 {

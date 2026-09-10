@@ -4070,7 +4070,9 @@ function SurfaceContactInspector({ contact, worldTickMS }: { contact: SurfaceCon
         <span>
           <b>{contact.route_name}</b>
           <small>
-            {contact.route.length} route points · {contact.looping ? "continuous loop" : "one way"}
+            {contact.class === "pirate-raider"
+              ? "dynamic water-safe course · sequence reuse prohibited"
+              : `${contact.route?.length ?? 0} route points · ${contact.looping ? "continuous loop" : "one way"}`}
           </small>
         </span>
       </div>
