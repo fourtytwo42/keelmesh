@@ -1928,6 +1928,30 @@ func TestUnassignedVesselsRechargeWithAcceleratedSimulation(t *testing.T) {
 	}
 }
 
+func TestVMFleetResetRestoresDemoEnergyBaseline(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	m := New("", slog.Default())
+	for id, vessel := range m.vessels {
+		vessel.Telemetry.Reserve = .08
+		vessel.Telemetry.ProjectedReserve = .04
+		m.vessels[id] = vessel
+	}
+
+	snapshot, err := m.ResetOperations(Mutation{
+		RequestID:       "reset-energy",
+		IdempotencyKey:  "reset-energy",
+		ExpectedVersion: m.fleetVersion,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, vessel := range snapshot.Vessels {
+		if vessel.Telemetry.Reserve != .92 || vessel.Telemetry.ProjectedReserve != .88 {
+			t.Fatalf("%s reset reserve = %.2f projected %.2f", vessel.ID, vessel.Telemetry.Reserve, vessel.Telemetry.ProjectedReserve)
+		}
+	}
+}
+
 func TestReconcileOrphanedMissionVesselsClearsOnlyMissingMission(t *testing.T) {
 	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
 	m := New("", slog.Default())

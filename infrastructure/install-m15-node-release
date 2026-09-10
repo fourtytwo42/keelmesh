@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+binary=/tmp/keelmesh-node.m15
+installed_binary=/usr/local/bin/keelmesh-node
+backup=/tmp/keelmesh-node.pre-m15
+
+if [[ ${EUID} -ne 0 ]]; then
+  echo "run as root" >&2
+  exit 2
+fi
+
+[[ -s "$binary" ]] || { echo "missing artifact: $binary" >&2; exit 2; }
+[[ -s /etc/systemd/system/keelmesh-node.service.d/m14-execution.conf ]] || {
+  echo "missing full-program execution configuration" >&2
+  exit 2
+}
+grep -Eq '^Environment=KEELMESH_EXECUTION_MODE=(full_program_shadow|full_program)$' \
+  /etc/systemd/system/keelmesh-node.service.d/m14-execution.conf
+[[ "$(ip route show default | awk 'NR == 1 {print $5}')" != eth1 ]]
+ip -4 -o addr show dev eth1 | grep -q '10\.77\.0\.'
+
+cp --preserve=mode,ownership,timestamps "$installed_binary" "$backup"
+
+rollback() {
+  if [[ -s "$backup" ]]; then
+    install -o root -g root -m 0755 "$backup" "$installed_binary"
+    systemctl restart keelmesh-node || true
+    echo "M15 node installation failed; previous binary restored" >&2
+  fi
+}
+trap rollback ERR
+
+install -o root -g root -m 0755 "$binary" "$installed_binary"
+systemctl restart keelmesh-node
+
+healthy=0
+for _ in $(seq 1 40); do
+  if curl -fsS http://127.0.0.1:8080/healthz 2>/dev/null | grep -q '"version":"m15"'; then
+    healthy=1
+    break
+  fi
+  sleep 1
+done
+[[ "$healthy" == 1 ]]
+[[ "$(systemctl is-active keelmesh-node)" == active ]]
+
+trap - ERR
+sha256sum "$installed_binary"
+rm -f "$binary" "$backup"
+echo "M15_NODE_INSTALL_PASS"

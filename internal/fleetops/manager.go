@@ -1335,6 +1335,11 @@ func (m *Manager) ResetOperations(req Mutation) (domain.FleetSnapshotV2, error) 
 				vessel.Telemetry.Position = spec.Position
 				vessel.Telemetry.HeadingDeg = spec.HeadingDeg
 			}
+			// Scenario reset is the explicit clean-room boundary used by the
+			// guided demo and repeatable verification. Restore a healthy energy
+			// baseline so accelerated prior runs cannot poison the next scenario.
+			vessel.Telemetry.Reserve = .92
+			vessel.Telemetry.ProjectedReserve = .88
 			vessel.Telemetry.Mode = "station_keep"
 			vessel.Telemetry.SpeedMPS = 0
 		} else {
