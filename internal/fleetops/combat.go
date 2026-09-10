@@ -16,6 +16,12 @@ import (
 const blackwakeID = "HOSTILE-0001"
 const blackwakeMaximumSpeedMPS = 3.0
 
+const (
+	blackwakeMaximumPursuitSeconds = 35 * 60
+	blackwakeFastPursuitSeconds    = 8 * 60
+	blackwakeFastTargetSpeedRatio  = .95
+)
+
 var blackwakePatrol = []domain.GeoPointV2{
 	{-71.78, 40.93}, {-71.48, 40.88}, {-71.12, 40.92}, {-70.78, 41.02},
 	{-70.86, 41.20}, {-71.14, 41.12}, {-71.48, 41.04}, {-71.78, 40.93},
@@ -565,15 +571,25 @@ func (m *Manager) advanceBlackwakeLocked(deltaMS int64) {
 	if raider.LastDecision != nil {
 		destination = raider.LastDecision.Destination
 	}
-	if target, ok := m.combatEntities[raider.CurrentTargetID]; ok && !target.Damage.Sunk && combatPositionInBounds(target.Position) && (raider.LastDecision == nil || m.simTickMS-raider.LastDecision.WorldTickMS <= 10*60*1000) {
-		destination = target.Position
+	if target, ok := m.combatEntities[raider.CurrentTargetID]; ok && !target.Damage.Sunk && combatPositionInBounds(target.Position) {
 		distance := combatDistanceM(raider.Position, target.Position)
-		if raider.BehaviorState == "stalk" && distance > maxWeaponRange(raider.Profile.Weapons) {
-			raider.BehaviorState = "intercept"
-		}
-		if distance <= maxWeaponRange(raider.Profile.Weapons) {
+		intercept, eta, feasible, reason := m.raiderInterceptSolutionLocked(raider, target)
+		if !feasible {
+			m.recordCombatEventLocked("raider_target_abandoned", blackwakeID, target.EntityID, map[string]any{"reason": reason, "target_speed_mps": target.SpeedMPS})
+			raider.CurrentTargetID, raider.BehaviorState, raider.LastDecision = "", "roam", nil
+			destination = m.nextBlackwakeRoamDestinationLocked(&raider)
+		} else if distance <= maxWeaponRange(raider.Profile.Weapons) {
 			raider.BehaviorState = "engage"
 			m.fireBestWeaponLocked(&raider, &target, "raider-"+fmt.Sprint(raider.SpawnGeneration))
+			destination = target.Position
+		} else if raider.BehaviorState != "detect" {
+			raider.BehaviorState = "intercept"
+			destination = intercept
+			if raider.LastDecision == nil {
+				raider.LastDecision = &domain.RaiderDecisionV1{ID: fmt.Sprintf("raider-intercept-%d", m.simTickMS), TargetID: target.EntityID, WorldTickMS: m.simTickMS, Seed: raider.RandomSeed}
+			}
+			raider.LastDecision.State, raider.LastDecision.Destination = "intercept", intercept
+			raider.LastDecision.Reason = fmt.Sprintf("predicted route intercept in %.0f world seconds", eta)
 		}
 	} else if raider.CurrentTargetID != "" {
 		raider.CurrentTargetID, raider.BehaviorState = "", "roam"
@@ -584,6 +600,50 @@ func (m *Manager) advanceBlackwakeLocked(deltaMS int64) {
 	raider.StateVersion++
 	raider.UpdatedAt = time.Now().UTC()
 	m.combatEntities[blackwakeID] = raider
+}
+
+func (m *Manager) raiderInterceptSolutionLocked(raider, target domain.CombatEntityStateV1) (domain.GeoPointV2, float64, bool, string) {
+	availableSpeed := blackwakeMaximumSpeedMPS * math.Max(.35, raider.Damage.PropulsionPercent/100)
+	weaponRange := maxWeaponRange(raider.Profile.Weapons)
+	distance := combatDistanceM(raider.Position, target.Position)
+	if distance <= weaponRange {
+		return target.Position, 0, true, "already in weapon range"
+	}
+	if availableSpeed <= .1 {
+		return target.Position, 0, false, "propulsion unavailable"
+	}
+	// Ordinary contacts follow known closed tracks. Search that exact future track
+	// for the earliest reachable point instead of extrapolating through a turn.
+	intercept, eta, interceptable := target.Position, 0.0, false
+	if target.EntityKind == "contact" && target.BehaviorState != "escape" && target.BehaviorState != "rejoining_route" {
+		at := time.UnixMilli(m.simulationEpochMS + m.simTickMS).UTC()
+		for _, spec := range surfaceTraffic {
+			if spec.ID == target.EntityID {
+				for seconds := 15.0; seconds <= blackwakeMaximumPursuitSeconds; seconds += 15 {
+					candidate := surfaceContactAt(spec, at, seconds).Position
+					if combatDistanceM(raider.Position, candidate) <= availableSpeed*seconds+weaponRange {
+						intercept, eta, interceptable = candidate, seconds, true
+						break
+					}
+				}
+				break
+			}
+		}
+	}
+	if !interceptable {
+		eta, interceptable = contactInterceptSeconds(raider.Position, target.Position, target.HeadingDeg, target.SpeedMPS, availableSpeed)
+		intercept = pointAtBearing(target.Position, target.HeadingDeg, target.SpeedMPS*eta)
+	}
+	if !interceptable || eta > blackwakeMaximumPursuitSeconds {
+		return target.Position, eta, false, "no bounded intercept"
+	}
+	if target.SpeedMPS >= availableSpeed*blackwakeFastTargetSpeedRatio && eta > blackwakeFastPursuitSeconds {
+		return target.Position, eta, false, "target too fast for a useful intercept"
+	}
+	if !combatPositionInBounds(intercept) {
+		return target.Position, eta, false, "predicted intercept leaves the operating picture"
+	}
+	return intercept, eta, true, "bounded predicted intercept"
 }
 
 func (m *Manager) nextBlackwakeRoamDestinationLocked(raider *domain.CombatEntityStateV1) domain.GeoPointV2 {
@@ -685,7 +745,7 @@ func (m *Manager) advanceCommercialEscapeLocked(deltaMS int64) {
 		entity.BehaviorState = "escape"
 		away := combatBearingDeg(raider.Position, entity.Position)
 		destination := clampCombatPosition(pointAtBearing(entity.Position, away, 2500))
-		moveCombatEntity(&entity, destination, math.Min(2.8, combatContactSpeed(id)*1.15), float64(deltaMS)/1000)
+		moveCombatEntity(&entity, destination, math.Min(3.6, combatContactSpeed(id)*1.12+.1), float64(deltaMS)/1000)
 		entity.StateVersion++
 		m.combatEntities[id] = entity
 	}
@@ -701,7 +761,11 @@ func (m *Manager) selectRaiderTargetLocked(raider domain.CombatEntityStateV1) st
 		if distance > 26000 {
 			continue
 		}
-		score := distance + target.Profile.HullMaximum*18
+		_, eta, feasible, _ := m.raiderInterceptSolutionLocked(raider, target)
+		if !feasible {
+			continue
+		}
+		score := eta*blackwakeMaximumSpeedMPS + target.Profile.HullMaximum*18 + target.SpeedMPS*900
 		if len(target.Profile.Weapons) == 0 {
 			score -= 9000
 		} else {
@@ -1146,7 +1210,7 @@ func combatBearingDeg(a, b domain.GeoPointV2) float64 {
 func combatContactSpeed(id string) float64 {
 	for _, spec := range surfaceTraffic {
 		if spec.ID == id {
-			return spec.SpeedMPS
+			return surfaceTrafficSpeedMPS(spec)
 		}
 	}
 	return 1.5

@@ -131,6 +131,40 @@ func TestBlackwakeMovementIsContinuousAtTopSpeed(t *testing.T) {
 	}
 }
 
+func TestBlackwakeChoosesReachablePredictedIntercept(t *testing.T) {
+	m := New("", slog.Default())
+	m.mu.Lock()
+	raider := m.combatEntities[blackwakeID]
+	raider.Position = domain.GeoPointV2{-71.50, 40.90}
+	for id, entity := range m.combatEntities {
+		if id != blackwakeID {
+			entity.Damage.Sunk = true
+			m.combatEntities[id] = entity
+		}
+	}
+	slowPosition := pointAtBearing(raider.Position, 90, 2200)
+	fastPosition := pointAtBearing(raider.Position, 90, 1800)
+	slow := newCombatEntity("slow-contact", "SLOW", "Catchable", "contact", slowPosition, domain.CombatProfileV1{EntityID: "slow-contact", Class: "trawler", HullMaximum: 40, Hostility: "neutral"}, 1)
+	slow.HeadingDeg, slow.SpeedMPS = 90, 1.3
+	fast := newCombatEntity("fast-contact", "FAST", "Too Fast", "contact", fastPosition, domain.CombatProfileV1{EntityID: "fast-contact", Class: "patrol", HullMaximum: 40, Hostility: "neutral"}, 2)
+	fast.HeadingDeg, fast.SpeedMPS = 90, 3.4
+	m.combatEntities[slow.EntityID], m.combatEntities[fast.EntityID] = slow, fast
+
+	if selected := m.selectRaiderTargetLocked(raider); selected != slow.EntityID {
+		m.mu.Unlock()
+		t.Fatalf("Blackwake selected %q instead of the catchable target", selected)
+	}
+	intercept, eta, feasible, reason := m.raiderInterceptSolutionLocked(raider, slow)
+	_, _, fastFeasible, _ := m.raiderInterceptSolutionLocked(raider, fast)
+	m.mu.Unlock()
+	if !feasible || eta <= 0 || combatDistanceM(intercept, slow.Position) < 100 {
+		t.Fatalf("Blackwake did not lead the catchable target: intercept=%v eta=%.1f feasible=%v reason=%s", intercept, eta, feasible, reason)
+	}
+	if fastFeasible {
+		t.Fatal("Blackwake treated a faster target escaping on the same bearing as catchable")
+	}
+}
+
 func TestMissionEngagementAutoArmsOnlyAssignedParticipants(t *testing.T) {
 	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
 	m := New("", slog.Default())

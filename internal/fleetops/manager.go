@@ -221,6 +221,27 @@ type surfaceTrafficSpec struct {
 	Route                                                                    []domain.GeoPointV2
 }
 
+// The underlying tracks remain deterministic, but traffic intentionally spans
+// slow working craft through fast ferries and patrol vessels. Blackwake can
+// overtake most commercial traffic, not every contact; every controlled class
+// retains a positive top-speed margin over the fastest simulated NPC.
+var surfaceTrafficBalancedSpeedMPS = map[string]float64{
+	"surface-01": 2.3, "surface-02": 3.2, "surface-03": 1.9, "surface-04": 2.2,
+	"surface-05": 3.3, "surface-06": 2.9, "surface-07": 1.3, "surface-08": 1.0,
+	"surface-09": 3.4, "surface-10": 2.7, "surface-11": 1.7, "surface-12": 1.6,
+	"surface-17": 3.1, "surface-18": 3.3, "surface-19": 2.0, "surface-20": 2.4,
+	"surface-21": 3.2, "surface-22": 3.4, "surface-23": 3.0, "surface-24": 1.8,
+	"surface-25": 2.6, "surface-26": 3.3, "surface-27": 2.5, "surface-28": 2.1,
+	"surface-29": 3.1, "surface-30": 3.4, "surface-31": 1.9, "surface-32": 2.9,
+}
+
+func surfaceTrafficSpeedMPS(spec surfaceTrafficSpec) float64 {
+	if speed, ok := surfaceTrafficBalancedSpeedMPS[spec.ID]; ok {
+		return speed
+	}
+	return spec.SpeedMPS
+}
+
 var surfaceTraffic = []surfaceTrafficSpec{
 	// Moving contacts use explicit closed circuits. Every leg is validated against
 	// the packaged Natural Earth shoreline, including the final return leg.
@@ -274,7 +295,8 @@ func surfaceContactAt(spec surfaceTrafficSpec, at time.Time, offsetSeconds float
 	if len(spec.Route) == 0 {
 		return domain.SurfaceContactV2{}
 	}
-	if spec.SpeedMPS <= 0 || len(spec.Route) == 1 {
+	speedMPS := surfaceTrafficSpeedMPS(spec)
+	if speedMPS <= 0 || len(spec.Route) == 1 {
 		return domain.SurfaceContactV2{ID: spec.ID, BoatID: spec.BoatID, Name: spec.Name, Callsign: spec.Callsign, Class: spec.Class, Activity: spec.Activity, ColorName: spec.ColorName, Color: spec.Color, Position: spec.Route[0], HeadingDeg: 0, SpeedMPS: 0, SpeedKnots: 0, LengthM: spec.LengthM, DraftM: spec.DraftM, NavigationState: "at anchor", RouteName: spec.RouteName, Route: clonePoints(spec.Route), Looping: false, UpdatedAt: at.UTC()}
 	}
 	lengths, total := make([]float64, len(spec.Route)), 0.0
@@ -283,7 +305,7 @@ func surfaceContactAt(spec surfaceTrafficSpec, at time.Time, offsetSeconds float
 		lengths[i] = routeDistance([]domain.GeoPointV2{spec.Route[i], spec.Route[next]}) * 1000
 		total += lengths[i]
 	}
-	distance := math.Mod(float64(at.Unix())*spec.SpeedMPS+offsetSeconds*spec.SpeedMPS+surfaceTrafficPhaseM(spec.ID), total)
+	distance := math.Mod(float64(at.Unix())*speedMPS+offsetSeconds*speedMPS+surfaceTrafficPhaseM(spec.ID), total)
 	segment := 0
 	for segment < len(lengths)-1 && distance > lengths[segment] {
 		distance -= lengths[segment]
@@ -297,7 +319,7 @@ func surfaceContactAt(spec surfaceTrafficSpec, at time.Time, offsetSeconds float
 	a, b := spec.Route[segment], spec.Route[next]
 	position := domain.GeoPointV2{a[0] + (b[0]-a[0])*fraction, a[1] + (b[1]-a[1])*fraction}
 	heading := math.Mod(math.Atan2((b[0]-a[0])*math.Cos(position[1]*math.Pi/180), b[1]-a[1])*180/math.Pi+360, 360)
-	return domain.SurfaceContactV2{ID: spec.ID, BoatID: spec.BoatID, Name: spec.Name, Callsign: spec.Callsign, Class: spec.Class, Activity: spec.Activity, ColorName: spec.ColorName, Color: spec.Color, Position: position, HeadingDeg: heading, SpeedMPS: spec.SpeedMPS, SpeedKnots: spec.SpeedMPS * 1.94384, LengthM: spec.LengthM, DraftM: spec.DraftM, NavigationState: "under way using engine", RouteName: spec.RouteName, Route: clonePoints(spec.Route), Looping: true, UpdatedAt: at.UTC()}
+	return domain.SurfaceContactV2{ID: spec.ID, BoatID: spec.BoatID, Name: spec.Name, Callsign: spec.Callsign, Class: spec.Class, Activity: spec.Activity, ColorName: spec.ColorName, Color: spec.Color, Position: position, HeadingDeg: heading, SpeedMPS: speedMPS, SpeedKnots: speedMPS * 1.94384, LengthM: spec.LengthM, DraftM: spec.DraftM, NavigationState: "under way using engine", RouteName: spec.RouteName, Route: clonePoints(spec.Route), Looping: true, UpdatedAt: at.UTC()}
 }
 
 func surfaceContactsAt(at time.Time) []domain.SurfaceContactV2 {
@@ -379,11 +401,11 @@ func (m *Manager) Run(ctx context.Context) {
 func classFor(slot int) domain.VesselClassV2 {
 	switch {
 	case slot < 3:
-		return domain.VesselClassV2{ID: "kestrel", Name: "Kestrel", Role: "agile scout", MaxSpeedMPS: 3.4, MinimumReserve: .22, EnduranceHours: 5.7, NominalRangeNM: 20, BatteryCapacityKWH: 18, SolarPeakKW: 4}
+		return domain.VesselClassV2{ID: "kestrel", Name: "Kestrel", Role: "agile scout", MaxSpeedMPS: 4.1, MinimumReserve: .22, EnduranceHours: 5.7, NominalRangeNM: 20, BatteryCapacityKWH: 18, SolarPeakKW: 4}
 	case slot < 5:
-		return domain.VesselClassV2{ID: "mariner", Name: "Mariner", Role: "general-purpose platform", MaxSpeedMPS: 3.2, MinimumReserve: .25, EnduranceHours: 8.6, NominalRangeNM: 30, BatteryCapacityKWH: 40, SolarPeakKW: 9}
+		return domain.VesselClassV2{ID: "mariner", Name: "Mariner", Role: "general-purpose platform", MaxSpeedMPS: 3.8, MinimumReserve: .25, EnduranceHours: 8.6, NominalRangeNM: 30, BatteryCapacityKWH: 40, SolarPeakKW: 9}
 	default:
-		return domain.VesselClassV2{ID: "atlas", Name: "Atlas", Role: "endurance, support, and communications relay", MaxSpeedMPS: 3.0, MinimumReserve: .30, EnduranceHours: 12.9, NominalRangeNM: 45, BatteryCapacityKWH: 90, SolarPeakKW: 20, CommunicationsRole: true}
+		return domain.VesselClassV2{ID: "atlas", Name: "Atlas", Role: "endurance, support, and communications relay", MaxSpeedMPS: 3.6, MinimumReserve: .30, EnduranceHours: 12.9, NominalRangeNM: 45, BatteryCapacityKWH: 90, SolarPeakKW: 20, CommunicationsRole: true}
 	}
 }
 

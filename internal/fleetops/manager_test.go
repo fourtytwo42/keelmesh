@@ -1434,6 +1434,7 @@ func TestSurfaceTrafficHasStableIdentityAndProgrammedTracks(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	moving, anchored := 0, 0
+	blackwakeCatchable, blackwakeTooFast := 0, 0
 	west, east, south := 0, 0, 0
 	minLongitude, maxLongitude := 180.0, -180.0
 	for i := range first {
@@ -1449,6 +1450,11 @@ func TestSurfaceTrafficHasStableIdentityAndProgrammedTracks(t *testing.T) {
 			continue
 		}
 		moving++
+		if first[i].SpeedMPS < blackwakeMaximumSpeedMPS {
+			blackwakeCatchable++
+		} else {
+			blackwakeTooFast++
+		}
 		minLongitude = math.Min(minLongitude, first[i].Position[0])
 		maxLongitude = math.Max(maxLongitude, first[i].Position[0])
 		if first[i].Position[0] < -71.65 {
@@ -1460,7 +1466,7 @@ func TestSurfaceTrafficHasStableIdentityAndProgrammedTracks(t *testing.T) {
 		if first[i].Position[1] < 41.0 {
 			south++
 		}
-		if first[i].SpeedMPS > 2.8 || first[i].Position == second[i].Position || len(first[i].Route) < 4 || !first[i].Looping {
+		if first[i].SpeedMPS > 3.4 || first[i].Position == second[i].Position || len(first[i].Route) < 4 || !first[i].Looping {
 			t.Fatalf("moving contact exceeded its speed envelope or stopped looping: %#v", first[i])
 		}
 		if first[i].Route[0] != first[i].Route[len(first[i].Route)-1] {
@@ -1484,15 +1490,18 @@ func TestSurfaceTrafficHasStableIdentityAndProgrammedTracks(t *testing.T) {
 		spec := surfaceTraffic[i]
 		totalM := routeDistance(spec.Route) * 1000
 		baseM := surfaceTrafficPhaseM(spec.ID)
-		wrapOffset := (totalM - math.Mod(baseM, totalM)) / spec.SpeedMPS
+		wrapOffset := (totalM - math.Mod(baseM, totalM)) / first[i].SpeedMPS
 		before := surfaceContactAt(spec, time.Unix(0, 0), wrapOffset-.5)
 		after := surfaceContactAt(spec, time.Unix(0, 0), wrapOffset+.5)
-		if jumpM := routeDistance([]domain.GeoPointV2{before.Position, after.Position}) * 1000; jumpM > spec.SpeedMPS*1.05 {
+		if jumpM := routeDistance([]domain.GeoPointV2{before.Position, after.Position}) * 1000; jumpM > first[i].SpeedMPS*1.05 {
 			t.Fatalf("surface contact teleported at loop boundary: %s jumped %.2f m", first[i].BoatID, jumpM)
 		}
 	}
 	if moving != 28 || anchored != 4 {
 		t.Fatalf("expected 28 underway and 4 anchored contacts, got %d and %d", moving, anchored)
+	}
+	if blackwakeCatchable < 16 || blackwakeTooFast < 6 {
+		t.Fatalf("traffic does not expose meaningful pursuit choices: catchable=%d too-fast=%d", blackwakeCatchable, blackwakeTooFast)
 	}
 	if west < 3 || east < 3 || south < 6 || maxLongitude-minLongitude < 1.0 {
 		t.Fatalf("surface traffic is not dispersed across the offshore chart: west=%d east=%d south=%d longitude span=%.3f", west, east, south, maxLongitude-minLongitude)
