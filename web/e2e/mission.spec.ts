@@ -209,11 +209,11 @@ test("new mission opens as an empty planning workspace and accepts assets afterw
 
 test("fictional surface traffic moves on stable identified routes", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText(/12 underway · 4 anchored contacts/)).toBeVisible();
+  await expect(page.getByText(/28 underway · 4 anchored contacts/)).toBeVisible();
   const first = await (await page.request.get("/api/v2/fleet")).json();
-  expect(first.surface_contacts).toHaveLength(16);
-  expect(new Set(first.surface_contacts.map((contact: { boat_id: string }) => contact.boat_id)).size).toBe(16);
-  expect(first.surface_contacts.filter((contact: { speed_mps: number }) => contact.speed_mps > 0)).toHaveLength(12);
+  expect(first.surface_contacts).toHaveLength(32);
+  expect(new Set(first.surface_contacts.map((contact: { boat_id: string }) => contact.boat_id)).size).toBe(32);
+  expect(first.surface_contacts.filter((contact: { speed_mps: number }) => contact.speed_mps > 0)).toHaveLength(28);
   expect(first.surface_contacts.filter((contact: { speed_mps: number }) => contact.speed_mps === 0)).toHaveLength(4);
   expect(Math.max(...first.surface_contacts.map((contact: { speed_mps: number }) => contact.speed_mps))).toBeLessThanOrEqual(2.8);
   const contact = await (await page.request.get(`/api/v2/surface-contacts/${first.surface_contacts[0].id}`)).json();

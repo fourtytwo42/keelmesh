@@ -662,11 +662,12 @@ export function OperationsMap({
   useEffect(() => {
     if (!host.current || mapRef.current) return;
     let disposed = false;
+    const initialZoom = host.current.clientWidth < 700 ? 7.25 : host.current.clientWidth < 1100 ? 7.75 : 8.25;
     const map = new maplibregl.Map({
       container: host.current,
       style,
-      center: [-71.34, 41.35],
-      zoom: 9.1,
+      center: [-71.31, 41.12],
+      zoom: initialZoom,
       pitch: 24,
       bearing: -8,
       maxPitch: 60,
@@ -1044,7 +1045,7 @@ export function OperationsMap({
           "line-color": ["get", "color"],
           "line-width": 1,
           "line-dasharray": [2, 5],
-          "line-opacity": 0.22,
+          "line-opacity": ["interpolate", ["linear"], ["zoom"], 7, 0.08, 10, 0.17, 13, 0.24],
         },
       });
       map.addSource("surface-contacts", {

@@ -211,22 +211,50 @@ type surfaceTrafficSpec struct {
 var surfaceTraffic = []surfaceTrafficSpec{
 	// Moving contacts use explicit closed circuits. Every leg is validated against
 	// the packaged Natural Earth shoreline, including the final return leg.
-	{"surface-01", "NPC-4101", "MV Copper Horizon", "COPPER HORIZON", "container", "container service · New York to Boston", "red", "#ef6a62", "Atlantic coastwise circuit", 2.4, 216, 10.8, []domain.GeoPointV2{{-71.59, 41.10}, {-71.42, 41.11}, {-71.18, 41.14}, {-71.10, 41.20}, {-71.14, 41.23}, {-71.36, 41.18}, {-71.56, 41.14}, {-71.59, 41.10}}},
-	{"surface-02", "NPC-4102", "MV Atlantic Beacon", "ATLANTIC BEACON", "container", "eastbound container service", "orange", "#ed8b47", "Rhode Island Sound circuit", 2.6, 248, 12.1, []domain.GeoPointV2{{-71.58, 41.25}, {-71.36, 41.24}, {-71.14, 41.27}, {-71.10, 41.32}, {-71.14, 41.34}, {-71.36, 41.29}, {-71.55, 41.28}, {-71.58, 41.25}}},
-	{"surface-03", "NPC-4103", "MT Resolute Tide", "RESOLUTE TIDE", "tanker", "coastal product tanker", "yellow", "#e3c85a", "Point Judith tanker circuit", 2.1, 184, 9.4, []domain.GeoPointV2{{-71.58, 41.27}, {-71.50, 41.29}, {-71.43, 41.30}, {-71.38, 41.29}, {-71.43, 41.27}, {-71.51, 41.26}, {-71.58, 41.27}}},
-	{"surface-04", "NPC-4104", "MT Silver Current", "SILVER CURRENT", "tanker", "ballast transit · simulated", "lime", "#a7cf62", "Sakonnet offshore circuit", 2.0, 162, 8.7, []domain.GeoPointV2{{-71.12, 41.18}, {-71.08, 41.28}, {-71.10, 41.38}, {-71.14, 41.46}, {-71.18, 41.43}, {-71.15, 41.30}, {-71.12, 41.18}}},
+	{"surface-01", "NPC-4101", "MV Copper Horizon", "COPPER HORIZON", "container", "container service · New York to Boston", "red", "#ef6a62", "Atlantic coastwise circuit", 2.4, 216, 10.8, []domain.GeoPointV2{{-71.95, 40.92}, {-71.60, 40.90}, {-71.15, 40.93}, {-70.75, 41.00}, {-70.60, 41.08}, {-70.82, 40.91}, {-71.35, 40.86}, {-71.80, 40.87}, {-71.95, 40.92}}},
+	{"surface-02", "NPC-4102", "MV Atlantic Beacon", "ATLANTIC BEACON", "container", "eastbound container service", "orange", "#ed8b47", "Rhode Island Sound circuit", 2.6, 248, 12.1, []domain.GeoPointV2{{-71.72, 41.02}, {-71.40, 41.04}, {-71.08, 41.08}, {-70.78, 41.14}, {-70.62, 41.22}, {-70.84, 41.09}, {-71.20, 41.00}, {-71.55, 40.98}, {-71.72, 41.02}}},
+	{"surface-03", "NPC-4103", "MT Resolute Tide", "RESOLUTE TIDE", "tanker", "coastal product tanker", "yellow", "#e3c85a", "Point Judith tanker circuit", 2.1, 184, 9.4, []domain.GeoPointV2{{-71.92, 40.96}, {-71.68, 40.94}, {-71.42, 40.98}, {-71.20, 41.05}, {-71.36, 41.12}, {-71.62, 41.08}, {-71.84, 41.04}, {-71.92, 40.96}}},
+	{"surface-04", "NPC-4104", "MT Silver Current", "SILVER CURRENT", "tanker", "ballast transit · simulated", "lime", "#a7cf62", "Sakonnet offshore circuit", 2.0, 162, 8.7, []domain.GeoPointV2{{-71.16, 41.12}, {-70.98, 41.14}, {-70.78, 41.18}, {-70.62, 41.22}, {-70.70, 41.10}, {-70.90, 41.05}, {-71.08, 41.08}, {-71.16, 41.12}}},
 	{"surface-05", "NPC-4105", "MV Bay Courier", "BAY COURIER", "ferry", "scheduled passenger crossing", "green", "#64c982", "Newport–Block Island ferry circuit", 2.8, 61, 3.2, []domain.GeoPointV2{{-71.38, 41.44}, {-71.40, 41.40}, {-71.44, 41.33}, {-71.50, 41.27}, {-71.55, 41.24}, {-71.53, 41.26}, {-71.46, 41.32}, {-71.42, 41.39}, {-71.39, 41.435}, {-71.38, 41.44}}},
 	{"surface-06", "NPC-4106", "MV Island Runner", "ISLAND RUNNER", "ferry", "vehicle and passenger ferry", "teal", "#55c6b0", "Point Judith–Block Island ferry circuit", 2.7, 72, 3.6, []domain.GeoPointV2{{-71.49, 41.35}, {-71.51, 41.30}, {-71.55, 41.25}, {-71.59, 41.235}, {-71.56, 41.245}, {-71.52, 41.30}, {-71.49, 41.35}}},
 	{"surface-07", "NPC-4107", "FV North Star", "NORTH STAR", "trawler", "commercial trawling pattern", "cyan", "#5fc8dd", "Block Island offshore fishing circuit", 1.4, 28, 2.8, []domain.GeoPointV2{{-71.58, 41.245}, {-71.53, 41.225}, {-71.515, 41.17}, {-71.53, 41.13}, {-71.58, 41.12}, {-71.50, 41.11}, {-71.47, 41.18}, {-71.50, 41.24}, {-71.58, 41.245}}},
 	{"surface-08", "NPC-4108", "FV Sea Robin", "SEA ROBIN", "trawler", "gear retrieval and slow transit", "blue", "#67aee8", "Rhode Island Sound fishing circuit", 1.2, 24, 2.4, []domain.GeoPointV2{{-71.28, 41.16}, {-71.20, 41.19}, {-71.16, 41.25}, {-71.25, 41.28}, {-71.31, 41.23}, {-71.32, 41.18}, {-71.28, 41.16}}},
-	{"surface-09", "NPC-4109", "NS Vigilant", "VIGILANT", "patrol", "fictional naval training patrol", "indigo", "#7888df", "Offshore security circuit", 2.5, 94, 4.6, []domain.GeoPointV2{{-71.12, 41.16}, {-71.10, 41.24}, {-71.11, 41.38}, {-71.13, 41.42}, {-71.16, 41.30}, {-71.17, 41.20}, {-71.12, 41.16}}},
-	{"surface-10", "NPC-4110", "NS Sentinel", "SENTINEL", "patrol", "fictional readiness exercise", "violet", "#b68bdc", "Narragansett outer patrol circuit", 2.4, 82, 4.1, []domain.GeoPointV2{{-71.46, 41.18}, {-71.36, 41.22}, {-71.28, 41.30}, {-71.36, 41.35}, {-71.48, 41.29}, {-71.50, 41.23}, {-71.46, 41.18}}},
+	{"surface-09", "NPC-4109", "NS Vigilant", "VIGILANT", "patrol", "fictional naval training patrol", "indigo", "#7888df", "Offshore security circuit", 2.5, 94, 4.6, []domain.GeoPointV2{{-71.30, 41.08}, {-71.08, 41.10}, {-70.86, 41.14}, {-70.66, 41.18}, {-70.60, 41.24}, {-70.78, 41.20}, {-70.98, 41.16}, {-71.20, 41.13}, {-71.30, 41.08}}},
+	{"surface-10", "NPC-4110", "NS Sentinel", "SENTINEL", "patrol", "fictional readiness exercise", "violet", "#b68bdc", "Narragansett outer patrol circuit", 2.4, 82, 4.1, []domain.GeoPointV2{{-71.82, 40.92}, {-71.58, 40.96}, {-71.34, 41.02}, {-71.18, 41.10}, {-71.28, 41.16}, {-71.50, 41.12}, {-71.68, 41.04}, {-71.84, 40.98}, {-71.82, 40.92}}},
 	{"surface-11", "NPC-4111", "SV Wayfarer", "WAYFARER", "yacht", "recreational coastal passage", "magenta", "#df78bc", "Newport sailing circuit", 1.7, 18, 2.1, []domain.GeoPointV2{{-71.365, 41.455}, {-71.38, 41.43}, {-71.41, 41.39}, {-71.43, 41.36}, {-71.45, 41.39}, {-71.42, 41.43}, {-71.385, 41.45}, {-71.365, 41.455}}},
 	{"surface-12", "NPC-4112", "SV Blue Finch", "BLUE FINCH", "yacht", "recreational island passage", "white", "#e9e7dc", "Jamestown–Block Island circuit", 1.6, 15, 1.8, []domain.GeoPointV2{{-71.405, 41.45}, {-71.43, 41.37}, {-71.49, 41.28}, {-71.56, 41.24}, {-71.53, 41.26}, {-71.46, 41.34}, {-71.41, 41.44}, {-71.405, 41.45}}},
 	{"surface-13", "NPC-4113", "FV Harbor Light", "HARBOR LIGHT", "trawler", "anchored · gear and deck maintenance", "bronze", "#bb8758", "Point Judith anchorage", 0, 31, 3.0, []domain.GeoPointV2{{-71.486, 41.348}}},
 	{"surface-14", "NPC-4114", "SV Quiet Wake", "QUIET WAKE", "yacht", "anchored · overnight coastal stop", "rose", "#d58c91", "Dutch Harbor anchorage", 0, 19, 2.2, []domain.GeoPointV2{{-71.407, 41.503}}},
 	{"surface-15", "NPC-4115", "MV Breakwater Tender", "BREAKWATER TENDER", "patrol", "anchored · fictional harbor-service standby", "steel", "#8ea6ad", "Newport outer anchorage", 0, 48, 3.5, []domain.GeoPointV2{{-71.329, 41.472}}},
 	{"surface-16", "NPC-4116", "MT Safe Haven", "SAFE HAVEN", "tanker", "anchored · simulated weather hold", "aqua", "#63b9b4", "Rhode Island Sound anchorage", 0, 138, 8.2, []domain.GeoPointV2{{-71.275, 41.285}}},
+	// Offshore through traffic traverses the full chart, exits the local Rhode
+	// Island picture, and returns only through a separate deep-water leg.
+	{"surface-17", "NPC-4117", "MV Granite Passage", "GRANITE PASSAGE", "container", "eastbound through traffic · transatlantic feeder", "amber", "#f0a94a", "Southern coastwise through circuit", 2.7, 294, 12.7, []domain.GeoPointV2{{-72.08, 40.80}, {-71.70, 40.79}, {-71.20, 40.82}, {-70.72, 40.86}, {-70.57, 40.90}, {-70.70, 40.77}, {-71.30, 40.76}, {-71.90, 40.77}, {-72.08, 40.80}}},
+	{"surface-18", "NPC-4118", "MV Northwind Trader", "NORTHWIND TRADER", "container", "westbound through traffic · coastwise cargo", "coral", "#e87962", "Continental shelf westbound circuit", 2.8, 261, 11.9, []domain.GeoPointV2{{-70.57, 40.96}, {-70.90, 40.93}, {-71.35, 40.92}, {-71.75, 40.90}, {-72.06, 40.88}, {-71.85, 40.82}, {-71.25, 40.84}, {-70.70, 40.89}, {-70.57, 40.96}}},
+	{"surface-19", "NPC-4119", "MT Ocean Reliance", "OCEAN RELIANCE", "tanker", "through traffic · loaded crude carrier", "gold", "#d8b74f", "Deepwater tanker circuit alpha", 2.2, 274, 15.2, []domain.GeoPointV2{{-72.05, 40.94}, {-71.72, 40.92}, {-71.28, 40.95}, {-70.88, 41.00}, {-70.58, 41.05}, {-70.72, 40.91}, {-71.25, 40.87}, {-71.82, 40.88}, {-72.05, 40.94}}},
+	{"surface-20", "NPC-4120", "MT Meridian Star", "MERIDIAN STAR", "tanker", "through traffic · refined-product carrier", "chartreuse", "#a6c95a", "Deepwater tanker circuit bravo", 2.3, 238, 13.6, []domain.GeoPointV2{{-70.58, 41.10}, {-70.88, 41.06}, {-71.25, 41.02}, {-71.68, 41.00}, {-72.04, 40.98}, {-71.82, 40.91}, {-71.28, 40.94}, {-70.75, 41.01}, {-70.58, 41.10}}},
+	{"surface-21", "NPC-4121", "USNS Resolute", "RESOLUTE", "patrol", "through traffic · fictional naval logistics transit", "slate", "#8fa6bf", "Naval logistics passage", 2.8, 210, 7.8, []domain.GeoPointV2{{-72.04, 40.84}, {-71.74, 40.88}, {-71.42, 40.92}, {-71.08, 40.96}, {-70.72, 41.00}, {-70.58, 41.04}, {-70.82, 40.90}, {-71.30, 40.85}, {-71.78, 40.81}, {-72.04, 40.84}}},
+	{"surface-22", "NPC-4122", "NS Guardian", "GUARDIAN", "patrol", "through traffic · fictional destroyer passage", "silver", "#b1b8c5", "Southern naval transit circuit", 2.8, 155, 6.9, []domain.GeoPointV2{{-70.58, 40.82}, {-70.88, 40.85}, {-71.22, 40.89}, {-71.60, 40.92}, {-72.02, 40.95}, {-71.78, 40.87}, {-71.32, 40.81}, {-70.82, 40.78}, {-70.58, 40.82}}},
+	{"surface-23", "NPC-4123", "MV Atlantic Crown", "ATLANTIC CROWN", "container", "eastbound through traffic · container service", "vermilion", "#e15f4f", "Outer eastbound shipping circuit", 2.7, 305, 13.1, []domain.GeoPointV2{{-72.04, 40.96}, {-71.75, 41.00}, {-71.42, 41.02}, {-71.08, 41.05}, {-70.72, 41.10}, {-70.57, 41.14}, {-70.76, 41.02}, {-71.20, 40.98}, {-71.70, 40.94}, {-72.04, 40.96}}},
+	{"surface-24", "NPC-4124", "MT Blackwater Dawn", "BLACKWATER DAWN", "tanker", "westbound through traffic · ballast passage", "olive", "#9fa35a", "Outer westbound tanker circuit", 2.1, 249, 14.4, []domain.GeoPointV2{{-70.57, 41.18}, {-70.82, 41.14}, {-71.14, 41.11}, {-71.45, 41.08}, {-71.78, 41.00}, {-72.02, 40.96}, {-71.72, 40.92}, {-71.20, 41.01}, {-70.75, 41.09}, {-70.57, 41.18}}},
+	{"surface-25", "NPC-4125", "MV Commonwealth Carrier", "COMMONWEALTH CARRIER", "container", "through traffic · regional freight service", "sky", "#79bce8", "Southern freight circuit", 2.6, 232, 10.9, []domain.GeoPointV2{{-72.02, 40.78}, {-71.62, 40.82}, {-71.18, 40.88}, {-70.78, 40.94}, {-70.57, 41.00}, {-70.82, 40.85}, {-71.35, 40.79}, {-71.82, 40.76}, {-72.02, 40.78}}},
+	{"surface-26", "NPC-4126", "NS Trident Watch", "TRIDENT WATCH", "patrol", "through traffic · fictional naval readiness patrol", "lavender", "#ae91d8", "Outer readiness patrol circuit", 2.8, 132, 5.9, []domain.GeoPointV2{{-71.98, 40.96}, {-71.72, 41.00}, {-71.42, 41.06}, {-71.18, 41.06}, {-70.92, 41.10}, {-70.68, 41.18}, {-70.58, 41.26}, {-70.82, 41.18}, {-71.12, 41.13}, {-71.48, 41.10}, {-71.78, 41.02}, {-71.98, 40.96}}},
+	{"surface-27", "NPC-4127", "MV Eastern Venture", "EASTERN VENTURE", "container", "westbound through traffic · merchant cargo", "copper", "#c98254", "Merchant passage circuit", 2.5, 198, 9.6, []domain.GeoPointV2{{-70.58, 40.88}, {-70.94, 40.90}, {-71.32, 40.95}, {-71.72, 40.98}, {-72.04, 40.96}, {-71.80, 40.90}, {-71.36, 40.86}, {-70.90, 40.84}, {-70.58, 40.88}}},
+	{"surface-28", "NPC-4128", "MT Liberty Sound", "LIBERTY SOUND", "tanker", "eastbound through traffic · coastal oil service", "crimson", "#c95158", "Coastal oil transit circuit", 2.2, 221, 12.8, []domain.GeoPointV2{{-72.04, 40.90}, {-71.68, 40.96}, {-71.30, 41.00}, {-70.92, 41.04}, {-70.58, 41.08}, {-70.78, 40.97}, {-71.22, 40.92}, {-71.68, 40.86}, {-72.04, 40.90}}},
+	{"surface-29", "NPC-4129", "MV Cape Meridian", "CAPE MERIDIAN", "container", "through traffic · ocean feeder service", "ice", "#b7d9e7", "Shelf-edge feeder circuit", 2.7, 276, 12.2, []domain.GeoPointV2{{-72.06, 40.82}, {-71.74, 40.84}, {-71.38, 40.86}, {-70.98, 40.90}, {-70.62, 40.94}, {-70.58, 40.98}, {-70.90, 40.86}, {-71.42, 40.80}, {-71.90, 40.78}, {-72.06, 40.82}}},
+	{"surface-30", "NPC-4130", "NS Osprey Shield", "OSPREY SHIELD", "patrol", "through traffic · fictional offshore security sweep", "navy", "#5f79b8", "Eastern security patrol circuit", 2.8, 118, 5.2, []domain.GeoPointV2{{-70.60, 41.16}, {-70.72, 41.10}, {-70.92, 41.06}, {-71.12, 41.10}, {-71.22, 41.16}, {-71.14, 41.22}, {-70.98, 41.24}, {-70.78, 41.22}, {-70.62, 41.20}, {-70.60, 41.16}}},
+	{"surface-31", "NPC-4131", "MT Harbor Reliant", "HARBOR RELIANT", "tanker", "through traffic · petroleum carrier", "maroon", "#a14f63", "Offshore petroleum circuit", 2.0, 191, 11.5, []domain.GeoPointV2{{-72.04, 40.94}, {-71.82, 40.96}, {-71.60, 41.00}, {-71.38, 41.05}, {-71.18, 41.10}, {-70.92, 41.16}, {-70.66, 41.20}, {-70.58, 41.24}, {-70.82, 41.12}, {-71.22, 41.06}, {-71.68, 40.98}, {-72.04, 40.94}}},
+	{"surface-32", "NPC-4132", "MV Bluewater Pioneer", "BLUEWATER PIONEER", "container", "through traffic · long-haul merchant service", "turquoise", "#55c7c0", "Bluewater merchant circuit", 2.6, 287, 12.9, []domain.GeoPointV2{{-70.58, 41.02}, {-70.84, 40.98}, {-71.18, 40.94}, {-71.54, 40.90}, {-71.90, 40.86}, {-72.06, 40.84}, {-71.82, 40.80}, {-71.34, 40.84}, {-70.88, 40.91}, {-70.58, 41.02}}},
+}
+
+func surfaceTrafficPhaseM(id string) float64 {
+	// Stable FNV-1a keeps equal-length contact IDs from sharing one phase.
+	var phase uint64 = 14695981039346656037
+	for index := 0; index < len(id); index++ {
+		phase ^= uint64(id[index])
+		phase *= 1099511628211
+	}
+	return float64(phase % 500_000)
 }
 
 func surfaceContactAt(spec surfaceTrafficSpec, at time.Time, offsetSeconds float64) domain.SurfaceContactV2 {
@@ -242,7 +270,7 @@ func surfaceContactAt(spec surfaceTrafficSpec, at time.Time, offsetSeconds float
 		lengths[i] = routeDistance([]domain.GeoPointV2{spec.Route[i], spec.Route[next]}) * 1000
 		total += lengths[i]
 	}
-	distance := math.Mod(float64(at.Unix())*spec.SpeedMPS+offsetSeconds*spec.SpeedMPS+float64(len(spec.ID))*731, total)
+	distance := math.Mod(float64(at.Unix())*spec.SpeedMPS+offsetSeconds*spec.SpeedMPS+surfaceTrafficPhaseM(spec.ID), total)
 	segment := 0
 	for segment < len(lengths)-1 && distance > lengths[segment] {
 		distance -= lengths[segment]
@@ -442,7 +470,7 @@ func clearVesselGroup(vessel *domain.VesselProfileV2) {
 }
 
 func withinMapBounds(point domain.GeoPointV2) bool {
-	return point[0] >= -71.62 && point[0] <= -71.08 && point[1] >= 41.08 && point[1] <= 41.62
+	return point[0] >= -72.1 && point[0] <= -70.55 && point[1] >= 40.75 && point[1] <= 42.05
 }
 
 func validFormation(value string) bool {
@@ -568,7 +596,7 @@ func (m *Manager) snapshotLocked() domain.FleetSnapshotV2 {
 		ms = append(ms, v)
 	}
 	sort.Slice(ms, func(i, j int) bool { return ms[i].UpdatedAt.After(ms[j].UpdatedAt) })
-	return domain.FleetSnapshotV2{SchemaVersion: 2, ExecutionMode: m.executionMode, FleetVersion: m.fleetVersion, SimulationRate: m.simulationRate, SimulationTick: m.simTickMS, GeneratedAt: now, Vessels: vs, SurfaceContacts: m.surfaceContactsLocked(), Groups: gs, Collections: cs, Missions: ms, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, float64(m.simTickMS/1000)), Map: map[string]any{"name": "Narragansett Bay & Rhode Island Sound", "center": domain.GeoPointV2{-71.34, 41.34}, "bounds": [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, "fixture": true, "navigation_warning": "Simulation only — not for navigation"}}
+	return domain.FleetSnapshotV2{SchemaVersion: 2, ExecutionMode: m.executionMode, FleetVersion: m.fleetVersion, SimulationRate: m.simulationRate, SimulationTick: m.simTickMS, GeneratedAt: now, Vessels: vs, SurfaceContacts: m.surfaceContactsLocked(), Groups: gs, Collections: cs, Missions: ms, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, float64(m.simTickMS/1000)), Map: map[string]any{"name": "Rhode Island coastal and offshore operating picture", "center": domain.GeoPointV2{-71.34, 41.34}, "bounds": [][]float64{{-72.1, 40.75}, {-70.55, 42.05}}, "fixture": true, "navigation_warning": "Simulation only — not for navigation"}}
 }
 
 func (m *Manager) SetSimulationRate(req SimulationRateRequest) (domain.FleetSnapshotV2, error) {
@@ -2046,7 +2074,7 @@ func (m *Manager) PlanningContext(draftID string) (domain.MissionPlanningContext
 			break
 		}
 	}
-	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, float64(m.simTickMS/1000)), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, GeometryOptions: geometryOptions, MapBounds: [][]float64{{-71.62, 41.08}, {-71.08, 41.62}}, FormationCurrent: mission.Formation, StrategyCount: draft.StrategyCount, Conversation: append([]domain.MissionChatMessageV2(nil), conversation...), SurfaceContacts: contacts, FollowContact: follow}, nil
+	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, float64(m.simTickMS/1000)), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, GeometryOptions: geometryOptions, MapBounds: [][]float64{{-72.1, 40.75}, {-70.55, 42.05}}, FormationCurrent: mission.Formation, StrategyCount: draft.StrategyCount, Conversation: append([]domain.MissionChatMessageV2(nil), conversation...), SurfaceContacts: contacts, FollowContact: follow}, nil
 }
 
 // ApplyAdvisor validates and freezes advisory strategies into the immutable

@@ -1397,11 +1397,13 @@ func TestSurfaceTrafficHasStableIdentityAndProgrammedTracks(t *testing.T) {
 	first := surfaceContactsAt(time.Unix(1_800_000_000, 0))
 	second := surfaceContactsAt(time.Unix(1_800_000_030, 0))
 	land := testLandPolygons(t)
-	if len(first) != 16 || len(second) != 16 {
-		t.Fatalf("expected sixteen surface contacts, got %d and %d", len(first), len(second))
+	if len(first) != 32 || len(second) != 32 {
+		t.Fatalf("expected thirty-two surface contacts, got %d and %d", len(first), len(second))
 	}
 	seen := map[string]bool{}
 	moving, anchored := 0, 0
+	west, east, south := 0, 0, 0
+	minLongitude, maxLongitude := 180.0, -180.0
 	for i := range first {
 		if first[i].ID != second[i].ID || first[i].BoatID != second[i].BoatID || seen[first[i].BoatID] {
 			t.Fatalf("surface contact identity is not stable/unique: %#v", first[i])
@@ -1415,6 +1417,17 @@ func TestSurfaceTrafficHasStableIdentityAndProgrammedTracks(t *testing.T) {
 			continue
 		}
 		moving++
+		minLongitude = math.Min(minLongitude, first[i].Position[0])
+		maxLongitude = math.Max(maxLongitude, first[i].Position[0])
+		if first[i].Position[0] < -71.65 {
+			west++
+		}
+		if first[i].Position[0] > -71.0 {
+			east++
+		}
+		if first[i].Position[1] < 41.0 {
+			south++
+		}
 		if first[i].SpeedMPS > 2.8 || first[i].Position == second[i].Position || len(first[i].Route) < 4 || !first[i].Looping {
 			t.Fatalf("moving contact exceeded its speed envelope or stopped looping: %#v", first[i])
 		}
@@ -1438,7 +1451,7 @@ func TestSurfaceTrafficHasStableIdentityAndProgrammedTracks(t *testing.T) {
 		}
 		spec := surfaceTraffic[i]
 		totalM := routeDistance(spec.Route) * 1000
-		baseM := float64(len(spec.ID)) * 731
+		baseM := surfaceTrafficPhaseM(spec.ID)
 		wrapOffset := (totalM - math.Mod(baseM, totalM)) / spec.SpeedMPS
 		before := surfaceContactAt(spec, time.Unix(0, 0), wrapOffset-.5)
 		after := surfaceContactAt(spec, time.Unix(0, 0), wrapOffset+.5)
@@ -1446,8 +1459,11 @@ func TestSurfaceTrafficHasStableIdentityAndProgrammedTracks(t *testing.T) {
 			t.Fatalf("surface contact teleported at loop boundary: %s jumped %.2f m", first[i].BoatID, jumpM)
 		}
 	}
-	if moving != 12 || anchored != 4 {
-		t.Fatalf("expected 12 underway and 4 anchored contacts, got %d and %d", moving, anchored)
+	if moving != 28 || anchored != 4 {
+		t.Fatalf("expected 28 underway and 4 anchored contacts, got %d and %d", moving, anchored)
+	}
+	if west < 3 || east < 3 || south < 6 || maxLongitude-minLongitude < 1.0 {
+		t.Fatalf("surface traffic is not dispersed across the offshore chart: west=%d east=%d south=%d longitude span=%.3f", west, east, south, maxLongitude-minLongitude)
 	}
 }
 
@@ -1476,7 +1492,7 @@ func TestFollowSurfaceContactCompilesPredictedTrack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planning.FollowContact == nil || planning.FollowContact.BoatID != "NPC-4101" || len(planning.SurfaceContacts) != 16 {
+	if planning.FollowContact == nil || planning.FollowContact.BoatID != "NPC-4101" || len(planning.SurfaceContacts) != 32 {
 		t.Fatalf("advisor context is missing bounded traffic state: %#v", planning)
 	}
 }
@@ -1584,12 +1600,20 @@ func TestExplicitFormationAndSpacingSurviveAdvisorGeneration(t *testing.T) {
 func TestControlledFleetCanOvertakeAndPlanAgainstFastestSurfaceContact(t *testing.T) {
 	m := New("", slog.Default())
 	m.simulationEpochMS = 1_700_000_000_000
+	snapshot := m.Snapshot()
+	anchor := m.vessels[snapshot.Groups[0].MemberIDs[0]].Telemetry.Position
 	fastestContact := 0.0
 	fastestID := ""
-	for _, contact := range m.Snapshot().SurfaceContacts {
-		if contact.SpeedMPS > fastestContact {
+	fastestDistance := 0.0
+	for _, contact := range snapshot.SurfaceContacts {
+		distance := geoDistanceM(anchor, contact.Position)
+		if contact.SpeedMPS > fastestContact || (contact.SpeedMPS == fastestContact && distance > fastestDistance) {
 			fastestContact, fastestID = contact.SpeedMPS, contact.ID
+			fastestDistance = distance
 		}
+	}
+	if fastestDistance < 1_000 {
+		t.Fatalf("fastest test contact is not meaningfully separated from the fleet: %.1f m", fastestDistance)
 	}
 	for _, slot := range []int{0, 3, 5} {
 		class := classFor(slot)
@@ -1598,7 +1622,6 @@ func TestControlledFleetCanOvertakeAndPlanAgainstFastestSurfaceContact(t *testin
 		}
 	}
 
-	snapshot := m.Snapshot()
 	mission, err := m.CreateMission(CreateMissionRequest{
 		Mutation:  Mutation{RequestID: "overtake-create", IdempotencyKey: "overtake-create", ExpectedVersion: snapshot.FleetVersion},
 		Name:      "Fast Contact Watch",
