@@ -64,6 +64,14 @@ func (m *Manager) flushCombatPersistence() {
 	m.writeCombatPersistenceSnapshot(snapshot, false)
 }
 
+// FlushCombatState is the process-shutdown barrier used by the core service.
+// It returns only after the final projection is durable (or its bounded write
+// attempt has failed and been logged), so main cannot exit ahead of Run's
+// asynchronous manager goroutine.
+func (m *Manager) FlushCombatState() {
+	m.flushCombatPersistence()
+}
+
 // combatPersistenceSnapshotLocked must be called while m.mu is held.
 func (m *Manager) combatPersistenceSnapshotLocked(now time.Time) combatPersistenceSnapshot {
 	entities := make([]domain.CombatEntityStateV1, 0, len(m.combatEntities))

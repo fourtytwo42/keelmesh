@@ -189,6 +189,7 @@ func main() {
 		<-ctx.Done()
 		contextWithTimeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		fleetManager.FlushCombatState()
 		if shutdownErr := server.Shutdown(contextWithTimeout); shutdownErr != nil {
 			logger.Error("graceful shutdown", "error", shutdownErr)
 		}
