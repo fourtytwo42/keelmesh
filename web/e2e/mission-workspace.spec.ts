@@ -1,16 +1,20 @@
 import { expect, test } from "@playwright/test";
 
 async function resetFleet(page: import("@playwright/test").Page) {
-  const fleet = await (await page.request.get("/api/v2/fleet")).json();
-  const key = `mission-workspace-reset-${Date.now()}-${Math.random()}`;
-  const response = await page.request.post("/api/v2/scenarios/fleet-operations:reset", {
-    data: {
-      request_id: key,
-      idempotency_key: key,
-      expected_version: fleet.fleet_version,
-    },
-  });
-  expect(response.ok()).toBeTruthy();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    const key = `mission-workspace-reset-${Date.now()}-${Math.random()}`;
+    const response = await page.request.post("/api/v2/scenarios/fleet-operations:reset", {
+      data: {
+        request_id: key,
+        idempotency_key: key,
+        expected_version: fleet.fleet_version,
+      },
+    });
+    if (response.ok()) return;
+    const body = await response.json();
+    if (body.code !== "STALE_STATE" || attempt === 2) expect(response.ok(), JSON.stringify(body)).toBeTruthy();
+  }
 }
 
 test.beforeEach(async ({ page }) => {

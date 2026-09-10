@@ -657,39 +657,53 @@ export function FleetWorkspace() {
     objectiveOverride = "",
 	showPlanner = true,
   ) {
-    const current = await api<FleetSnapshotV2>("/api/v2/fleet");
-    const group = current.groups.find(
-      (g) =>
-        g.member_ids.length === targetIDs.length &&
-        g.member_ids.every((id) => targetIDs.includes(id)),
-    );
-    const name =
-      namingMode === "operator" && group
-        ? `${group.code} · ${group.name} ${pirate ? "Voyage" : "Mission"}`
-        : "";
-    const objective = objectiveOverride.trim()
-      ? objectiveOverride.trim()
-      : namingMode === "ai"
-        ? command
-        : group
-          ? `${pirate ? "Crew" : "Operational group"} ${group.code} task`
-          : pirate
-            ? "New fleet undertaking"
-            : "New fleet task";
-    const m = await mutate(() =>
-      api<MissionWorkspaceV2>("/api/v2/missions", {
-        method: "POST",
-        body: JSON.stringify({
-          request_id: requestID("mission"),
-          idempotency_key: requestID("mission-key"),
-          expected_version: current.fleet_version,
-          name,
-          naming_mode: namingMode,
-          objective,
-          target_ids: targetIDs,
-        }),
-      }),
-    ).catch(() => null);
+    setBusy(true);
+    setError("");
+    let m: MissionWorkspaceV2 | null = null;
+    try {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const current = await api<FleetSnapshotV2>("/api/v2/fleet");
+        const group = current.groups.find(
+          (g) =>
+            g.member_ids.length === targetIDs.length &&
+            g.member_ids.every((id) => targetIDs.includes(id)),
+        );
+        const name =
+          namingMode === "operator" && group
+            ? `${group.code} · ${group.name} ${pirate ? "Voyage" : "Mission"}`
+            : "";
+        const objective = objectiveOverride.trim()
+          ? objectiveOverride.trim()
+          : namingMode === "ai"
+            ? command
+            : group
+              ? `${pirate ? "Crew" : "Operational group"} ${group.code} task`
+              : pirate
+                ? "New fleet undertaking"
+                : "New fleet task";
+        try {
+          m = await api<MissionWorkspaceV2>("/api/v2/missions", {
+            method: "POST",
+            body: JSON.stringify({
+              request_id: requestID("mission"),
+              idempotency_key: requestID("mission-key"),
+              expected_version: current.fleet_version,
+              name,
+              naming_mode: namingMode,
+              objective,
+              target_ids: targetIDs,
+            }),
+          });
+          break;
+        } catch (error) {
+          if (!(error instanceof KeelMeshError) || error.code !== "STALE_STATE" || attempt === 2) throw error;
+        }
+      }
+    } catch (error) {
+      setError(error instanceof KeelMeshError ? `${error.code}: ${error.message}` : String(error));
+    } finally {
+      setBusy(false);
+    }
     if (m) {
       await refresh();
       setActiveMissionID(m.id);
