@@ -2213,9 +2213,13 @@ export function FleetWorkspace() {
         setDemoState((value) => ({ ...value, index, title: beat.title, focus: beat.focus, status: "automating + narrating" }));
         // Start media first so the initial click grants a playback session on
         // mobile Safari/Chrome. The matching live action runs under narration.
-        const narration = playGuidedDemoAudio(beat.audio[persona], runID);
+        const narration = playGuidedDemoAudio(beat.audio[persona], runID).catch((reason) => {
+          if ((reason as Error).name === "AbortError" && demoRun.current !== runID) return;
+          throw reason;
+        });
         await performGuidedDemoAction(beat.action);
         if (demoRun.current !== runID) {
+          await resetGuidedDemo().catch(() => undefined);
           await setSimulationRate(20).catch(() => undefined);
           return;
         }
@@ -2225,6 +2229,7 @@ export function FleetWorkspace() {
       setDemoState((value) => ({ ...value, running: false, status: "complete" }));
     } catch (reason) {
       if ((reason as Error).name === "AbortError") {
+        await resetGuidedDemo().catch(() => undefined);
         await setSimulationRate(20).catch(() => undefined);
         return;
       }
