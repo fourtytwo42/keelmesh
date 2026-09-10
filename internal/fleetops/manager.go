@@ -3855,6 +3855,7 @@ func geoDistanceM(a, b domain.GeoPointV2) float64 {
 const (
 	nominalCruiseMPS     = 1.8
 	demoSolarStartSecond = 8 * 60 * 60
+	stationKeepLoadScale = .25
 )
 
 type vesselEnergyProfile struct {
@@ -3911,7 +3912,14 @@ func (m *Manager) advanceEnergy(vessel domain.VesselProfileV2, speed float64, mi
 func energyFlow(vessel domain.VesselProfileV2, speed float64, missionTick int64) (solarKW, loadKW, netKW float64) {
 	profile := energyProfile(vessel)
 	solar := profile.solarPeakKW * 1000 * solarFactor(missionTick)
-	load := profile.baseW + profile.propulsionWPerMPS3*math.Pow(math.Max(0, speed), 3)
+	baseLoad := profile.baseW
+	// Station keeping is a low-duty cycle: navigation, radios, compute, and
+	// intermittent thrust remain active without paying the full underway hotel
+	// load continuously. This especially prevents unrealistic overnight drain.
+	if speed <= .05 && strings.HasPrefix(vessel.Telemetry.Mode, "station_keep") {
+		baseLoad *= stationKeepLoadScale
+	}
+	load := baseLoad + profile.propulsionWPerMPS3*math.Pow(math.Max(0, speed), 3)
 	// Solar extends underway range, but propulsion always consumes stored
 	// energy. Without this bound the deliberately generous demo solar arrays
 	// can exceed cruise load and pin every moving vessel at 100% all day. A

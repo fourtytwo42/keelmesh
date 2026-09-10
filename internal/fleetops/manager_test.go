@@ -1890,6 +1890,29 @@ func TestNominalRangeAndDaylightSolarRecharge(t *testing.T) {
 	}
 }
 
+func TestNightStationKeepingUsesQuarterBaseLoad(t *testing.T) {
+	m := New("", slog.Default())
+	vessel := domain.VesselProfileV2{
+		Class: classFor(0),
+		Telemetry: domain.VesselTelemetryV2{
+			Reserve: 1,
+			Mode:    "station_keep",
+		},
+	}
+	nightTick := int64(16 * 60 * 60)
+	profile := energyProfile(vessel)
+	solarKW, loadKW, netKW := energyFlow(vessel, 0, nightTick)
+	wantLoadKW := profile.baseW * stationKeepLoadScale / 1000
+	if solarKW != 0 || math.Abs(loadKW-wantLoadKW) > 1e-9 || math.Abs(netKW+wantLoadKW) > 1e-9 {
+		t.Fatalf("night station-keeping flow = solar %.4f load %.4f net %.4f, want 0 %.4f %.4f", solarKW, loadKW, netKW, wantLoadKW, -wantLoadKW)
+	}
+	remaining := m.advanceEnergy(vessel, 0, nightTick, 3600)
+	wantRemaining := 1 - wantLoadKW/profile.batteryKWH
+	if math.Abs(remaining-wantRemaining) > 1e-9 {
+		t.Fatalf("night station-keeping reserve = %.8f, want %.8f", remaining, wantRemaining)
+	}
+}
+
 func TestUnassignedVesselsRechargeWithAcceleratedSimulation(t *testing.T) {
 	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
 	m := New("", slog.Default())
