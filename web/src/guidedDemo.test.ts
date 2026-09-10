@@ -8,7 +8,8 @@ describe("guided demo release contract", () => {
     expect(guidedDemoEstimatedSeconds).toBeGreaterThanOrEqual(360);
     expect(guidedDemoEstimatedSeconds).toBeLessThanOrEqual(540);
     for (const beat of guidedDemoBeats) {
-      expect(beat.audio.navy).toBe(`/assets/demo/navy/${beat.id}.mp3`);
+      const navyRevision = beat.id === "06-execution" ? "?v=20260909b" : "";
+      expect(beat.audio.navy).toBe(`/assets/demo/navy/${beat.id}.mp3${navyRevision}`);
       expect(beat.audio.pirate).toBe(`/assets/demo/pirate/${beat.id}.mp3`);
       expect(beat.transcript.navy.length).toBeGreaterThan(100);
       expect(beat.transcript.pirate.length).toBeGreaterThan(100);

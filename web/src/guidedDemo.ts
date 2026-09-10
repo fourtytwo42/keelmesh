@@ -35,8 +35,15 @@ export type GuidedDemoBeat = {
   transcript: { navy: string; pirate: string };
 };
 
-const asset = (persona: "navy" | "pirate", id: string) =>
-  `/assets/demo/${persona}/${id}.mp3`;
+const audioRevisions: Record<string, string> = {
+  "navy/06-execution": "20260909b",
+};
+
+const asset = (persona: "navy" | "pirate", id: string) => {
+  const path = `/assets/demo/${persona}/${id}.mp3`;
+  const revision = audioRevisions[`${persona}/${id}`];
+  return revision ? `${path}?v=${revision}` : path;
+};
 
 export const guidedDemoBeats: GuidedDemoBeat[] = [
   {
