@@ -88,11 +88,14 @@ async function openLocationInspection(page: import("@playwright/test").Page) {
     { x: 850, y: 650 },
     { x: 1180, y: 620 },
   ]) {
-    await canvas.dispatchEvent("contextmenu", {
-      button: 2,
-      clientX: bounds.x + Math.min(position.x, bounds.width - 4),
-      clientY: bounds.y + Math.min(position.y, bounds.height - 4),
-    });
+    const x = bounds.x + Math.min(position.x, bounds.width - 4);
+    const y = bounds.y + Math.min(position.y, bounds.height - 4);
+    const canvasIsTopmost = await page.evaluate(
+      ({ x, y }) => document.elementFromPoint(x, y)?.classList.contains("maplibregl-canvas") ?? false,
+      { x, y },
+    );
+    if (!canvasIsTopmost) continue;
+    await page.mouse.click(x, y, { button: "right" });
     if (await menu.isVisible().catch(() => false)) return menu;
     await page.keyboard.press("Escape");
   }
