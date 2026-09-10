@@ -44,6 +44,12 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://192.168.50.214:8080")
     parser.add_argument("--source", type=Path, default=Path("web/src/guidedDemo.ts"))
     parser.add_argument("--output", type=Path, default=Path("web/public/assets/demo"))
+    parser.add_argument(
+        "--beat",
+        action="append",
+        default=[],
+        help="Render only this beat ID; repeat for multiple beats.",
+    )
     args = parser.parse_args()
 
     ffmpeg = shutil.which("ffmpeg")
@@ -53,6 +59,13 @@ def main() -> int:
     beats = list(BEAT.finditer(source))
     if not beats:
         raise SystemExit(f"No narration beats found in {args.source}")
+    if args.beat:
+        requested = set(args.beat)
+        known = {match.group("id") for match in beats}
+        unknown = sorted(requested - known)
+        if unknown:
+            raise SystemExit(f"Unknown narration beat(s): {', '.join(unknown)}")
+        beats = [match for match in beats if match.group("id") in requested]
 
     with tempfile.TemporaryDirectory(prefix="keelmesh-demo-") as temporary:
         temp = Path(temporary)

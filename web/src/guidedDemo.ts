@@ -3,6 +3,7 @@ export type GuidedDemoFocus =
   | "fleet"
   | "assistant"
   | "mission"
+  | "execution"
   | "resilience"
   | "system-network"
   | "system-data"
@@ -79,11 +80,11 @@ export const guidedDemoBeats: GuidedDemoBeat[] = [
     },
   },
   {
-    id: "06-execution", title: "Committed work, accelerated simulation", focus: "map", action: "execute-plan",
+    id: "06-execution", title: "Complete signed program onboard", focus: "execution", action: "execute-plan",
     audio: { navy: asset("navy", "06-execution"), pirate: asset("pirate", "06-execution") },
     transcript: {
-      navy: "The approved mission is now executing at one hundred times simulation speed. Every assigned vessel stores the complete finite signed program, including its expiry and contingency. Boats consume completed ten-second segments like a queue, maintain formation, respond to wind and current, and spend or recover energy under a day-night solar model. Passed route and waypoint graphics disappear while immutable receipts remain available for replay.",
-      pirate: "The sealed voyage is underway at one hundred tides of time. These courses be long trajectory programs with timed waymarks, not a tiny sixty-second trick. Ships consume the path ahead, keep station, answer wind and current, and spend or harvest power beneath sun and night. Old lines vanish from the chart like crumbs before gulls, while the immutable ship's log keeps every proof.",
+      navy: "The approved mission is now executing at one hundred times simulation speed. The Mission and vessel views show that every assigned node durably stores the complete finite signed program: thousands of deterministic ten-second segments, one exact revision, an authorization-expiration tick, and a signed terminal contingency. The group decision node may coordinate collision avoidance, formation correction, energy conservation, and environmental compensation inside that envelope. Each vessel independently validates those adaptations. Passed segments and waypoints disappear from the live chart while immutable receipts remain available for replay.",
+      pirate: "The sealed voyage is underway at one hundred tides of time. Mission and ship views prove that every vessel carries the whole finite signed chart: thousands of ten-second waymarks, one exact revision, an hourglass on authority, and sealed orders for the journey's end. A chosen ship may coordinate avoidance, formation, stores, wind, and current inside those bounds, but every hull checks the order for herself. Old lines vanish like crumbs before gulls, while the immutable ship's log keeps every proof.",
     },
   },
   {
@@ -95,11 +96,11 @@ export const guidedDemoBeats: GuidedDemoBeat[] = [
     },
   },
   {
-    id: "08-resilience", title: "Connectivity and PNT degrade safely", focus: "resilience", action: "run-resilience",
+    id: "08-resilience", title: "Full-program autonomy under failure", focus: "resilience", action: "run-resilience",
     audio: { navy: asset("navy", "08-resilience"), pirate: asset("pirate", "08-resilience") },
     transcript: {
-      navy: "KeelMesh is built around real failure conditions. This repeatable drill removes simulated Starlink mission traffic, routes through the simulated HaLow mesh, isolates a vessel, injects an impossible GNSS jump, and restores contact. Management and model access stay out of band. The vessel rejects suspicious GPS, lowers PNT confidence, consumes only cached approved work, then enters safe behavior. Rejoin discards expired commands instead of replaying a dangerous backlog.",
-      pirate: "Now for foul weather. We cut the simulated Starlink road, pass orders through the simulated HaLow fleet mesh, maroon a ship, feed her a lying GNSS jump, and restore contact. Management and the oracle's road remain untouched. The vessel calls the false position cursed, lowers trust, spends only cached approved orders, and turns safe. On reunion she burns stale commands rather than obeying ghosts from yesterday.",
+      navy: "KeelMesh is built around real failure conditions. This repeatable drill removes simulated Starlink mission traffic while the group continues its complete approved program over the simulated HaLow mesh. It then isolates one vessel, changing decision scope from group to local without granting broader authority. An impossible GNSS jump is quarantined, PNT confidence falls, and deterministic safety selects the signed contingency when continued execution is unsafe. Management and model access remain out of band. On reconnection the node exchanges program revision, execution watermark, decision epoch, fused position, and adaptation receipts; it bridges from current position instead of replaying missed movement.",
+      pirate: "Now for foul weather. We cut the simulated Starlink road, yet the crew keeps the whole approved voyage alive over the simulated HaLow fleet mesh. Then one ship is marooned; her decisions become local, but her authority grows not one inch. Feed her a lying GNSS jump and she quarantines the cursed fix, lowers trust, and follows the sealed safety order when the voyage can no longer continue safely. Management and the oracle's road remain untouched. On reunion she trades revision, progress, decision epoch, position, and receipts, then charts a safe bridge from where she truly stands instead of obeying ghosts from yesterday.",
     },
   },
   {
@@ -138,10 +139,11 @@ export const guidedDemoBeats: GuidedDemoBeat[] = [
     id: "13-closing", title: "Evidence over theater", focus: "closing", action: "finish",
     audio: { navy: asset("navy", "13-closing"), pirate: asset("pirate", "13-closing") },
     transcript: {
-      navy: "The working boundary is explicit. Twelve nodes, real Raft replication, mTLS identities, quorum receipts, mission authority, telemetry recovery, scoped memory, typed agent tools, cross-process tracing, and the governed evaluation path are implemented. Starlink, HaLow radio behavior, GNSS faults, and the maritime world are simulated. Physical radios, hardware-rooted identity, sea trials, and measured fleet-scale deployment are future hardening. KeelMesh does not claim every production autonomy problem is solved in a home lab. It proves that authority boundaries, edge behavior, cloud recovery, observability, and learning can be explicit and testable without placing cloud services or a language model inside the vessel's safety-critical control loop.",
-      pirate: "Here be the honest edge of the chart. Twelve nodes, real Raft replication, mTLS identities, quorum receipts, mission authority, streaming recovery, memory, agent tools, and deterministic simulation are built and breathing. Starlink, HaLow radio behavior, GNSS faults, and the sea itself are simulated. Physical radios, hardware-rooted keys, sea trials, and thirty to one hundred vessels lie beyond the horizon. KeelMesh proves not merely that a fleet can sail, but that authority stays chained when the storm takes everything else.",
+      navy: "The working boundary is explicit. Twelve nodes, real Raft replication, mTLS identities, quorum receipts, complete signed mission programs, group and local bounded decisions, telemetry recovery, scoped memory, typed agent tools, cross-process tracing, and the governed evaluation path are implemented. Starlink, HaLow radio behavior, GNSS faults, and the maritime world are simulated. Physical radios, hardware-rooted identity, sea trials, and measured fleet-scale deployment are future hardening. KeelMesh does not claim every production autonomy problem is solved in a home lab. It proves that authority boundaries, edge behavior, cloud recovery, observability, and learning can be explicit and testable without placing cloud services or a language model inside the vessel's safety-critical control loop.",
+      pirate: "Here be the honest edge of the chart. Twelve nodes, real Raft replication, mTLS identities, quorum receipts, whole signed voyages aboard each ship, bounded crew and lone-vessel decisions, streaming recovery, memory, agent tools, and deterministic simulation are built and breathing. Starlink, HaLow radio behavior, GNSS faults, and the sea itself are simulated. Physical radios, hardware-rooted keys, sea trials, and thirty to one hundred vessels lie beyond the horizon. KeelMesh proves not merely that a fleet can sail, but that authority stays chained when the storm takes everything else.",
     },
   },
 ];
 
-export const guidedDemoEstimatedSeconds = 420;
+// Includes natural-cadence Jarvis narration plus bounded action transitions.
+export const guidedDemoEstimatedSeconds = 510;

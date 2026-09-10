@@ -615,7 +615,7 @@ Current shared delivery state lives in [Delivery status](docs/STATUS.md) and [Ve
 
 The centered **Start Demo** launches a hands-off walkthrough and changes to **Stop Demo** while active. Stop cancels automation/narration, restores normal speed, and removes demo-owned transient scenes and camera focus. It must not leave alerts or focus reopening.
 
-Navy uses prerecorded Jarvis narration. Pirate uses the same technical sequence with prerecorded Captain Barbossa narration and flamboyant language. Both retain natural cadence; the complete Navy walkthrough currently runs about seven minutes.
+Navy uses prerecorded Jarvis narration. Pirate uses the same technical sequence with prerecorded Captain Barbossa narration and flamboyant language. Both retain natural cadence; the complete Navy walkthrough currently runs about eight minutes, while the Pirate narration is approximately six minutes.
 
 ### 17.2 Required beats
 
@@ -626,11 +626,11 @@ The demo must:
 3. Create an operational group through typed tools.
 4. Build and explain an AI-assisted mission.
 5. Preview and confirm the exact plan.
-6. Accelerate game time and show execution and energy change.
+6. Accelerate game time and show the complete finite signed program, authorization expiry, terminal contingency, group decision node, bounded adaptations, and energy change.
 7. Demonstrate manual map authoring without AI.
 8. Show Starlink loss and simulated HaLow continuity.
 9. Inject suspicious GNSS movement and show PNT rejection.
-10. Explain cached authority and bounded isolation behavior.
+10. Show group-to-local decision scope, continued execution from the complete onboard program, signed contingency behavior, and stale-safe reconciliation without replaying missed movement.
 11. Show Engineer autonomy evidence.
 12. Show System/Cutaway Raft, mTLS, proofs, Kafka/PostgreSQL, MCP/A2UI, and memory evidence.
 13. Close with an implementation-versus-simulation boundary.

@@ -11,4 +11,10 @@ Regenerate intentionally from the repository root with:
 python scripts/generate_demo_narration.py --base-url http://192.168.50.214:8080
 ```
 
+Render only intentionally changed beats by repeating `--beat`, for example:
+
+```powershell
+python scripts/generate_demo_narration.py --beat 06-execution --beat 08-resilience
+```
+
 The voice models remain private runtime assets on VM 214 and are not committed.

@@ -1977,7 +1977,9 @@ export function FleetWorkspace() {
         body: JSON.stringify({ schema_version: 1, kind, target_id: "vessel-04", scenario_tick: state.mission_tick, request_id: id, idempotency_key: id, expected_state_version: state.state_version }),
       });
       setLegacy((value) => value ? { ...value, snapshot: { ...value.snapshot, resilience: state } } : value);
-      await new Promise((resolve) => window.setTimeout(resolve, 550));
+      // Keep each degraded state visible long enough for an interviewer to
+      // inspect the program, decision scope, PNT response, and reconciliation.
+      await new Promise((resolve) => window.setTimeout(resolve, 2_200));
     }
   }
 
@@ -2045,7 +2047,15 @@ export function FleetWorkspace() {
       const chosen = state.plans.find((item) => item.recommended && item.policy_status !== "prohibited") ?? state.plans.find((item) => item.policy_status !== "prohibited");
       if (!state.mission || !chosen) throw new Error("No valid guided-demo plan is available to execute.");
       await executeGuidedDemoPlan(state.mission, chosen);
-      setWindows(new Set(["fleet"]));
+      const executing = await api<FleetSnapshotV2>("/api/v2/fleet");
+      const mission = executing.missions.find((item) => item.id === state.mission?.id);
+      const vesselID = mission?.target_ids[0];
+      setFleet(executing);
+      setActiveMissionID(mission?.id ?? state.mission.id);
+      setSelected(new Set(mission?.target_ids ?? state.mission.target_ids));
+      setWindows(new Set(["fleet", "planner", ...(vesselID ? [`inspector-${vesselID}`] : [])]));
+      open("planner");
+      if (vesselID) inspectAndFrameVessel(vesselID);
     }
     if (action === "author-manual-mission") await authorGuidedManualMission();
     if (action === "run-resilience") await runGuidedResilience();
