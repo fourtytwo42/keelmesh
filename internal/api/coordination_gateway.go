@@ -202,6 +202,9 @@ func validateCoordinatedRequest(method, path string, body []byte) error {
 		}
 	case method == http.MethodPost && strings.HasPrefix(path, "/api/v8/combat/vessels/") && strings.HasSuffix(path, ":repair"):
 		target = &fleetops.CombatRepairRequest{}
+	case method == http.MethodPost && strings.HasPrefix(path, "/api/v8/combat/vessels/") &&
+		(strings.HasSuffix(path, ":arm") || strings.HasSuffix(path, ":disarm")):
+		target = &fleetops.CombatArmRequest{}
 	case method == http.MethodPost && path == "/api/v8/scenarios/combat:reset":
 		target = &fleetops.Mutation{}
 	default:

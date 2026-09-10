@@ -34,6 +34,12 @@ func TestValidateCoordinatedRequestAcceptsActorContracts(t *testing.T) {
 	if err := validateCoordinatedRequest("POST", "/api/v3/matches", arenaBody); err != nil {
 		t.Fatalf("valid v3 arena request rejected: %v", err)
 	}
+	armBody := []byte(`{"request_id":"request-3","idempotency_key":"key-3","expected_version":1,"actor_identity":"operator-1"}`)
+	for _, action := range []string{"arm", "disarm"} {
+		if err := validateCoordinatedRequest("POST", "/api/v8/combat/vessels/vm-vessel-220:"+action, armBody); err != nil {
+			t.Fatalf("valid combat %s request rejected: %v", action, err)
+		}
+	}
 }
 
 func TestValidateCoordinatedRequestRejectsTrailingObjectsAndUnknownRoutes(t *testing.T) {
