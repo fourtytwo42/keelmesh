@@ -81,6 +81,9 @@ async function openLocationInspection(page: import("@playwright/test").Page) {
     { x: 1000, y: 300 },
     { x: 900, y: 500 },
     { x: 1050, y: 400 },
+    { x: 700, y: 250 },
+    { x: 850, y: 650 },
+    { x: 1180, y: 620 },
   ]) {
     await canvas.click({ position, button: "right" });
     if (await menu.isVisible().catch(() => false)) return menu;
@@ -327,7 +330,7 @@ test("fleet rail, search, group, and filtered selection resolve exact targets", 
   await expectSelected(page, 0);
   await rail.getByPlaceholder("Callsign, class, group, status…").fill("Gannet");
   await rail.locator(".fleet-vessel-row", { hasText: "Gannet" }).hover();
-  await expect(page.getByRole("tooltip")).toContainText("Gannet · KM-214 · Kestrel");
+  await expect(page.getByRole("tooltip")).toContainText("Gannet · KM-220 · Kestrel");
   await expect(page.getByRole("tooltip")).toContainText("Reserve");
   await expect(page.getByRole("tooltip")).toContainText("PNT trusted");
   await rail.getByRole("checkbox").check();
@@ -335,7 +338,7 @@ test("fleet rail, search, group, and filtered selection resolve exact targets", 
   await expect(rail.locator(".fleet-vessel-row.selected", { hasText: "Gannet" })).toBeVisible();
   await expect(rail.locator(".collection-strip")).toHaveCount(0);
   await rail.getByRole("button", { name: "View status of Gannet", exact: true }).click();
-  const inspector = page.getByRole("region", { name: /Gannet \(KM-214\)/ });
+  const inspector = page.getByRole("region", { name: /Gannet \(KM-220\)/ });
   await expect(inspector).toContainText("LOCAL CONDITIONS");
   await expect(inspector).toContainText("BATTERY-ONLY RANGE");
   await expect(inspector).toContainText(/\d+\.\d nm/);
@@ -427,7 +430,8 @@ test("executing routes and waypoints are consumed instead of leaving trails", as
     return { request_id: key, idempotency_key: key, expected_version: version };
   };
   let fleet = await (await page.request.get("/api/v2/fleet")).json();
-  const group = fleet.groups[0];
+  const group = fleet.groups.find((candidate: { code: string }) => candidate.code === "C02")!;
+  expect(group).toBeTruthy();
   const groupVessels = fleet.vessels.filter((vessel: { id: string }) => group.member_ids.includes(vessel.id));
   const origin = [
     groupVessels.reduce((sum: number, vessel: { telemetry: { position: number[] } }) => sum + vessel.telemetry.position[0], 0) / groupVessels.length,
@@ -562,7 +566,7 @@ test("dragged geometry follows deterministic planning and the preview boundary",
 
   await planner.getByRole("button", { name: "Add operating area", exact: true }).click();
   await expect(planner.getByRole("button", { name: "Add operating area", exact: true })).toHaveClass(/active/);
-  await expect(planner).toContainText("INCLUDE TOOL ACTIVE · ESC TO CANCEL");
+  await expect(planner).toContainText(/include active · Escape cancels/i);
   await page.waitForTimeout(250);
   const canvas = page.locator(".operations-map .maplibregl-canvas");
   const box = await canvas.boundingBox();

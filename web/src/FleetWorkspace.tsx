@@ -252,7 +252,8 @@ export function FleetWorkspace() {
     stopRequested = useRef(false),
     geometryHistory = useRef<Record<string, MissionWorkspaceV2["geometry"][]>>({}),
     missionSelectionSync = useRef(""),
-    pendingMissionSelection = useRef<{ missionID: string; targetKey: string } | null>(null);
+    pendingMissionSelection = useRef<{ missionID: string; targetKey: string } | null>(null),
+    assistantPlanOptions = useRef<FleetPlanV2[]>([]);
   const [windowActivations, setWindowActivations] = useState<
       Record<string, number>
     >({}),
@@ -1732,28 +1733,24 @@ export function FleetWorkspace() {
     return sourcePlans.filter((value) => value.mission_id === mission.id);
   }
 
-  function planOptionPayload(sourcePlans = plans) {
-    return plansForActiveMission(sourcePlans).slice(0, 3).map((value, index) => ({
-      label: String.fromCharCode(65 + index),
-      plan_id: value.id,
-      name: value.name,
-      content_hash: value.content_hash,
-      policy_status: value.policy_status,
-    }));
-  }
-
   async function askWorkspaceAssistant(text: string, presentScene = true, selectedIDs?: string[]) {
     // A voice session or guided tour may span several committed mutations.
     // Bind each new turn to current authority state, not its launching render.
     const workspaceSnapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
     setFleet(workspaceSnapshot);
-    let availablePlans = plansForActiveMission();
-    if (mission && (mission.plan_ids ?? []).length > 0 && availablePlans.length === 0) {
-      const response = await api<{ plans: FleetPlanV2[] }>(`/api/v2/missions/${mission.id}/plans`);
+    const currentMission = workspaceSnapshot.missions.find((value) => value.id === activeMissionID)
+      ?? workspaceSnapshot.missions.find((value) => (value.plan_ids ?? []).length > 0 && ["planned", "authorized", "paused"].includes(value.status))
+      ?? null;
+    let availablePlans = currentMission
+      ? plans.filter((value) => value.mission_id === currentMission.id)
+      : [];
+    if (currentMission && (currentMission.plan_ids ?? []).length > 0 && availablePlans.length === 0) {
+      const response = await api<{ plans: FleetPlanV2[] }>(`/api/v2/missions/${currentMission.id}/plans`);
       availablePlans = response.plans;
       setPlans(response.plans);
       setPlanID((response.plans.find((plan) => plan.recommended) ?? response.plans[0])?.id ?? "");
     }
+    assistantPlanOptions.current = availablePlans;
     const turn = await api<AssistantTurnV2>("/api/v4/assistant/turns", {
       method: "POST",
       body: JSON.stringify({
@@ -1764,8 +1761,14 @@ export function FleetWorkspace() {
         persona: pirate ? "pirate" : "navy",
         selected_ids: selectedIDs ?? [...selected],
         open_windows: [...windows],
-        active_mission_id: mission?.id ?? "",
-        plan_options: planOptionPayload(availablePlans),
+        active_mission_id: currentMission?.id ?? "",
+        plan_options: availablePlans.slice(0, 3).map((value, index) => ({
+          label: String.fromCharCode(65 + index),
+          plan_id: value.id,
+          name: value.name,
+          content_hash: value.content_hash,
+          policy_status: value.policy_status,
+        })),
         actor_identity: "demo-operator",
         session_id: sceneSessionID,
         workspace_version: workspaceSnapshot.fleet_version,
@@ -1832,7 +1835,7 @@ export function FleetWorkspace() {
   function chosenPlan(action: WorkspaceAssistantActionV1) {
     if (action.kind !== "choose_plan") return null;
     const target = action.target.trim().toLowerCase();
-    return plansForActiveMission().slice(0, 3).find((value, index) =>
+    return assistantPlanOptions.current.slice(0, 3).find((value, index) =>
       target === String.fromCharCode(97 + index) ||
       target === value.id.toLowerCase() ||
       target === value.name.toLowerCase(),
