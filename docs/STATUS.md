@@ -42,7 +42,7 @@ M15 is deployed. Fleet Operations now includes 45 combat entities: twelve contro
 - PostgreSQL/pgvector, Kafka, workers, AI, and speech remain private.
 - Builds and verification run on VM 214/nodes.
 - M13's private OTLP collector, MinIO, Dagster, and MLflow services are deployed without publishing additional ports.
-- M14 complete-program execution and M15 combat-aware node/API/UI behavior are active on all twelve nodes; VM 214 and every vessel node use the identical binary SHA-256 `fab98cde0dceae8a9abc49e2d79a2ee8559d2489024822b08ea0fa1fb0456883`.
+- M14 complete-program execution and M15 combat-aware node/API/UI behavior are active on all twelve nodes; VM 214 and every vessel node use the identical binary SHA-256 `b7cd7f3d084e87dbafbd1180cc72053c4db63c39da938ed47ee193037d8908a7`.
 - Latest measured scale verification ran twice at 1,000 logical producers, approximately 2,004–2,233 events/second, zero dropped events, and matching replay checksums on VM 214.
 - GitHub-hosted workflows remain disabled.
 - No snapshot is authorized by documentation or deployment operations.
