@@ -118,7 +118,7 @@ test("global assistant plots one mission silently and accepts one exact confirma
 	await page.goto("/");
 	await page.getByRole("button", { name: "Toggle text chat with KeelMesh AI" }).click();
 	const assistant = page.getByRole("region", { name: "KeelMesh Assistant" });
-	await assistant.getByRole("textbox", { name: "Message KeelMesh AI" }).fill("Move Block Guard one nautical mile east and hold position.");
+	await assistant.getByRole("textbox", { name: "Message KeelMesh AI" }).fill("Move Gannet one nautical mile east and hold position.");
 	await assistant.getByRole("button", { name: "Send text message" }).click();
 	await expect(assistant.locator("article.assistant").last()).toContainText(/confirm/i, { timeout: 60_000 });
 	await expect(page.getByRole("region", { name: "Mission" })).toHaveCount(0);
