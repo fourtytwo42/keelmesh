@@ -2017,7 +2017,12 @@ export function FleetWorkspace() {
   async function performGuidedDemoAction(action: GuidedDemoAction) {
     if (action === "reset") await resetGuidedDemo();
     if (action === "inspect-vessel") {
-      open("assistant-chat");
+      if (window.innerWidth >= 740) open("assistant-chat");
+      else setWindows((current) => {
+        const next = new Set(current);
+        next.delete("assistant-chat");
+        return next;
+      });
       const current = await api<FleetSnapshotV2>("/api/v2/fleet");
       const vessel = current.vessels[0];
       await askWorkspaceAssistant(`Locate ${vessel.callsign}, report its current position, reserve, PNT integrity, and connectivity, then open its status.`, false);
@@ -2037,7 +2042,7 @@ export function FleetWorkspace() {
       const updated = await api<FleetSnapshotV2>("/api/v2/fleet");
       if (!updated.groups.some((item) => item.name.toLowerCase().includes("harbor sentinel")))
         await createGroupFor(demoVessels.map((item) => item.id), "Harbor Sentinel");
-      setWindows(new Set(["fleet", "assistant-chat"]));
+      setWindows(new Set(window.innerWidth >= 740 ? ["fleet", "assistant-chat"] : ["fleet"]));
       open("fleet");
       await refresh();
     }
@@ -2059,7 +2064,7 @@ export function FleetWorkspace() {
         setSelected(new Set(state.mission.target_ids));
         setPlans(state.plans);
         setPlanID(chosen?.id ?? "");
-        setWindows(new Set(["fleet", "planner"]));
+        setWindows(new Set(window.innerWidth >= 740 ? ["fleet", "planner"] : ["planner"]));
         open("planner");
         frameMission(state.mission, chosen, state.snapshot);
       }
@@ -2087,12 +2092,20 @@ export function FleetWorkspace() {
       setFleet(executing);
       setActiveMissionID(mission?.id ?? state.mission.id);
       setSelected(new Set(mission?.target_ids ?? state.mission.target_ids));
-      setWindows(new Set(["fleet", "planner", ...(vesselID ? [`inspector-${vesselID}`] : [])]));
+      const executionWindows = window.innerWidth >= 1000
+        ? ["fleet", "planner", ...(vesselID ? [`inspector-${vesselID}`] : [])]
+        : window.innerWidth >= 740
+          ? ["planner", ...(vesselID ? [`inspector-${vesselID}`] : [])]
+          : ["planner"];
+      setWindows(new Set(executionWindows));
       open("planner");
       if (vesselID) openVesselInspector(vesselID);
       frameMission(mission ?? state.mission, chosen, executing);
     }
-    if (action === "author-manual-mission") await authorGuidedManualMission();
+    if (action === "author-manual-mission") {
+      setWindows(new Set(window.innerWidth >= 740 ? ["fleet", "planner"] : ["planner"]));
+      await authorGuidedManualMission();
+    }
     if (action === "run-resilience") await runGuidedResilience();
     if (action === "show-consensus" || action === "show-data-plane" || action === "show-memory") {
       setWindows(new Set(["cutaway"]));
@@ -2216,6 +2229,12 @@ export function FleetWorkspace() {
       </main>
     );
   const defs: WindowDefinition[] = [];
+  const demoViewportWidth = window.innerWidth;
+  const demoViewportHeight = window.innerHeight;
+  const demoAvailableHeight = Math.max(300, demoViewportHeight - 154);
+  const demoSideWidth = Math.min(430, Math.floor((demoViewportWidth - 48) / 2));
+  const demoCanTile = demoState.running && demoViewportWidth >= 740;
+  const demoWide = demoState.running && demoViewportWidth >= 1000;
   if (windows.has("fleet"))
     defs.push({
       id: "fleet",
@@ -2229,6 +2248,10 @@ export function FleetWorkspace() {
       minWidth: 245,
       minHeight: 180,
       initial: { x: 10, y: 92, width: 245, height: 600 },
+      transientLayout: demoCanTile ? {
+        x: 0, y: 82, width: 245, height: demoAvailableHeight,
+        dock: "left", minimized: false, closed: false, maximized: false,
+      } : undefined,
       content: (
         <FleetRail
           pirate={pirate}
@@ -2281,6 +2304,23 @@ export function FleetWorkspace() {
       title: vessel.display_name,
       icon: <Eye />,
       initial: { x: 310 + (index % 7) * 26, y: 92 + (index % 7) * 22, width: 390, height: 610 },
+      transientLayout: demoCanTile && demoState.focus === "assistant" ? {
+        x: demoViewportWidth - Math.min(390, demoSideWidth) - 14,
+        y: 140,
+        width: Math.min(390, demoSideWidth),
+        height: Math.min(610, demoAvailableHeight - 58),
+        dock: undefined, minimized: false, closed: false, maximized: false,
+      } : demoWide && demoState.focus === "execution" ? {
+        x: 265, y: 140, width: Math.min(390, demoViewportWidth - 660),
+        height: Math.min(610, demoAvailableHeight - 58),
+        dock: undefined, minimized: false, closed: false, maximized: false,
+      } : demoCanTile && demoState.focus === "execution" ? {
+        x: demoViewportWidth - Math.min(390, demoSideWidth) - 14,
+        y: 140,
+        width: Math.min(390, demoSideWidth),
+        height: Math.min(610, demoAvailableHeight - 58),
+        dock: undefined, minimized: false, closed: false, maximized: false,
+      } : undefined,
       content: (
         <VesselInspectorWindow
           pirate={pirate}
@@ -2319,6 +2359,13 @@ export function FleetWorkspace() {
       title: pirate ? "Voyage" : "Mission",
       icon: <Route />,
       initial: { x: window.innerWidth - 370, y: 92, width: 350, height: 680 },
+      transientLayout: demoCanTile && demoState.focus === "execution" && !demoWide ? {
+        x: 14, y: 140, width: demoSideWidth, height: Math.min(680, demoAvailableHeight - 58),
+        dock: undefined, minimized: false, closed: false, maximized: false,
+      } : demoCanTile ? {
+        x: demoViewportWidth - 350, y: 82, width: 350, height: demoAvailableHeight,
+        dock: "right", minimized: false, closed: false, maximized: false,
+      } : undefined,
       content: (
         <MissionCanvas
           pirate={pirate}
@@ -2538,6 +2585,13 @@ export function FleetWorkspace() {
       id: "assistant-chat", kind: "context", title: pirate ? "Ship's Intelligence" : "KeelMesh Assistant", icon: <MessageCircle />,
       toggleActivation: windowToggleActivations["assistant-chat"],
       initial: { x: Math.max(20, window.innerWidth - 470), y: Math.max(90, window.innerHeight - 620), width: 430, height: 520 }, minWidth: 310, minHeight: 260,
+      transientLayout: demoCanTile && demoState.focus === "assistant" ? {
+        x: 14, y: 140, width: demoSideWidth, height: Math.min(520, demoAvailableHeight - 58),
+        dock: undefined, minimized: false, closed: false, maximized: false,
+      } : demoCanTile && demoState.focus === "fleet" ? {
+        x: demoViewportWidth - 430, y: 82, width: 430, height: demoAvailableHeight,
+        dock: "right", minimized: false, closed: false, maximized: false,
+      } : undefined,
       preferredDock: "right", maximizable: true, minimizable: false, toggleMode: "close",
       content: <AssistantChat turns={assistantTurns} value={assistantChatInput} busy={assistantChatBusy} pirate={pirate} onChange={setAssistantChatInput} onSend={(text) => void handleGlobalTypedMessage(text)} onClear={() => void clearAssistantChat()} onOpenScene={(scene) => { focusCommandScene(scene.id); if (scene.type === "mission_canvas") open("planner"); else open(`scene-${scene.id}`); }} scenes={commandScenes} />,
     });
