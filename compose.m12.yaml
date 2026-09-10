@@ -1,6 +1,6 @@
 services:
   core:
-    image: ${KEELMESH_CORE_IMAGE:-keelmesh/core:m14}
+    image: ${KEELMESH_CORE_IMAGE:-keelmesh/core:m15}
     environment:
       KEELMESH_COORDINATION_MODE: ${KEELMESH_COORDINATION_MODE:-raft}
       KEELMESH_COORDINATION_REFEREE_PKI_DIR: /etc/keelmesh/coordination/referee

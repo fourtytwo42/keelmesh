@@ -2,7 +2,16 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE=(docker compose -f "$ROOT/compose.yaml" --project-directory "$ROOT")
+COMPOSE_FILES=(-f "$ROOT/compose.yaml")
+# A production authority host carries the referee identity and signed cell
+# manifests. Preserve its Raft gateway on every routine start/rebuild; local
+# developer checkouts without that private runtime continue using base Compose.
+if [[ -f /etc/keelmesh/coordination-runtime/referee/referee.crt \
+   && -f /etc/keelmesh/coordination-runtime/cells/a/manifest.json \
+   && -f /etc/keelmesh/coordination-runtime/cells/b/manifest.json ]]; then
+  COMPOSE_FILES+=(-f "$ROOT/compose.m12.yaml")
+fi
+COMPOSE=(docker compose "${COMPOSE_FILES[@]}" --project-directory "$ROOT")
 BASE_URL="${KEELMESH_URL:-http://127.0.0.1:8080}"
 OFFLINE_COMPOSE=(docker compose -f "$ROOT/compose.yaml" -f "$ROOT/compose.offline.yaml" --project-directory "$ROOT")
 GATE_DIR="$ROOT/.keelmesh-data/release-gates"
