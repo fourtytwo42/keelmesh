@@ -253,6 +253,8 @@ export function FleetWorkspace() {
     geometryHistory = useRef<Record<string, MissionWorkspaceV2["geometry"][]>>({}),
     missionSelectionSync = useRef(""),
     pendingMissionSelection = useRef<{ missionID: string; targetKey: string } | null>(null),
+    queuedMissionTargets = useRef<{ missionID: string; targetIDs: string[] } | null>(null),
+    missionTargetUpdateRunning = useRef(false),
     assistantPlanOptions = useRef<FleetPlanV2[]>([]);
   const [windowActivations, setWindowActivations] = useState<
       Record<string, number>
@@ -881,30 +883,61 @@ export function FleetWorkspace() {
     await refresh();
   }
   async function updateMissionTargets(missionID: string, targetIDs: string[]) {
-    const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
-    const current = snapshot.missions.find((item) => item.id === missionID);
-    if (!current) return;
-    const next = [...new Set(targetIDs)].sort();
-    const existing = [...current.target_ids].sort();
-    if (next.join(",") === existing.join(",")) return;
+    queuedMissionTargets.current = { missionID, targetIDs: [...new Set(targetIDs)].sort() };
+    if (missionTargetUpdateRunning.current) return;
+    missionTargetUpdateRunning.current = true;
+    setBusy(true);
     try {
-      await mutate(() =>
-        api<MissionWorkspaceV2>(`/api/v2/missions/${missionID}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            request_id: requestID("mission-targets"),
-            idempotency_key: requestID("mission-targets-key"),
-            expected_version: current.version,
-            target_ids: next,
-          }),
-        }),
-      );
-      await refresh();
-    } catch {
-      if (pendingMissionSelection.current?.missionID === missionID && pendingMissionSelection.current.targetKey === next.join(","))
+      while (queuedMissionTargets.current) {
+        const queued = queuedMissionTargets.current;
+        queuedMissionTargets.current = null;
+        let applied = false;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet");
+          const current = snapshot.missions.find((item) => item.id === queued.missionID);
+          if (!current) {
+            applied = true;
+            break;
+          }
+          const existing = [...current.target_ids].sort();
+          if (queued.targetIDs.join(",") === existing.join(",")) {
+            applied = true;
+            break;
+          }
+          try {
+            await api<MissionWorkspaceV2>(`/api/v2/missions/${queued.missionID}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                request_id: requestID("mission-targets"),
+                idempotency_key: requestID("mission-targets-key"),
+                expected_version: current.version,
+                target_ids: queued.targetIDs,
+              }),
+            });
+            applied = true;
+            break;
+          } catch (error) {
+            if (!(error instanceof KeelMeshError) || error.code !== "STALE_STATE" || attempt === 2) throw error;
+          }
+        }
+        if (applied) await refresh();
+      }
+      setError("");
+    } catch (error) {
+      setError(error instanceof KeelMeshError ? `${error.code}: ${error.message}` : String(error));
+      const snapshot = await api<FleetSnapshotV2>("/api/v2/fleet").catch(() => null);
+      const current = snapshot?.missions.find((item) => item.id === missionID);
+      if (current) {
+        const existing = [...current.target_ids].sort();
         pendingMissionSelection.current = null;
-      missionSelectionSync.current = `${missionID}:${existing.join(",")}`;
-      setSelected(new Set(existing));
+        missionSelectionSync.current = `${missionID}:${existing.join(",")}`;
+        setSelected(new Set(existing));
+      }
+    } finally {
+      missionTargetUpdateRunning.current = false;
+      setBusy(false);
+      const queued = queuedMissionTargets.current;
+      if (queued) void updateMissionTargets(queued.missionID, queued.targetIDs);
     }
   }
   async function renameMission(id: string, name: string) {
