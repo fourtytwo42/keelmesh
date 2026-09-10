@@ -1655,12 +1655,14 @@ export function OperationsMap({
       longPress.current = null;
     };
     const pointerDown = (event: PointerEvent) => {
-      if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
-      lastTouchAt.current = performance.now();
-      cancelLongPress();
       const rect = canvas.getBoundingClientRect();
       const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-      if (editingEnabled && tool === "select") {
+      const touchPointer = event.pointerType === "touch" || event.pointerType === "pen";
+      if (touchPointer) {
+        lastTouchAt.current = performance.now();
+        cancelLongPress();
+      }
+      if (event.button === 0 && editingEnabled && tool === "select") {
         const hitBox: [[number, number], [number, number]] = [
           [point.x - 18, point.y - 18],
           [point.x + 18, point.y + 18],
@@ -1683,7 +1685,7 @@ export function OperationsMap({
           return;
         }
       }
-      if (editingEnabled && ["box", "include", "exclude"].includes(tool)) {
+      if (event.button === 0 && editingEnabled && ["box", "include", "exclude"].includes(tool)) {
         event.preventDefault();
         selectionMode.current = true;
         boxStart.current = point;
@@ -1692,6 +1694,7 @@ export function OperationsMap({
         setBox({ x: point.x, y: point.y, w: 0, h: 0 });
         return;
       }
+      if (!touchPointer) return;
       const state = {
         timer: 0,
         pointer: event.pointerId,
@@ -1799,10 +1802,19 @@ export function OperationsMap({
       })[0];
       if (contact?.properties?.id) onContact(String(contact.properties.id));
     };
-    canvas.addEventListener("pointerdown", pointerDown, { passive: false });
-    canvas.addEventListener("pointermove", pointerMove, { passive: false });
-    canvas.addEventListener("pointerup", pointerUp);
-    canvas.addEventListener("pointercancel", cancelLongPress);
+    const nativeContext = (event: MouseEvent) => {
+      if (performance.now() - lastTouchAt.current < 1_200) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = canvas.getBoundingClientRect();
+      const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      openContext(point, map.unproject([point.x, point.y]));
+    };
+    canvas.addEventListener("pointerdown", pointerDown, { passive: false, capture: true });
+    canvas.addEventListener("pointermove", pointerMove, { passive: false, capture: true });
+    canvas.addEventListener("pointerup", pointerUp, true);
+    canvas.addEventListener("pointercancel", cancelLongPress, true);
+    canvas.addEventListener("contextmenu", nativeContext, true);
     const down = (e: MapMouseEvent) => {
       if (editingEnabled && tool === "select" && e.originalEvent.button === 0) {
         const hitBox: [[number, number], [number, number]] = [
@@ -1997,10 +2009,11 @@ export function OperationsMap({
       map.off("mousedown", down);
       map.off("mousemove", move);
       map.off("mouseup", up);
-      canvas.removeEventListener("pointerdown", pointerDown);
-      canvas.removeEventListener("pointermove", pointerMove);
-      canvas.removeEventListener("pointerup", pointerUp);
-      canvas.removeEventListener("pointercancel", cancelLongPress);
+      canvas.removeEventListener("pointerdown", pointerDown, true);
+      canvas.removeEventListener("pointermove", pointerMove, true);
+      canvas.removeEventListener("pointerup", pointerUp, true);
+      canvas.removeEventListener("pointercancel", cancelLongPress, true);
+      canvas.removeEventListener("contextmenu", nativeContext, true);
     };
   }, [
     ready,
