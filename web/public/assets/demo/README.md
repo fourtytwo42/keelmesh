@@ -17,4 +17,14 @@ Render only intentionally changed beats by repeating `--beat`, for example:
 python scripts/generate_demo_narration.py --beat 06-execution --beat 08-resilience
 ```
 
+Limit regeneration to one persona when only one voice has a defect:
+
+```powershell
+python scripts/generate_demo_narration.py --beat 06-execution --persona navy
+```
+
+Long narration is synthesized in sentence-bounded chunks before being joined into
+one MP3. This avoids phrase-looping artifacts from cloned voices while preserving
+natural cadence.
+
 The voice models remain private runtime assets on VM 214 and are not committed.
