@@ -401,7 +401,7 @@ An impossible GNSS jump is excluded and recorded; fused position does not follow
 
 ### 11.5 Fictional combat workload
 
-The simulator includes a persistent hostile pirate raider named Blackwake plus deterministic hull, component, weapon-range, repair, regeneration, sinking, and respawn state. Commercial traffic remains unarmed, fictional patrol contacts may defend themselves, and controlled vessels require an exact-hash bounded engagement program before returning fire. AI and MCP may inspect or draft but cannot authorize their own engagement. All combat behavior is explicitly fictional and is not a real weapon-control capability.
+The simulator includes a persistent hostile pirate raider named Blackwake plus deterministic hull, component, weapon-range, repair, regeneration, sinking, and respawn state. Commercial traffic remains unarmed and fictional patrol contacts may defend themselves. Controlled vessels support an explicit armed/weapons-safe state: armed permits bounded return fire against the recent attacker but not pursuit or initiation; an attack mission auto-arms its assigned vessels. Initiating fire against any non-Fleet contact requires an exact-hash engagement envelope binding eligible targets, participants, weapons, geography, range, duration, effect count, reserve, and disengagement conditions. AI and MCP may inspect, arm/disarm, repair, or draft, but cannot authorize their own engagement. All combat behavior is explicitly fictional and is not a real weapon-control capability.
 
 ## 12. Architecture and deployment
 

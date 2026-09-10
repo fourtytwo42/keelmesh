@@ -801,6 +801,8 @@ export type MissionWorkspaceV2 = {
   constraints: ConstraintSetV2;
   formation: string;
   loop: boolean;
+  guidance_kind?: string;
+  engagement_policy: EngagementPolicyV1;
   follow_contact_id?: string;
   contact_behavior?: string;
   contact_standoff_m?: number;
@@ -950,6 +952,7 @@ export type CommandDraftV2 = {
   follow_contact_id?: string;
   contact_behavior?: string;
   contact_standoff_m?: number;
+  engagement_policy: EngagementPolicyV1;
   planning_mode: "manual" | "ai_assisted";
 	strategy_count: number;
   waypoints: Point[];
@@ -1066,6 +1069,11 @@ export type CombatEntityStateV1 = {
   profile: CombatProfileV1;
   damage: DamageStateV1;
   behavior_state: string;
+  armed: boolean;
+  arm_state_source?: string;
+  armed_by_mission_id?: string;
+  last_attacker_id?: string;
+  last_attacked_tick_ms?: number;
   current_target_id?: string;
   active_engagement_id?: string;
   last_decision?: RaiderDecisionV1;
@@ -1079,12 +1087,25 @@ export type CombatEntityStateV1 = {
   state_version: number;
   updated_at: string;
 };
+export type EngagementPolicyV1 = {
+  enabled: boolean;
+  target_scope: "designated" | "hostile_contacts" | "any_contact";
+  designated_target_ids?: string[];
+  auto_arm: boolean;
+  return_fire: boolean;
+  require_target_in_mission_area: boolean;
+  maximum_range_m: number;
+  maximum_effects: number;
+  duration_seconds: number;
+  disengage_hull_percent: number;
+};
 export type EngagementProgramV1 = {
   schema_version: 1;
   id: string;
   request_id: string;
   idempotency_key: string;
   target_id: string;
+  eligible_target_ids: string[];
   participant_ids: string[];
   allowed_weapon_ids: string[];
   maximum_range_m: number;
@@ -1099,6 +1120,11 @@ export type EngagementProgramV1 = {
   content_hash: string;
   operator_id?: string;
   mission_id?: string;
+  target_scope: string;
+  return_fire: boolean;
+  require_target_in_mission_area: boolean;
+  operating_areas?: number[][][];
+  auto_armed_ids?: string[];
   created_at: string;
   authorized_at?: string;
 };
@@ -1187,6 +1213,7 @@ export type FleetPlanV2 = {
   follow_contact_id?: string;
   contact_behavior?: string;
   contact_standoff_m?: number;
+  engagement_policy: EngagementPolicyV1;
   continuous_tracking?: boolean;
   replan_interval_seconds?: number;
   prediction_horizon_seconds?: number;
@@ -1274,6 +1301,8 @@ export type WorkspaceAssistantActionV1 = {
 	| "move_vessel_to_group"
 	| "plan_engagement"
 	| "repair_vessel"
+	| "arm_vessel"
+	| "disarm_vessel"
     | "none";
   target: string;
 	secondary_target: string;

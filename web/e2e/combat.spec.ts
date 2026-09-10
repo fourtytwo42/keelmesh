@@ -28,8 +28,29 @@ test("v8 exposes deterministic fictional combat and exact-hash authority", async
   const blackwake = combat.entities.find((entity: { entity_id: string }) => entity.entity_id === "HOSTILE-0001");
   const participant = combat.entities.find((entity: { profile: { controlled: boolean; weapons: unknown[] } }) => entity.profile.controlled && entity.profile.weapons.length);
   expect(blackwake).toMatchObject({ name: "Blackwake", profile: { hull_maximum: 170, armor: "medium", hostility: "hostile" } });
-  expect(blackwake.speed_mps).toBeLessThanOrEqual(2.6);
+  expect(blackwake.speed_mps).toBeLessThanOrEqual(2.7);
   expect(blackwake.profile.weapons.map((weapon: { effective_range_m: number }) => weapon.effective_range_m)).toEqual([750, 1400]);
+
+  const armKey = `e2e-arm-${Date.now()}`;
+  const armedResponse = await page.request.post(`/api/v8/combat/vessels/${participant.entity_id}:arm`, {
+    data: { request_id: armKey, idempotency_key: armKey, expected_version: combat.state_version, actor_identity: "e2e-operator" },
+  });
+  expect(armedResponse.ok(), await armedResponse.text()).toBeTruthy();
+  expect((await armedResponse.json()).armed).toBe(true);
+  const disarmKey = `${armKey}-safe`;
+  const disarmedResponse = await page.request.post(`/api/v8/combat/vessels/${participant.entity_id}:disarm`, {
+    data: { request_id: disarmKey, idempotency_key: disarmKey, expected_version: combat.state_version, actor_identity: "e2e-operator" },
+  });
+  expect(disarmedResponse.ok(), await disarmedResponse.text()).toBeTruthy();
+  expect((await disarmedResponse.json()).armed).toBe(false);
+
+  const neutral = combat.entities.find((entity: { profile: { controlled: boolean; hostility: string } }) => !entity.profile.controlled && entity.profile.hostility === "neutral");
+  const neutralKey = `e2e-neutral-engagement-${Date.now()}`;
+  const neutralPlanResponse = await page.request.post("/api/v8/combat/engagements", {
+    data: { request_id: neutralKey, idempotency_key: neutralKey, expected_version: combat.state_version, target_id: neutral.entity_id, participant_ids: [participant.entity_id], duration_seconds: 60, maximum_effects: 1 },
+  });
+  expect(neutralPlanResponse.status(), await neutralPlanResponse.text()).toBe(201);
+  expect((await neutralPlanResponse.json()).target_id).toBe(neutral.entity_id);
 
   const key = `e2e-engagement-${Date.now()}`;
   const plannedResponse = await page.request.post("/api/v8/combat/engagements", {

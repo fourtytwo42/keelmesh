@@ -21,7 +21,7 @@ func TestCombatProfilesAndBlackwakeBalance(t *testing.T) {
 	if raider.Profile.HullMaximum != 170 || raider.Profile.Armor != "medium" || raider.Profile.Hostility != "hostile" || len(raider.Profile.Weapons) != 2 {
 		t.Fatalf("unexpected Blackwake profile: %#v", raider.Profile)
 	}
-	if raider.Profile.Weapons[0].EffectiveRangeM != 750 || raider.Profile.Weapons[1].EffectiveRangeM != 1400 || raider.SpeedMPS > 2.6 {
+	if raider.Profile.Weapons[0].EffectiveRangeM != 750 || raider.Profile.Weapons[1].EffectiveRangeM != 1400 || raider.SpeedMPS > blackwakeMaximumSpeedMPS || !raider.Armed {
 		t.Fatalf("unexpected Blackwake armament or speed: %#v", raider)
 	}
 	foundSurfaceProjection := false
@@ -33,6 +33,132 @@ func TestCombatProfilesAndBlackwakeBalance(t *testing.T) {
 	}
 	if !foundSurfaceProjection {
 		t.Fatal("Blackwake surface projection missing")
+	}
+}
+
+func TestArmStateAllowsReturnFireButNotInitiation(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	m := New("", slog.Default())
+	vesselID := m.Snapshot().Vessels[0].ID
+	armed, err := m.ArmCombatVessel(vesselID, CombatArmRequest{Mutation: Mutation{RequestID: "arm", IdempotencyKey: "arm-key", ActorIdentity: "operator"}, Armed: true})
+	if err != nil || !armed.Armed || armed.ArmStateSource != "operator" {
+		t.Fatalf("arm failed: %#v %v", armed, err)
+	}
+	m.mu.Lock()
+	vessel, raider := m.combatEntities[vesselID], m.combatEntities[blackwakeID]
+	vessel.Position, raider.Position = domain.GeoPointV2{-71.48, 40.88}, domain.GeoPointV2{-71.479, 40.88}
+	m.combatEntities[vesselID], m.combatEntities[blackwakeID] = vessel, raider
+	m.advanceControlledSelfDefenseLocked()
+	if len(m.combatEffects) != 0 {
+		m.mu.Unlock()
+		t.Fatal("armed vessel initiated fire without being attacked")
+	}
+	vessel = m.combatEntities[vesselID]
+	vessel.LastAttackerID, vessel.LastAttackedTickMS = blackwakeID, m.simTickMS
+	m.combatEntities[vesselID] = vessel
+	m.advanceControlledSelfDefenseLocked()
+	effects := append([]domain.CombatEffectV1(nil), m.combatEffects...)
+	m.mu.Unlock()
+	if len(effects) != 1 || effects[0].SourceID != vesselID || effects[0].TargetID != blackwakeID {
+		t.Fatalf("bounded return fire missing: %#v", effects)
+	}
+}
+
+func TestExplicitEngagementMayTargetNeutralContact(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	m := New("", slog.Default())
+	vesselID := m.Snapshot().Vessels[0].ID
+	program, err := m.PlanCombatEngagement(CombatEngagementRequest{Mutation: Mutation{RequestID: "neutral", IdempotencyKey: "neutral-key"}, TargetID: "surface-07", ParticipantIDs: []string{vesselID}})
+	if err != nil || program.TargetID != "surface-07" || program.ContentHash == "" {
+		t.Fatalf("neutral engagement was not staged behind approval: %#v %v", program, err)
+	}
+}
+
+func TestEngagementHashBindsRulesOfEngagement(t *testing.T) {
+	base := domain.EngagementProgramV1{
+		TargetID: "surface-07", EligibleTargetIDs: []string{"surface-07"},
+		ParticipantIDs: []string{"vessel-1"}, AllowedWeaponIDs: []string{"vessel-1:cannon"},
+		MaximumRangeM: 650, MaximumEffects: 8, DurationSeconds: 300,
+		DisengageHullPercent: 25, MinimumReserve: .3, TargetScope: "designated",
+		ReturnFire: true, RequireTargetInArea: true,
+		OperatingAreas: [][][]float64{{{-71.6, 41.0}, {-71.4, 41.0}, {-71.4, 41.2}, {-71.6, 41.0}}},
+	}
+	baseHash := engagementContentHash(base)
+	modified := base
+	modified.TargetScope = "any_contact"
+	modified.EligibleTargetIDs = []string{"surface-07", "surface-08"}
+	if engagementContentHash(modified) == baseHash {
+		t.Fatal("target scope and eligible targets must be part of the exact engagement hash")
+	}
+	modified = base
+	modified.OperatingAreas = nil
+	if engagementContentHash(modified) == baseHash {
+		t.Fatal("engagement geography must be part of the exact engagement hash")
+	}
+}
+
+func TestArmStateMutationIsIdempotent(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	m := New("", slog.Default())
+	vesselID := m.Snapshot().Vessels[0].ID
+	req := CombatArmRequest{Mutation: Mutation{RequestID: "arm", IdempotencyKey: "arm-idempotent", ActorIdentity: "operator"}, Armed: true}
+	first, err := m.ArmCombatVessel(vesselID, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := m.ArmCombatVessel(vesselID, req)
+	if err != nil || second.StateVersion != first.StateVersion {
+		t.Fatalf("arm replay was not idempotent: first=%#v second=%#v err=%v", first, second, err)
+	}
+	_, err = m.ArmCombatVessel(vesselID, CombatArmRequest{Mutation: req.Mutation, Armed: false})
+	if typed, ok := err.(*Error); !ok || typed.Code != "COMBAT_STATE_STALE" {
+		t.Fatalf("expected idempotency conflict, got %v", err)
+	}
+}
+
+func TestBlackwakeMovementIsContinuousAtTopSpeed(t *testing.T) {
+	m := New("", slog.Default())
+	m.mu.Lock()
+	before := m.combatEntities[blackwakeID].Position
+	m.advanceBlackwakeLocked(100000)
+	after := m.combatEntities[blackwakeID]
+	m.mu.Unlock()
+	if distance := combatDistanceM(before, after.Position); distance > blackwakeMaximumSpeedMPS*100+.2 {
+		t.Fatalf("Blackwake teleported %.2f m in a 100-second step", distance)
+	}
+	if after.SpeedMPS > blackwakeMaximumSpeedMPS {
+		t.Fatalf("Blackwake exceeded top speed: %.2f", after.SpeedMPS)
+	}
+}
+
+func TestMissionEngagementAutoArmsOnlyAssignedParticipants(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	m := New("", slog.Default())
+	vessels := m.Snapshot().Vessels
+	mission := domain.MissionWorkspaceV2{
+		ID: "mission-attack", TargetIDs: []string{vessels[0].ID}, FollowContactID: "surface-07",
+		Constraints: defaultConstraints(), EngagementPolicy: domain.EngagementPolicyV1{
+			Enabled: true, TargetScope: "designated", DesignatedTargetIDs: []string{"surface-07"},
+			AutoArm: true, ReturnFire: true, MaximumEffects: 4, DurationSeconds: 120, DisengageHullPercent: 25,
+		},
+	}
+	m.mu.Lock()
+	err := m.activateMissionEngagementLocked(mission)
+	participant := m.combatEntities[vessels[0].ID]
+	unassigned := m.combatEntities[vessels[1].ID]
+	program := m.combatEngagements["mission-engagement-"+mission.ID]
+	m.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !participant.Armed || participant.ArmedByMissionID != mission.ID || participant.CurrentTargetID != "surface-07" {
+		t.Fatalf("mission participant was not armed and targeted: %#v", participant)
+	}
+	if unassigned.Armed {
+		t.Fatal("mission armed an unassigned vessel")
+	}
+	if program.Status != "active" || program.MaximumEffects != 4 || len(program.AutoArmedIDs) != 1 {
+		t.Fatalf("unexpected mission engagement: %#v", program)
 	}
 }
 

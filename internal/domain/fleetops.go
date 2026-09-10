@@ -189,6 +189,8 @@ type MissionWorkspaceV2 struct {
 	Constraints        ConstraintSetV2             `json:"constraints"`
 	Formation          string                      `json:"formation"`
 	Loop               bool                        `json:"loop"`
+	GuidanceKind       string                      `json:"guidance_kind,omitempty"`
+	EngagementPolicy   EngagementPolicyV1          `json:"engagement_policy"`
 	FollowContactID    string                      `json:"follow_contact_id,omitempty"`
 	ContactBehavior    string                      `json:"contact_behavior,omitempty"`
 	ContactStandoffM   float64                     `json:"contact_standoff_m,omitempty"`
@@ -225,6 +227,7 @@ type CommandDraftV2 struct {
 	FollowContactID       string                          `json:"follow_contact_id,omitempty"`
 	ContactBehavior       string                          `json:"contact_behavior,omitempty"`
 	ContactStandoffM      float64                         `json:"contact_standoff_m,omitempty"`
+	EngagementPolicy      EngagementPolicyV1              `json:"engagement_policy"`
 	PlanningMode          string                          `json:"planning_mode"`
 	StrategyCount         int                             `json:"strategy_count"`
 	Waypoints             []GeoPointV2                    `json:"waypoints"`
@@ -410,6 +413,7 @@ type MissionPlanningContextV2 struct {
 	Conversation     []MissionChatMessageV2    `json:"conversation,omitempty"`
 	SurfaceContacts  []SurfaceContactV2        `json:"surface_contacts"`
 	FollowContact    *SurfaceContactV2         `json:"follow_contact,omitempty"`
+	EngagementPolicy EngagementPolicyV1        `json:"engagement_policy"`
 }
 
 type FleetAssignmentV2 struct {
@@ -433,6 +437,7 @@ type FleetPlanV2 struct {
 	FollowContactID      string              `json:"follow_contact_id,omitempty"`
 	ContactBehavior      string              `json:"contact_behavior,omitempty"`
 	ContactStandoffM     float64             `json:"contact_standoff_m,omitempty"`
+	EngagementPolicy     EngagementPolicyV1  `json:"engagement_policy"`
 	ContinuousTracking   bool                `json:"continuous_tracking,omitempty"`
 	ReplanIntervalS      int                 `json:"replan_interval_seconds,omitempty"`
 	PredictionHorizonS   int                 `json:"prediction_horizon_seconds,omitempty"`

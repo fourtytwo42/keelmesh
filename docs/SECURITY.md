@@ -38,7 +38,7 @@ The browser is untrusted presentation input. Core is mission/memory authority. P
 - Schema, body, deadline, record, window, and tool-budget limits are external to prompts.
 - Receipts are immutable.
 - Control MCP omits direct authorize/start/effect tools.
-- Combat MCP can read state, draft an engagement, and request bounded controlled-vessel repair; it exposes no engagement-authorization or direct-fire tool.
+- Combat MCP can read state, draft an engagement, request bounded controlled-vessel repair, and set controlled arm state; it exposes no engagement-authorization or direct-fire tool. Arming alone permits return fire only.
 
 ## Data isolation
 
@@ -63,7 +63,7 @@ Only core `8080` is published. Simulated Starlink/HaLow faults never target Prox
 | Hallucinated entity | Core resolves authorized current IDs |
 | Duplicate response | Request identity, deadlines, one accepted result |
 | Stale approval | Exact hash and state/version validation |
-| Model or MCP attempts to fire | Typed engagement draft only; exact operator hash confirmation is required before bounded effects |
+| Model or MCP attempts to initiate fire | Typed engagement draft only; exact operator hash confirmation binds targets, geography, range, duration, effects, reserve, and disengagement conditions |
 | Tool escalation | Capability allow-list |
 | UI injection | Trusted A2UI catalog; no raw HTML/JS/CSS/URLs |
 | Memory poisoning | Provenance, precedence, confidence, approval, tombstones |

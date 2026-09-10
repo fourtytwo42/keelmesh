@@ -131,10 +131,12 @@ class SurfaceContact(BaseModel):
     navigation_state: str
     route_name: str
     # Underway contacts expose a multi-point programmed track. Anchored
-    # contacts intentionally expose their single fixed anchorage so the model
-    # can reason about them without pretending they are moving.
-    route: list[tuple[float, float]] = Field(min_length=1, max_length=24)
+    # contacts expose one fixed point; an adaptive hostile may expose no
+    # future route because publishing one would invent deterministic intent.
+    route: list[tuple[float, float]] = Field(default_factory=list, max_length=24)
     looping: bool
+    hostility: str = "neutral"
+    combat: dict[str, Any] | None = None
     updated_at: str
 
 
@@ -176,9 +178,11 @@ class MissionOptionsRequest(BaseModel):
     geometry_options: list[MissionGeometryOption] = Field(default_factory=list, max_length=8)
     map_bounds: list[tuple[float, float]] = Field(default_factory=list, max_length=2)
     formation_current: str
+    strategy_count: int = Field(default=3, ge=1, le=3)
     conversation: list[MissionChatMessage] = Field(default_factory=list, max_length=12)
-    surface_contacts: list[SurfaceContact] = Field(default_factory=list, max_length=32)
+    surface_contacts: list[SurfaceContact] = Field(default_factory=list, max_length=64)
     follow_contact: SurfaceContact | None = None
+    engagement_policy: dict[str, Any] = Field(default_factory=dict)
 
 
 class MissionTargetGroup(BaseModel):
@@ -226,7 +230,7 @@ class MissionCommandRequest(BaseModel):
     target_ids: list[str] = Field(default_factory=list, max_length=48)
     current_formation: str
     constraints: dict[str, Any]
-    surface_contacts: list[SurfaceContact] = Field(default_factory=list, max_length=32)
+    surface_contacts: list[SurfaceContact] = Field(default_factory=list, max_length=64)
 
 
 ALLOWED_FORMATIONS = {

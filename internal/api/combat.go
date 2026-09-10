@@ -63,7 +63,28 @@ func cutAction(value, suffix string) (string, bool) {
 }
 
 func (s *Server) repairCombatVesselV8(w http.ResponseWriter, r *http.Request) {
-	id, ok := cutAction(r.PathValue("action"), ":repair")
+	action := r.PathValue("action")
+	if id, ok := cutAction(action, ":arm"); ok {
+		var req fleetops.CombatArmRequest
+		if !decode(w, r, &req) {
+			return
+		}
+		req.Armed = true
+		value, err := s.fleetops.ArmCombatVessel(id, req)
+		respondV2(w, value, err, http.StatusOK)
+		return
+	}
+	if id, ok := cutAction(action, ":disarm"); ok {
+		var req fleetops.CombatArmRequest
+		if !decode(w, r, &req) {
+			return
+		}
+		req.Armed = false
+		value, err := s.fleetops.ArmCombatVessel(id, req)
+		respondV2(w, value, err, http.StatusOK)
+		return
+	}
+	id, ok := cutAction(action, ":repair")
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"code": "COMBAT_ENTITY_NOT_FOUND", "message": "Unknown vessel combat action."})
 		return

@@ -91,14 +91,15 @@ type CreateMissionRequest struct {
 }
 type PatchMissionRequest struct {
 	Mutation
-	Name        *string                 `json:"name"`
-	Objective   *string                 `json:"objective"`
-	Status      *string                 `json:"status"`
-	DraftSaved  *bool                   `json:"draft_saved"`
-	Formation   *string                 `json:"formation"`
-	Loop        *bool                   `json:"loop"`
-	TargetIDs   *[]string               `json:"target_ids"`
-	Constraints *domain.ConstraintSetV2 `json:"constraints"`
+	Name             *string                    `json:"name"`
+	Objective        *string                    `json:"objective"`
+	Status           *string                    `json:"status"`
+	DraftSaved       *bool                      `json:"draft_saved"`
+	Formation        *string                    `json:"formation"`
+	Loop             *bool                      `json:"loop"`
+	TargetIDs        *[]string                  `json:"target_ids"`
+	Constraints      *domain.ConstraintSetV2    `json:"constraints"`
+	EngagementPolicy *domain.EngagementPolicyV1 `json:"engagement_policy"`
 }
 type GeometryRequest struct {
 	Mutation
@@ -120,6 +121,7 @@ type CompileRequest struct {
 	Formation             string                                 `json:"formation"`
 	TargetSelection       *domain.MissionTargetSelectionV2       `json:"-"`
 	CommandInterpretation *domain.MissionCommandInterpretationV2 `json:"-"`
+	EngagementPolicy      *domain.EngagementPolicyV1             `json:"engagement_policy,omitempty"`
 }
 type PlansRequest struct {
 	Mutation
@@ -1296,7 +1298,7 @@ func (m *Manager) CreateMission(req CreateMissionRequest) (domain.MissionWorkspa
 		nameSource = "generated"
 		name = m.nextMissionNameLocked()
 	}
-	mission := domain.MissionWorkspaceV2{SchemaVersion: 2, ID: "mission-" + shortHash(req.IdempotencyKey), Name: m.uniqueMissionNameLocked(name), NameSource: nameSource, Objective: req.Objective, Status: "draft", TargetIDs: targets, TargetSnapshotHash: hashAny(targets), FleetVersion: m.fleetVersion, Version: 1, Geometry: domain.MissionGeometryV2{Revision: 1, IncludedAreas: [][][]float64{}, ExclusionAreas: [][][]float64{}, Waypoints: []domain.GeoPointV2{}, POIs: []domain.MissionPOIV2{}}, Constraints: defaultConstraints(), Formation: "column", Loop: false, Conversation: []domain.MissionChatMessageV2{}, CreatedAt: now, UpdatedAt: now}
+	mission := domain.MissionWorkspaceV2{SchemaVersion: 2, ID: "mission-" + shortHash(req.IdempotencyKey), Name: m.uniqueMissionNameLocked(name), NameSource: nameSource, Objective: req.Objective, Status: "draft", TargetIDs: targets, TargetSnapshotHash: hashAny(targets), FleetVersion: m.fleetVersion, Version: 1, Geometry: domain.MissionGeometryV2{Revision: 1, IncludedAreas: [][][]float64{}, ExclusionAreas: [][][]float64{}, Waypoints: []domain.GeoPointV2{}, POIs: []domain.MissionPOIV2{}}, Constraints: defaultConstraints(), Formation: "column", Loop: false, EngagementPolicy: defaultEngagementPolicy(), Conversation: []domain.MissionChatMessageV2{}, CreatedAt: now, UpdatedAt: now}
 	m.missions[mission.ID] = mission
 	m.persistAsync()
 	return mission, nil
@@ -1399,6 +1401,13 @@ func (m *Manager) PatchMission(id string, req PatchMissionRequest) (domain.Missi
 		v.Constraints = conservative(*req.Constraints, v.Constraints)
 	}
 	authorityShapeChanged := false
+	if req.EngagementPolicy != nil {
+		nextPolicy := normalizeEngagementPolicy(*req.EngagementPolicy, v.FollowContactID)
+		if hashAny(nextPolicy) != hashAny(v.EngagementPolicy) {
+			v.EngagementPolicy = nextPolicy
+			authorityShapeChanged = true
+		}
+	}
 	if req.Loop != nil && v.Loop != *req.Loop {
 		v.Loop = *req.Loop
 		authorityShapeChanged = true
@@ -1434,6 +1443,7 @@ func (m *Manager) PatchMission(id string, req PatchMissionRequest) (domain.Missi
 // change into a safe replan boundary. No stale plan, lease, or trajectory may
 // continue after the operator changes who participates or whether work repeats.
 func (m *Manager) invalidateMissionExecutionLocked(id string, mission *domain.MissionWorkspaceV2) {
+	m.stopMissionEngagementLocked(id)
 	for vesselID, vessel := range m.vessels {
 		if vessel.Telemetry.MissionID != id {
 			continue
@@ -1494,6 +1504,7 @@ func (m *Manager) DeleteMission(id string, req Mutation) error {
 		return &Error{"MISSION_PERSISTENCE_FAILED", "Mission deletion could not be committed. Nothing was deleted."}
 	}
 	m.releaseMissionVesselsLocked(id, "mission-delete")
+	m.stopMissionEngagementLocked(id)
 	for key, draft := range m.drafts {
 		if draft.MissionID == id {
 			delete(m.drafts, key)
@@ -1540,6 +1551,9 @@ func (m *Manager) SetGeometry(id string, req GeometryRequest) (domain.MissionWor
 		return v, err
 	}
 	v.Geometry = domain.MissionGeometryV2{Revision: v.Geometry.Revision + 1, IncludedAreas: req.IncludedAreas, ExclusionAreas: req.ExclusionAreas, Waypoints: req.Waypoints, WaypointDetails: details, POIs: req.POIs}
+	if v.Status == "executing" || v.Status == "authorized" || v.Status == "paused" {
+		m.invalidateMissionExecutionLocked(id, &v)
+	}
 	m.reconcileGroupAssemblyWaypointsLocked(id, details)
 	v.Version++
 	v.UpdatedAt = time.Now().UTC()
@@ -2002,6 +2016,25 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 		mission.ContactStandoffM = 0
 		missionChanged = true
 	}
+	if mission.GuidanceKind != kind {
+		mission.GuidanceKind = kind
+		missionChanged = true
+	}
+	if kind == "engage_hostile" || kind == "engage_contact" {
+		policy := defaultEngagementPolicy()
+		if req.EngagementPolicy != nil {
+			policy = normalizeEngagementPolicy(*req.EngagementPolicy, followContactID)
+		} else {
+			policy = normalizeEngagementPolicy(policy, followContactID)
+		}
+		if hashAny(policy) != hashAny(mission.EngagementPolicy) {
+			mission.EngagementPolicy = policy
+			missionChanged = true
+		}
+	} else if mission.EngagementPolicy.Enabled {
+		mission.EngagementPolicy = defaultEngagementPolicy()
+		missionChanged = true
+	}
 	constraints := mission.Constraints
 	if req.CommandInterpretation != nil {
 		if requested := req.CommandInterpretation.MinimumReserve; requested > constraints.MinimumReserve {
@@ -2092,7 +2125,7 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 	if len(wps) == 0 && len(mission.Geometry.IncludedAreas) == 0 {
 		amb = append(amb, "Choose an area or waypoint before route generation.")
 	}
-	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, FollowContactID: followContactID, ContactBehavior: contactBehavior, ContactStandoffM: contactStandoffM, PlanningMode: planningMode, StrategyCount: strategyCount, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, TargetSelection: req.TargetSelection, CommandInterpretation: req.CommandInterpretation, Ambiguities: amb}
+	draft := domain.CommandDraftV2{SchemaVersion: 2, ID: "draft-" + shortHash(req.IdempotencyKey), MissionID: id, SourceText: req.Text, Objective: nonempty(req.Text, mission.Objective), TargetIDs: targets, TargetSnapshotHash: hashAny(targets), GeometryRevision: mission.Geometry.Revision, FleetVersion: m.fleetVersion, Constraints: constraints, FormationPreference: formation, GuidanceKind: kind, FollowContactID: followContactID, ContactBehavior: contactBehavior, ContactStandoffM: contactStandoffM, EngagementPolicy: mission.EngagementPolicy, PlanningMode: planningMode, StrategyCount: strategyCount, Waypoints: wps, GeometrySource: geometrySource, ResolutionNotes: notes, TargetSelection: req.TargetSelection, CommandInterpretation: req.CommandInterpretation, Ambiguities: amb}
 	draft.ContentHash = hashWithout(draft)
 	m.drafts[draft.ID] = draft
 	messageID := "message-" + shortHash(req.IdempotencyKey)
@@ -2142,7 +2175,7 @@ func (m *Manager) PlanningContext(draftID string) (domain.MissionPlanningContext
 			break
 		}
 	}
-	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, float64(m.simTickMS/1000)), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, GeometryOptions: geometryOptions, MapBounds: [][]float64{{-72.1, 40.75}, {-70.55, 42.05}}, FormationCurrent: mission.Formation, StrategyCount: draft.StrategyCount, Conversation: append([]domain.MissionChatMessageV2(nil), conversation...), SurfaceContacts: contacts, FollowContact: follow}, nil
+	return domain.MissionPlanningContextV2{SchemaVersion: 2, MissionID: mission.ID, Intent: draft.SourceText, GuidanceKind: draft.GuidanceKind, TargetCount: len(targets), Targets: targets, Constraints: draft.Constraints, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, float64(m.simTickMS/1000)), OperatingAreas: len(mission.Geometry.IncludedAreas), ExclusionAreas: len(mission.Geometry.ExclusionAreas), WaypointCount: len(draft.Waypoints), GeometrySource: draft.GeometrySource, GeometryOptions: geometryOptions, MapBounds: [][]float64{{-72.1, 40.75}, {-70.55, 42.05}}, FormationCurrent: mission.Formation, StrategyCount: draft.StrategyCount, Conversation: append([]domain.MissionChatMessageV2(nil), conversation...), SurfaceContacts: contacts, FollowContact: follow, EngagementPolicy: draft.EngagementPolicy}, nil
 }
 
 // ApplyAdvisor validates and freezes advisory strategies into the immutable
@@ -2237,10 +2270,11 @@ func (m *Manager) ApplyAdvisor(draftID string, advisor domain.MissionAdvisorV2) 
 		Geometry      int64
 		FleetVersion  int64
 		Constraints   domain.ConstraintSetV2
+		Engagement    domain.EngagementPolicyV1
 		Strategies    []domain.MissionStrategyV2
 		PlanningMode  string
 		StrategyCount int
-	}{draft.ID, draft.MissionID, draft.SourceText, draft.TargetIDs, draft.GeometryRevision, draft.FleetVersion, draft.Constraints, advisor.Strategies, draft.PlanningMode, draft.StrategyCount})
+	}{draft.ID, draft.MissionID, draft.SourceText, draft.TargetIDs, draft.GeometryRevision, draft.FleetVersion, draft.Constraints, draft.EngagementPolicy, advisor.Strategies, draft.PlanningMode, draft.StrategyCount})
 	m.drafts[draftID] = draft
 	return draft, nil
 }
@@ -2860,7 +2894,7 @@ func recoverFleetPlan(mission domain.MissionWorkspaceV2, program domain.Trajecto
 		SchemaVersion: 2, ID: revision.PlanID, MissionID: mission.ID, Name: mission.Name + " active course",
 		Description: "Recovered from the signed active trajectory journal after restart.", Formation: mission.Formation,
 		AdvisorSource: "signed-trajectory-journal", FollowContactID: mission.FollowContactID, ContactBehavior: mission.ContactBehavior,
-		ContactStandoffM: mission.ContactStandoffM, ContinuousTracking: mission.FollowContactID != "", ReplanIntervalS: 60,
+		ContactStandoffM: mission.ContactStandoffM, EngagementPolicy: mission.EngagementPolicy, ContinuousTracking: mission.FollowContactID != "", ReplanIntervalS: 60,
 		PredictionHorizonS: 180, Assignments: assignments, MinimumReserve: minimumReserve,
 		DurationMinutes: float64(revision.DurationS) / 60, MinimumSeparationM: mission.Constraints.MinimumVesselSeparationM,
 		PolicyStatus: "approval_required", Recommended: true, ContentHash: revision.PlanHash, SourceMissionVersion: mission.Version,
@@ -2961,6 +2995,11 @@ func (m *Manager) Start(mid, pid string, req PlanActionRequest) (domain.MissionW
 	if req.PlanHash != p.ContentHash || lease.PlanHash != p.ContentHash {
 		return mission, &Error{"PLAN_HASH_MISMATCH", "Plan changed after approval."}
 	}
+	if mission.EngagementPolicy.Enabled {
+		if m.resolveMissionEngagementTargetLocked(mission.TargetIDs, normalizeEngagementPolicy(mission.EngagementPolicy, mission.FollowContactID)) == "" {
+			return mission, &Error{"COMBAT_ENTITY_NOT_FOUND", "No contact satisfies the approved mission engagement policy."}
+		}
+	}
 	m.startedPlans[req.IdempotencyKey] = pid
 	program, revising := m.programs[mid]
 	revisionNumber, createdTick, activationTick := 1, int64(0), int64(0)
@@ -3023,6 +3062,11 @@ func (m *Manager) Start(mid, pid string, req PlanActionRequest) (domain.MissionW
 		v.Telemetry.SpeedMPS = a.SpeedMPS
 		v.Telemetry.ProjectedReserve = p.MinimumReserve
 		m.vessels[v.ID] = v
+	}
+	if mission.EngagementPolicy.Enabled {
+		if err := m.activateMissionEngagementLocked(mission); err != nil {
+			return mission, err
+		}
 	}
 	m.fleetVersion++
 	m.persistAsync()
@@ -3148,7 +3192,7 @@ func (m *Manager) makePlan(mission domain.MissionWorkspaceV2, draft domain.Comma
 		status = "prohibited"
 		reasons = append(reasons, "MAXIMUM_DURATION_VIOLATION")
 	}
-	p := domain.FleetPlanV2{SchemaVersion: 2, ID: fmt.Sprintf("plan-%s-%d", shortHash(draft.ContentHash), index+1), MissionID: mission.ID, DraftID: draft.ID, Name: strategy.Name, Description: strategy.Description, Formation: formation, AdvisorSource: draft.Advisor.Provider, AdvisorModel: draft.Advisor.Model, Maneuvers: cloneStrings(strategy.Maneuvers), FollowContactID: draft.FollowContactID, ContactBehavior: draft.ContactBehavior, ContactStandoffM: draft.ContactStandoffM, ContinuousTracking: draft.FollowContactID != "", ReplanIntervalS: 60, PredictionHorizonS: 900, Assignments: assignments, CoveragePercent: coverage, MinimumReserve: minReserve, DurationMinutes: duration, EnergyKWH: totalEnergyKWH, LinkExposureSeconds: duration * 60 * .08 * float64(index+1), MinimumSeparationM: minSep, PolicyStatus: status, ReasonCodes: reasons, SourceMissionVersion: mission.Version}
+	p := domain.FleetPlanV2{SchemaVersion: 2, ID: fmt.Sprintf("plan-%s-%d", shortHash(draft.ContentHash), index+1), MissionID: mission.ID, DraftID: draft.ID, Name: strategy.Name, Description: strategy.Description, Formation: formation, AdvisorSource: draft.Advisor.Provider, AdvisorModel: draft.Advisor.Model, Maneuvers: cloneStrings(strategy.Maneuvers), FollowContactID: draft.FollowContactID, ContactBehavior: draft.ContactBehavior, ContactStandoffM: draft.ContactStandoffM, EngagementPolicy: draft.EngagementPolicy, ContinuousTracking: draft.FollowContactID != "", ReplanIntervalS: 60, PredictionHorizonS: 900, Assignments: assignments, CoveragePercent: coverage, MinimumReserve: minReserve, DurationMinutes: duration, EnergyKWH: totalEnergyKWH, LinkExposureSeconds: duration * 60 * .08 * float64(index+1), MinimumSeparationM: minSep, PolicyStatus: status, ReasonCodes: reasons, SourceMissionVersion: mission.Version}
 	p.ContentHash = hashWithout(p)
 	return p
 }
@@ -4044,6 +4088,49 @@ func (m *Manager) sign(v any) string {
 	b, _ := json.Marshal(v)
 	mac.Write(b)
 	return "hmac-sha256:" + hex.EncodeToString(mac.Sum(nil))
+}
+
+func defaultEngagementPolicy() domain.EngagementPolicyV1 {
+	return domain.EngagementPolicyV1{
+		TargetScope: "designated", AutoArm: true, ReturnFire: true,
+		RequireTargetInMissionArea: true, MaximumEffects: 80,
+		DurationSeconds: 900, DisengageHullPercent: 20,
+	}
+}
+
+func normalizeEngagementPolicy(value domain.EngagementPolicyV1, contactID string) domain.EngagementPolicyV1 {
+	if value.TargetScope != "designated" && value.TargetScope != "hostile_contacts" && value.TargetScope != "any_contact" {
+		value.TargetScope = "designated"
+	}
+	if contactID != "" && len(value.DesignatedTargetIDs) == 0 {
+		value.DesignatedTargetIDs = []string{contactID}
+	}
+	value.DesignatedTargetIDs = uniqueStrings(value.DesignatedTargetIDs)
+	if value.MaximumEffects <= 0 {
+		value.MaximumEffects = 80
+	}
+	if value.MaximumEffects > 10000 {
+		value.MaximumEffects = 10000
+	}
+	if value.DurationSeconds <= 0 {
+		value.DurationSeconds = 900
+	}
+	if value.DurationSeconds > 3600 {
+		value.DurationSeconds = 3600
+	}
+	if value.DisengageHullPercent <= 0 {
+		value.DisengageHullPercent = 20
+	}
+	value.DisengageHullPercent = math.Max(5, math.Min(80, value.DisengageHullPercent))
+	value.MaximumRangeM = math.Max(0, value.MaximumRangeM)
+	// An attack mission always arms its assigned vessels at activation. Arming
+	// remains separate from the permission to initiate fire after the mission.
+	value.AutoArm = true
+	// Return fire follows the vessel's armed state. A mission may bound
+	// initiating fire, but it cannot silently disable that self-defense rule.
+	value.ReturnFire = true
+	value.Enabled = true
+	return value
 }
 
 func defaultConstraints() domain.ConstraintSetV2 {

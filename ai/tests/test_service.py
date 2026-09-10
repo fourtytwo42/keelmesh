@@ -5,6 +5,7 @@ from keelmesh_ai.service import (
     MissionOptionsRequest,
     MissionCommandRequest,
     MissionTargetSelectionRequest,
+    SurfaceContact,
     deterministic_mission_options,
     digest,
     openai_response_text,
@@ -16,6 +17,36 @@ from keelmesh_ai.service import (
     parse_model_json,
     parse_target_selection,
 )
+
+
+def test_surface_contact_accepts_adaptive_hostile_without_published_route() -> None:
+    contact = SurfaceContact.model_validate(
+        {
+            "id": "HOSTILE-0001",
+            "boat_id": "HOSTILE-0001",
+            "name": "Blackwake",
+            "callsign": "BLACKWAKE",
+            "class": "pirate-raider",
+            "activity": "adaptive hostile",
+            "color_name": "hostile red",
+            "color": "#e3544f",
+            "position": [-71.5, 41.0],
+            "heading_deg": 90,
+            "speed_mps": 2.7,
+            "speed_knots": 5.25,
+            "length_m": 46,
+            "draft_m": 4.8,
+            "navigation_state": "adaptive intercept",
+            "route_name": "adaptive offshore hunt",
+            "route": [],
+            "looping": False,
+            "hostility": "hostile",
+            "combat": {"armed": True},
+            "updated_at": "2026-09-10T12:00:00Z",
+        }
+    )
+    assert contact.route == []
+    assert contact.hostility == "hostile"
 
 
 def test_mission_command_binds_surround_to_live_contact() -> None:
@@ -275,6 +306,8 @@ def test_mission_context_accepts_stationary_anchored_contact() -> None:
             "waypoint_count": 1,
             "geometry_source": "intent:contact",
             "formation_current": "column",
+            "strategy_count": 1,
+            "engagement_policy": {"enabled": True, "target_scope": "designated"},
             "surface_contacts": [
                 {
                     "id": "surface-16",
@@ -295,6 +328,8 @@ def test_mission_context_accepts_stationary_anchored_contact() -> None:
                     "route_name": "Rhode Island Sound anchorage",
                     "route": [[-71.275, 41.285]],
                     "looping": False,
+                    "hostility": "neutral",
+                    "combat": {"armed": False, "damage": {"integrity_percent": 100}},
                     "updated_at": "2026-09-03T12:00:00Z",
                 }
             ],
@@ -302,6 +337,9 @@ def test_mission_context_accepts_stationary_anchored_contact() -> None:
     )
     assert request.surface_contacts[0].navigation_state == "at anchor"
     assert request.surface_contacts[0].route == [(-71.275, 41.285)]
+    assert request.strategy_count == 1
+    assert request.engagement_policy["target_scope"] == "designated"
+    assert request.surface_contacts[0].combat is not None
 
 
 def test_strategy_name_maps_to_bounded_operation_name() -> None:

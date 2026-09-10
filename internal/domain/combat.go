@@ -53,6 +53,11 @@ type CombatEntityStateV1 struct {
 	Profile             CombatProfileV1   `json:"profile"`
 	Damage              DamageStateV1     `json:"damage"`
 	BehaviorState       string            `json:"behavior_state"`
+	Armed               bool              `json:"armed"`
+	ArmStateSource      string            `json:"arm_state_source,omitempty"`
+	ArmedByMissionID    string            `json:"armed_by_mission_id,omitempty"`
+	LastAttackerID      string            `json:"last_attacker_id,omitempty"`
+	LastAttackedTickMS  int64             `json:"last_attacked_tick_ms,omitempty"`
 	CurrentTargetID     string            `json:"current_target_id,omitempty"`
 	ActiveEngagementID  string            `json:"active_engagement_id,omitempty"`
 	LastDecision        *RaiderDecisionV1 `json:"last_decision,omitempty"`
@@ -67,28 +72,50 @@ type CombatEntityStateV1 struct {
 	UpdatedAt           time.Time         `json:"updated_at"`
 }
 
+// EngagementPolicyV1 is the operator-authored rules-of-engagement envelope
+// carried by a mission. Arming permits self-defense; initiating fire still
+// requires a confirmed mission or engagement whose policy names the target.
+type EngagementPolicyV1 struct {
+	Enabled                    bool     `json:"enabled"`
+	TargetScope                string   `json:"target_scope"`
+	DesignatedTargetIDs        []string `json:"designated_target_ids,omitempty"`
+	AutoArm                    bool     `json:"auto_arm"`
+	ReturnFire                 bool     `json:"return_fire"`
+	RequireTargetInMissionArea bool     `json:"require_target_in_mission_area"`
+	MaximumRangeM              float64  `json:"maximum_range_m"`
+	MaximumEffects             int      `json:"maximum_effects"`
+	DurationSeconds            int64    `json:"duration_seconds"`
+	DisengageHullPercent       float64  `json:"disengage_hull_percent"`
+}
+
 type EngagementProgramV1 struct {
-	SchemaVersion        int        `json:"schema_version"`
-	ID                   string     `json:"id"`
-	RequestID            string     `json:"request_id"`
-	IdempotencyKey       string     `json:"idempotency_key"`
-	TargetID             string     `json:"target_id"`
-	ParticipantIDs       []string   `json:"participant_ids"`
-	AllowedWeaponIDs     []string   `json:"allowed_weapon_ids"`
-	MaximumRangeM        float64    `json:"maximum_range_m"`
-	MaximumEffects       int        `json:"maximum_effects"`
-	EffectsApplied       int        `json:"effects_applied"`
-	DurationSeconds      int64      `json:"duration_seconds"`
-	IssuedTickMS         int64      `json:"issued_tick_ms"`
-	ExpiresTickMS        int64      `json:"expires_tick_ms"`
-	DisengageHullPercent float64    `json:"disengage_hull_percent"`
-	MinimumReserve       float64    `json:"minimum_reserve"`
-	Status               string     `json:"status"`
-	ContentHash          string     `json:"content_hash"`
-	OperatorID           string     `json:"operator_id,omitempty"`
-	MissionID            string     `json:"mission_id,omitempty"`
-	CreatedAt            time.Time  `json:"created_at"`
-	AuthorizedAt         *time.Time `json:"authorized_at,omitempty"`
+	SchemaVersion        int           `json:"schema_version"`
+	ID                   string        `json:"id"`
+	RequestID            string        `json:"request_id"`
+	IdempotencyKey       string        `json:"idempotency_key"`
+	TargetID             string        `json:"target_id"`
+	EligibleTargetIDs    []string      `json:"eligible_target_ids"`
+	ParticipantIDs       []string      `json:"participant_ids"`
+	AllowedWeaponIDs     []string      `json:"allowed_weapon_ids"`
+	MaximumRangeM        float64       `json:"maximum_range_m"`
+	MaximumEffects       int           `json:"maximum_effects"`
+	EffectsApplied       int           `json:"effects_applied"`
+	DurationSeconds      int64         `json:"duration_seconds"`
+	IssuedTickMS         int64         `json:"issued_tick_ms"`
+	ExpiresTickMS        int64         `json:"expires_tick_ms"`
+	DisengageHullPercent float64       `json:"disengage_hull_percent"`
+	MinimumReserve       float64       `json:"minimum_reserve"`
+	Status               string        `json:"status"`
+	ContentHash          string        `json:"content_hash"`
+	OperatorID           string        `json:"operator_id,omitempty"`
+	MissionID            string        `json:"mission_id,omitempty"`
+	TargetScope          string        `json:"target_scope"`
+	ReturnFire           bool          `json:"return_fire"`
+	RequireTargetInArea  bool          `json:"require_target_in_mission_area"`
+	OperatingAreas       [][][]float64 `json:"operating_areas,omitempty"`
+	AutoArmedIDs         []string      `json:"auto_armed_ids,omitempty"`
+	CreatedAt            time.Time     `json:"created_at"`
+	AuthorizedAt         *time.Time    `json:"authorized_at,omitempty"`
 }
 
 type CombatEffectV1 struct {

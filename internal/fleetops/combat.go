@@ -14,6 +14,7 @@ import (
 )
 
 const blackwakeID = "HOSTILE-0001"
+const blackwakeMaximumSpeedMPS = 2.7
 
 var blackwakePatrol = []domain.GeoPointV2{
 	{-71.78, 40.93}, {-71.48, 40.88}, {-71.12, 40.92}, {-70.78, 41.02},
@@ -38,6 +39,11 @@ type CombatAuthorizeRequest struct {
 type CombatRepairRequest struct {
 	Mutation
 	VesselID string `json:"vessel_id,omitempty"`
+}
+
+type CombatArmRequest struct {
+	Mutation
+	Armed bool `json:"armed"`
 }
 
 func controlledCombatProfile(vessel domain.VesselProfileV2) domain.CombatProfileV1 {
@@ -82,7 +88,7 @@ func newCombatEntity(id, boatID, name, kind string, position domain.GeoPointV2, 
 	now := time.Now().UTC()
 	return domain.CombatEntityStateV1{
 		SchemaVersion: 1, EntityID: id, BoatID: boatID, Name: name, EntityKind: kind,
-		Position: position, Profile: profile, BehaviorState: "operational",
+		Position: position, Profile: profile, BehaviorState: "operational", Armed: !profile.Controlled && len(profile.Weapons) > 0,
 		Damage:              domain.DamageStateV1{Hull: profile.HullMaximum, HullMaximum: profile.HullMaximum, IntegrityPercent: 100, PropulsionPercent: 100, SensorsPercent: 100, WeaponsPercent: 100},
 		WeaponReadyAtTickMS: map[string]int64{}, Respawn: domain.RespawnStateV1{Status: "active"}, SpawnGeneration: 1,
 		RandomSeed: seed, StateVersion: 1, UpdatedAt: now,
@@ -98,7 +104,11 @@ func (m *Manager) initializeCombatLocked() {
 		m.combatEntities[vessel.ID] = newCombatEntity(vessel.ID, vessel.Designation, vessel.Callsign, "controlled", vessel.Telemetry.Position, profile, int64(stableSeed(vessel.ID)))
 	}
 	for _, contact := range surfaceContactsAt(time.UnixMilli(m.simulationEpochMS + m.simTickMS).UTC()) {
-		if _, exists := m.combatEntities[contact.ID]; exists {
+		if existing, exists := m.combatEntities[contact.ID]; exists {
+			if len(existing.Profile.Weapons) > 0 && !existing.Armed {
+				existing.Armed, existing.ArmStateSource = true, "npc_self_defense"
+				m.combatEntities[contact.ID] = existing
+			}
 			continue
 		}
 		profile := contactCombatProfile(contact)
@@ -120,6 +130,10 @@ func (m *Manager) initializeCombatLocked() {
 		blackwake.RouteHistory = [][]domain.GeoPointV2{{blackwakePatrol[0], blackwakePatrol[1]}}
 		blackwake.RouteHistoryTicks = []int64{m.simTickMS}
 		blackwake.LastDecision = &domain.RaiderDecisionV1{ID: "raider-initial", State: "roam", Destination: blackwakePatrol[1], Reason: "water-safe offshore patrol", Seed: blackwake.RandomSeed}
+		m.combatEntities[blackwakeID] = blackwake
+	} else {
+		blackwake := m.combatEntities[blackwakeID]
+		blackwake.Armed, blackwake.ArmStateSource = true, "hostile_autonomy"
 		m.combatEntities[blackwakeID] = blackwake
 	}
 }
@@ -211,8 +225,8 @@ func (m *Manager) PlanCombatEngagement(req CombatEngagementRequest) (domain.Enga
 	if !ok {
 		return domain.EngagementProgramV1{}, &Error{"COMBAT_ENTITY_NOT_FOUND", "Target not found."}
 	}
-	if target.Profile.Hostility != "hostile" {
-		return domain.EngagementProgramV1{}, &Error{"TARGET_NOT_HOSTILE", "Only a hostile target can be used in an engagement program."}
+	if target.Profile.Controlled {
+		return domain.EngagementProgramV1{}, &Error{"TARGET_NOT_HOSTILE", "A controlled Fleet vessel cannot be designated as an engagement target."}
 	}
 	participants := uniqueStrings(req.ParticipantIDs)
 	weapons, maxRange := []string{}, 0.0
@@ -227,7 +241,7 @@ func (m *Manager) PlanCombatEngagement(req CombatEngagementRequest) (domain.Enga
 		}
 	}
 	if len(participants) == 0 || len(weapons) == 0 {
-		return domain.EngagementProgramV1{}, &Error{"WEAPON_UNAVAILABLE", "Select at least one armed controlled vessel."}
+		return domain.EngagementProgramV1{}, &Error{"WEAPON_UNAVAILABLE", "Select at least one operational, weapon-capable controlled vessel."}
 	}
 	duration := req.DurationSeconds
 	if duration <= 0 {
@@ -240,7 +254,7 @@ func (m *Manager) PlanCombatEngagement(req CombatEngagementRequest) (domain.Enga
 	if maximumEffects <= 0 {
 		maximumEffects = len(participants) * 80
 	}
-	program := domain.EngagementProgramV1{SchemaVersion: 1, ID: "engagement-" + shortHash(req.IdempotencyKey), RequestID: req.RequestID, IdempotencyKey: req.IdempotencyKey, TargetID: target.EntityID, ParticipantIDs: participants, AllowedWeaponIDs: weapons, MaximumRangeM: maxRange, MaximumEffects: maximumEffects, DurationSeconds: duration, IssuedTickMS: m.simTickMS, ExpiresTickMS: m.simTickMS + duration*1000, DisengageHullPercent: 20, MinimumReserve: .2, Status: "pending_approval", MissionID: req.MissionID, CreatedAt: time.Now().UTC()}
+	program := domain.EngagementProgramV1{SchemaVersion: 1, ID: "engagement-" + shortHash(req.IdempotencyKey), RequestID: req.RequestID, IdempotencyKey: req.IdempotencyKey, TargetID: target.EntityID, EligibleTargetIDs: []string{target.EntityID}, ParticipantIDs: participants, AllowedWeaponIDs: weapons, MaximumRangeM: maxRange, MaximumEffects: maximumEffects, DurationSeconds: duration, IssuedTickMS: m.simTickMS, ExpiresTickMS: m.simTickMS + duration*1000, DisengageHullPercent: 20, MinimumReserve: .2, Status: "pending_approval", MissionID: req.MissionID, TargetScope: "designated", ReturnFire: true, CreatedAt: time.Now().UTC()}
 	program.ContentHash = engagementContentHash(program)
 	if existingID, exists := m.combatIdempotency[req.IdempotencyKey]; exists {
 		existing := m.combatEngagements[existingID]
@@ -281,6 +295,10 @@ func (m *Manager) AuthorizeCombatEngagement(id string, req CombatAuthorizeReques
 	m.combatEngagements[id] = program
 	for _, participant := range program.ParticipantIDs {
 		entity := m.combatEntities[participant]
+		if !entity.Armed {
+			program.AutoArmedIDs = append(program.AutoArmedIDs, participant)
+		}
+		entity.Armed, entity.ArmStateSource = true, "engagement"
 		entity.ActiveEngagementID = id
 		entity.CurrentTargetID = program.TargetID
 		entity.BehaviorState = "engage"
@@ -288,9 +306,52 @@ func (m *Manager) AuthorizeCombatEngagement(id string, req CombatAuthorizeReques
 		m.combatEntities[participant] = entity
 	}
 	m.combatVersion++
+	m.combatEngagements[id] = program
 	m.recordCombatEventLocked("engagement_authorized", id, program.TargetID, map[string]any{"hash": program.ContentHash, "operator": req.OperatorID})
 	m.persistCombatAsync(true)
 	return program, nil
+}
+
+func (m *Manager) ArmCombatVessel(id string, req CombatArmRequest) (domain.CombatEntityStateV1, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if req.RequestID == "" || req.IdempotencyKey == "" {
+		return domain.CombatEntityStateV1{}, &Error{"INVALID_REQUEST", "request_id and idempotency_key are required."}
+	}
+	actionKey := fmt.Sprintf("arm:%s:%t", id, req.Armed)
+	if previous, exists := m.combatIdempotency[req.IdempotencyKey]; exists {
+		if previous != actionKey {
+			return domain.CombatEntityStateV1{}, &Error{"COMBAT_STATE_STALE", "Idempotency key was already used for a different combat action."}
+		}
+		if entity, ok := m.combatEntities[id]; ok {
+			return entity, nil
+		}
+	}
+	entity, ok := m.combatEntities[id]
+	if !ok || !entity.Profile.Controlled {
+		return domain.CombatEntityStateV1{}, &Error{"ARM_TARGET_DENIED", "Only controlled Fleet vessels may be armed or disarmed."}
+	}
+	if entity.Damage.Sunk || entity.Damage.Disabled {
+		return domain.CombatEntityStateV1{}, &Error{"VESSEL_SUNK", "A disabled vessel cannot change arm state."}
+	}
+	if !req.Armed && entity.ActiveEngagementID != "" {
+		// Disarming is always allowed and immediately prevents further fire;
+		// movement may continue until the mission or engagement is stopped.
+		entity.BehaviorState = "weapons_safe"
+	}
+	entity.Armed = req.Armed
+	entity.ArmStateSource = map[bool]string{true: "operator", false: "weapons_safe"}[req.Armed]
+	if !req.Armed {
+		entity.ArmedByMissionID = ""
+	}
+	entity.StateVersion++
+	entity.UpdatedAt = time.Now().UTC()
+	m.combatEntities[id] = entity
+	m.combatIdempotency[req.IdempotencyKey] = actionKey
+	m.combatVersion++
+	m.recordCombatEventLocked("arm_state_changed", id, "", map[string]any{"armed": req.Armed, "source": entity.ArmStateSource, "actor": req.ActorIdentity})
+	m.persistCombatAsync(true)
+	return entity, nil
 }
 
 func (m *Manager) StopCombatEngagement(id string, req Mutation) (domain.EngagementProgramV1, error) {
@@ -308,14 +369,7 @@ func (m *Manager) StopCombatEngagement(id string, req Mutation) (domain.Engageme
 	}
 	program.Status = "stopped"
 	m.combatEngagements[id] = program
-	for _, participant := range program.ParticipantIDs {
-		entity := m.combatEntities[participant]
-		if entity.ActiveEngagementID == id {
-			entity.ActiveEngagementID, entity.CurrentTargetID, entity.BehaviorState = "", "", "operational"
-			entity.StateVersion++
-			m.combatEntities[participant] = entity
-		}
-	}
+	m.releaseEngagementParticipantsLocked(program)
 	m.combatVersion++
 	m.recordCombatEventLocked("engagement_stopped", id, program.TargetID, nil)
 	m.persistCombatAsync(true)
@@ -394,6 +448,7 @@ func (m *Manager) advanceCombatLocked(deltaMS int64) {
 	m.advanceCommercialEscapeLocked(deltaMS)
 	m.advanceEngagementsLocked()
 	m.advanceMilitaryDefenseLocked()
+	m.advanceControlledSelfDefenseLocked()
 	cutoff := time.Now().UTC().Add(-4 * time.Second)
 	projectiles := m.combatProjectiles[:0]
 	for _, event := range m.combatProjectiles {
@@ -525,7 +580,7 @@ func (m *Manager) advanceBlackwakeLocked(deltaMS int64) {
 		raider.LastDecision = nil
 	}
 	destination = clampCombatPosition(destination)
-	moveCombatEntity(&raider, destination, 2.6*math.Max(.35, raider.Damage.PropulsionPercent/100), float64(deltaMS)/1000)
+	moveCombatEntity(&raider, destination, blackwakeMaximumSpeedMPS*math.Max(.35, raider.Damage.PropulsionPercent/100), float64(deltaMS)/1000)
 	raider.StateVersion++
 	raider.UpdatedAt = time.Now().UTC()
 	m.combatEntities[blackwakeID] = raider
@@ -675,15 +730,28 @@ func (m *Manager) advanceEngagementsLocked() {
 		}
 		target := m.combatEntities[program.TargetID]
 		if target.Damage.Sunk {
-			program.Status = "completed"
-			m.combatEngagements[id] = program
-			m.releaseEngagementParticipantsLocked(program)
-			continue
+			nextID := m.nextEligibleEngagementTargetLocked(program)
+			if nextID == "" {
+				program.Status = "completed"
+				m.combatEngagements[id] = program
+				m.releaseEngagementParticipantsLocked(program)
+				continue
+			}
+			program.TargetID, target = nextID, m.combatEntities[nextID]
+			for _, participantID := range program.ParticipantIDs {
+				participant := m.combatEntities[participantID]
+				participant.CurrentTargetID = nextID
+				m.combatEntities[participantID] = participant
+			}
+			m.recordCombatEventLocked("engagement_target_advanced", id, nextID, nil)
 		}
 		for _, participantID := range program.ParticipantIDs {
 			participant := m.combatEntities[participantID]
 			vessel := m.vessels[participantID]
-			if participant.Damage.Sunk || participant.Damage.Disabled || participant.Damage.IntegrityPercent <= program.DisengageHullPercent || vessel.Telemetry.Reserve <= program.MinimumReserve {
+			if !participant.Armed || participant.Damage.Sunk || participant.Damage.Disabled || participant.Damage.IntegrityPercent <= program.DisengageHullPercent || vessel.Telemetry.Reserve <= program.MinimumReserve {
+				continue
+			}
+			if program.RequireTargetInArea && len(program.OperatingAreas) > 0 && !combatPointInAreas(target.Position, program.OperatingAreas) {
 				continue
 			}
 			if combatDistanceM(participant.Position, target.Position) > maxWeaponRange(participant.Profile.Weapons) {
@@ -694,7 +762,9 @@ func (m *Manager) advanceEngagementsLocked() {
 				m.vessels[participantID] = vessel
 			}
 			before := len(m.combatEffects)
-			m.fireBestWeaponLocked(&participant, &target, id)
+			if combatDistanceM(participant.Position, target.Position) <= program.MaximumRangeM {
+				m.fireBestWeaponLocked(&participant, &target, id)
+			}
 			if len(m.combatEffects) > before {
 				program.EffectsApplied++
 			}
@@ -705,13 +775,43 @@ func (m *Manager) advanceEngagementsLocked() {
 	}
 }
 
+func (m *Manager) nextEligibleEngagementTargetLocked(program domain.EngagementProgramV1) string {
+	bestID, bestDistance := "", math.MaxFloat64
+	for _, targetID := range program.EligibleTargetIDs {
+		target, ok := m.combatEntities[targetID]
+		if !ok || target.Damage.Sunk || target.Profile.Controlled || targetID == program.TargetID {
+			continue
+		}
+		if program.RequireTargetInArea && len(program.OperatingAreas) > 0 && !combatPointInAreas(target.Position, program.OperatingAreas) {
+			continue
+		}
+		for _, participantID := range program.ParticipantIDs {
+			participant, ok := m.combatEntities[participantID]
+			if !ok {
+				continue
+			}
+			if distance := combatDistanceM(participant.Position, target.Position); distance < bestDistance {
+				bestID, bestDistance = targetID, distance
+			}
+		}
+	}
+	return bestID
+}
+
 func (m *Manager) releaseEngagementParticipantsLocked(program domain.EngagementProgramV1) {
+	autoArmed := map[string]bool{}
+	for _, id := range program.AutoArmedIDs {
+		autoArmed[id] = true
+	}
 	for _, participantID := range program.ParticipantIDs {
 		entity := m.combatEntities[participantID]
 		if entity.ActiveEngagementID != program.ID {
 			continue
 		}
 		entity.ActiveEngagementID, entity.CurrentTargetID, entity.BehaviorState, entity.SpeedMPS = "", "", "safe_hold", 0
+		if autoArmed[participantID] && entity.ArmStateSource != "operator" {
+			entity.Armed, entity.ArmStateSource, entity.ArmedByMissionID = false, "weapons_safe", ""
+		}
 		entity.StateVersion++
 		m.combatEntities[participantID] = entity
 		if vessel, ok := m.vessels[participantID]; ok {
@@ -720,6 +820,127 @@ func (m *Manager) releaseEngagementParticipantsLocked(program domain.EngagementP
 		}
 	}
 	m.combatVersion++
+}
+
+func (m *Manager) stopMissionEngagementLocked(missionID string) {
+	for id, program := range m.combatEngagements {
+		if program.MissionID != missionID || (program.Status != "active" && program.Status != "pending_approval") {
+			continue
+		}
+		program.Status = "stopped"
+		m.combatEngagements[id] = program
+		m.releaseEngagementParticipantsLocked(program)
+		m.recordCombatEventLocked("engagement_stopped", id, program.TargetID, map[string]any{"reason": "mission authority ended"})
+	}
+}
+
+func (m *Manager) activateMissionEngagementLocked(mission domain.MissionWorkspaceV2) error {
+	policy := normalizeEngagementPolicy(mission.EngagementPolicy, mission.FollowContactID)
+	if !policy.Enabled {
+		return nil
+	}
+	targetID := m.resolveMissionEngagementTargetLocked(mission.TargetIDs, policy)
+	if targetID == "" {
+		return &Error{"COMBAT_ENTITY_NOT_FOUND", "No contact satisfies the mission engagement policy."}
+	}
+	target := m.combatEntities[targetID]
+	weapons, maximumRange := []string{}, 0.0
+	participants, autoArmed := []string{}, []string{}
+	for _, vesselID := range uniqueStrings(mission.TargetIDs) {
+		entity, ok := m.combatEntities[vesselID]
+		if !ok || !entity.Profile.Controlled || entity.Damage.Sunk || entity.Damage.Disabled || len(entity.Profile.Weapons) == 0 {
+			continue
+		}
+		participants = append(participants, vesselID)
+		if policy.AutoArm && !entity.Armed {
+			autoArmed = append(autoArmed, vesselID)
+			entity.Armed, entity.ArmStateSource, entity.ArmedByMissionID = true, "mission", mission.ID
+		}
+		entity.ActiveEngagementID = "mission-engagement-" + mission.ID
+		entity.CurrentTargetID, entity.BehaviorState = targetID, "engage"
+		entity.StateVersion++
+		m.combatEntities[vesselID] = entity
+		for _, weapon := range entity.Profile.Weapons {
+			weapons = append(weapons, vesselID+":"+weapon.ID)
+			maximumRange = math.Max(maximumRange, weapon.EffectiveRangeM)
+		}
+	}
+	if len(participants) == 0 {
+		return &Error{"WEAPON_UNAVAILABLE", "The engagement mission has no operational armed-capable Fleet vessels."}
+	}
+	if policy.MaximumRangeM > 0 {
+		maximumRange = math.Min(maximumRange, policy.MaximumRangeM)
+	}
+	id := "mission-engagement-" + mission.ID
+	program := domain.EngagementProgramV1{
+		SchemaVersion: 1, ID: id, RequestID: "mission-start-" + mission.ID,
+		IdempotencyKey: "mission-engagement-" + mission.ID + "-v" + fmt.Sprint(mission.Version),
+		TargetID:       target.EntityID, EligibleTargetIDs: m.eligibleMissionEngagementTargetsLocked(policy), ParticipantIDs: participants, AllowedWeaponIDs: weapons,
+		MaximumRangeM: maximumRange, MaximumEffects: policy.MaximumEffects,
+		DurationSeconds: policy.DurationSeconds, IssuedTickMS: m.simTickMS,
+		ExpiresTickMS:        m.simTickMS + policy.DurationSeconds*1000,
+		DisengageHullPercent: policy.DisengageHullPercent, MinimumReserve: mission.Constraints.MinimumReserve,
+		Status: "active", MissionID: mission.ID, TargetScope: policy.TargetScope,
+		ReturnFire: policy.ReturnFire, RequireTargetInArea: policy.RequireTargetInMissionArea,
+		OperatingAreas: mission.Geometry.IncludedAreas, AutoArmedIDs: autoArmed, CreatedAt: time.Now().UTC(),
+	}
+	program.ContentHash = engagementContentHash(program)
+	m.combatEngagements[id] = program
+	m.recordCombatEventLocked("mission_engagement_activated", id, targetID, map[string]any{"hash": program.ContentHash, "scope": policy.TargetScope, "participants": participants})
+	m.combatVersion++
+	return nil
+}
+
+func (m *Manager) resolveMissionEngagementTargetLocked(participants []string, policy domain.EngagementPolicyV1) string {
+	allowed := func(entity domain.CombatEntityStateV1) bool {
+		if entity.Profile.Controlled || entity.Damage.Sunk || entity.Damage.Disabled {
+			return false
+		}
+		return policy.TargetScope == "any_contact" || (policy.TargetScope == "hostile_contacts" && entity.Profile.Hostility == "hostile")
+	}
+	for _, id := range policy.DesignatedTargetIDs {
+		if entity, ok := m.combatEntities[id]; ok && !entity.Profile.Controlled && !entity.Damage.Sunk && !entity.Damage.Disabled {
+			return id
+		}
+	}
+	bestID, bestDistance := "", math.MaxFloat64
+	for id, entity := range m.combatEntities {
+		if !allowed(entity) {
+			continue
+		}
+		for _, participantID := range participants {
+			if participant, ok := m.combatEntities[participantID]; ok {
+				if distance := combatDistanceM(participant.Position, entity.Position); distance < bestDistance {
+					bestID, bestDistance = id, distance
+				}
+			}
+		}
+	}
+	return bestID
+}
+
+func (m *Manager) eligibleMissionEngagementTargetsLocked(policy domain.EngagementPolicyV1) []string {
+	eligible := []string{}
+	for id, entity := range m.combatEntities {
+		if entity.Profile.Controlled {
+			continue
+		}
+		allowed := policy.TargetScope == "any_contact" || (policy.TargetScope == "hostile_contacts" && entity.Profile.Hostility == "hostile")
+		if policy.TargetScope == "designated" {
+			allowed = false
+			for _, designated := range policy.DesignatedTargetIDs {
+				if designated == id {
+					allowed = true
+					break
+				}
+			}
+		}
+		if allowed {
+			eligible = append(eligible, id)
+		}
+	}
+	sort.Strings(eligible)
+	return eligible
 }
 
 func (m *Manager) advanceMilitaryDefenseLocked() {
@@ -738,6 +959,25 @@ func (m *Manager) advanceMilitaryDefenseLocked() {
 	}
 }
 
+func (m *Manager) advanceControlledSelfDefenseLocked() {
+	for id, entity := range m.combatEntities {
+		if !entity.Profile.Controlled || !entity.Armed || entity.Damage.Sunk || entity.Damage.Disabled || entity.LastAttackerID == "" {
+			continue
+		}
+		// Arming grants bounded return fire, not pursuit. The authorization is
+		// short-lived and only applies to the exact entity that fired first.
+		if m.simTickMS-entity.LastAttackedTickMS > 5*60*1000 {
+			continue
+		}
+		attacker, ok := m.combatEntities[entity.LastAttackerID]
+		if !ok || attacker.Damage.Sunk || combatDistanceM(entity.Position, attacker.Position) > maxWeaponRange(entity.Profile.Weapons) {
+			continue
+		}
+		m.fireBestWeaponLocked(&entity, &attacker, "return-fire-"+id+"-"+attacker.EntityID)
+		m.combatEntities[id], m.combatEntities[attacker.EntityID] = entity, attacker
+	}
+}
+
 func (m *Manager) fireBestWeaponLocked(source, target *domain.CombatEntityStateV1, engagementID string) {
 	rangeM := combatDistanceM(source.Position, target.Position)
 	for index := len(source.Profile.Weapons) - 1; index >= 0; index-- {
@@ -752,6 +992,7 @@ func (m *Manager) fireBestWeaponLocked(source, target *domain.CombatEntityStateV
 			source.Profile.Weapons[index].Ammunition--
 		}
 		effect := domain.CombatEffectV1{SchemaVersion: 1, ID: fmt.Sprintf("effect-%d-%012d", m.simTickMS, m.combatSequence), EngagementID: engagementID, ShotSequence: m.combatSequence, SourceID: source.EntityID, TargetID: target.EntityID, WeaponID: weapon.ID, RangeM: rangeM, Hit: hit, Damage: damage, Component: component, WorldTickMS: m.simTickMS, CreatedAt: time.Now().UTC()}
+		target.LastAttackerID, target.LastAttackedTickMS = source.EntityID, m.simTickMS
 		if hit {
 			m.applyCombatDamageLocked(target, damage, component)
 			effect.TargetHullRemaining = target.Damage.Hull
@@ -869,6 +1110,30 @@ func combatDistanceM(a, b domain.GeoPointV2) float64 {
 func combatPositionInBounds(point domain.GeoPointV2) bool {
 	return point[0] >= -72.08 && point[0] <= -70.57 && point[1] >= 40.76 && point[1] <= 42.03
 }
+
+func combatPointInAreas(point domain.GeoPointV2, areas [][][]float64) bool {
+	for _, polygon := range areas {
+		if len(polygon) < 3 || !combatPointInRing(point, polygon) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func combatPointInRing(point domain.GeoPointV2, ring [][]float64) bool {
+	inside := false
+	for i, j := 0, len(ring)-1; i < len(ring); j, i = i, i+1 {
+		if len(ring[i]) < 2 || len(ring[j]) < 2 {
+			continue
+		}
+		xi, yi, xj, yj := ring[i][0], ring[i][1], ring[j][0], ring[j][1]
+		if (yi > point[1]) != (yj > point[1]) && point[0] < (xj-xi)*(point[1]-yi)/(yj-yi)+xi {
+			inside = !inside
+		}
+	}
+	return inside
+}
 func clampCombatPosition(point domain.GeoPointV2) domain.GeoPointV2 {
 	return domain.GeoPointV2{
 		math.Max(-72.08, math.Min(-70.57, point[0])),
@@ -904,16 +1169,21 @@ func combatHash(value any) string {
 }
 func engagementContentHash(program domain.EngagementProgramV1) string {
 	return combatHash(struct {
-		TargetID             string   `json:"target_id"`
-		ParticipantIDs       []string `json:"participant_ids"`
-		AllowedWeaponIDs     []string `json:"allowed_weapon_ids"`
-		MaximumRangeM        float64  `json:"maximum_range_m"`
-		MaximumEffects       int      `json:"maximum_effects"`
-		DurationSeconds      int64    `json:"duration_seconds"`
-		DisengageHullPercent float64  `json:"disengage_hull_percent"`
-		MinimumReserve       float64  `json:"minimum_reserve"`
-		MissionID            string   `json:"mission_id,omitempty"`
-	}{program.TargetID, program.ParticipantIDs, program.AllowedWeaponIDs, program.MaximumRangeM, program.MaximumEffects, program.DurationSeconds, program.DisengageHullPercent, program.MinimumReserve, program.MissionID})
+		TargetID             string        `json:"target_id"`
+		EligibleTargetIDs    []string      `json:"eligible_target_ids"`
+		ParticipantIDs       []string      `json:"participant_ids"`
+		AllowedWeaponIDs     []string      `json:"allowed_weapon_ids"`
+		MaximumRangeM        float64       `json:"maximum_range_m"`
+		MaximumEffects       int           `json:"maximum_effects"`
+		DurationSeconds      int64         `json:"duration_seconds"`
+		DisengageHullPercent float64       `json:"disengage_hull_percent"`
+		MinimumReserve       float64       `json:"minimum_reserve"`
+		MissionID            string        `json:"mission_id,omitempty"`
+		TargetScope          string        `json:"target_scope"`
+		ReturnFire           bool          `json:"return_fire"`
+		RequireTargetInArea  bool          `json:"require_target_in_mission_area"`
+		OperatingAreas       [][][]float64 `json:"operating_areas,omitempty"`
+	}{program.TargetID, program.EligibleTargetIDs, program.ParticipantIDs, program.AllowedWeaponIDs, program.MaximumRangeM, program.MaximumEffects, program.DurationSeconds, program.DisengageHullPercent, program.MinimumReserve, program.MissionID, program.TargetScope, program.ReturnFire, program.RequireTargetInArea, program.OperatingAreas})
 }
 func appendBoundedEffect(values []domain.CombatEffectV1, value domain.CombatEffectV1, maximum int) []domain.CombatEffectV1 {
 	values = append(values, value)

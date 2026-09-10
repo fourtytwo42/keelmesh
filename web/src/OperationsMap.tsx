@@ -149,7 +149,7 @@ function vesselData(fleet: FleetSnapshotV2): GeoJSON.FeatureCollection {
     })),
   };
 }
-function surfaceContactData(fleet: FleetSnapshotV2): GeoJSON.FeatureCollection {
+function surfaceContactData(fleet: FleetSnapshotV2, visualPositions?: Map<string, Point>): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
     features: fleet.surface_contacts.map((contact) => ({
@@ -173,11 +173,11 @@ function surfaceContactData(fleet: FleetSnapshotV2): GeoJSON.FeatureCollection {
         integrity: contact.combat?.damage.integrity_percent ?? 100,
         sunk: contact.combat?.damage.sunk ?? false,
       },
-      geometry: { type: "Point", coordinates: contact.position },
+      geometry: { type: "Point", coordinates: visualPositions?.get(contact.id) ?? contact.position },
     })),
   };
 }
-function combatEntityData(fleet: FleetSnapshotV2, selected: Set<string>): GeoJSON.FeatureCollection {
+function combatEntityData(fleet: FleetSnapshotV2, selected: Set<string>, visualPositions?: Map<string, Point>): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
     features: (fleet.combat?.entities ?? []).map((entity) => ({
@@ -196,7 +196,7 @@ function combatEntityData(fleet: FleetSnapshotV2, selected: Set<string>): GeoJSO
         name: entity.name,
         range: Math.max(0, ...(entity.profile.weapons ?? []).map((weapon) => weapon.effective_range_m)),
       },
-      geometry: { type: "Point", coordinates: entity.position },
+      geometry: { type: "Point", coordinates: visualPositions?.get(entity.entity_id) ?? entity.position },
     })),
   };
 }
@@ -618,6 +618,9 @@ export function OperationsMap({
     selectionMode = useRef(false),
     fleetRef = useRef(fleet),
     flowAnchors = useRef<Point[]>([]),
+    contactVisualPositions = useRef(new Map<string, Point>()),
+    contactSpawnGenerations = useRef(new Map<string, number>()),
+    contactAnimationFrame = useRef<number | null>(null),
     multiClick = useRef({ count: 0, at: 0 }),
     dragTarget = useRef<
       | { kind: "waypoint"; index: number }
@@ -1310,10 +1313,6 @@ export function OperationsMap({
     (mapRef.current.getSource("contact-mission-overlay") as GeoJSONSource)?.setData(
       contactMissionOverlay,
     );
-    (mapRef.current.getSource("surface-contacts") as GeoJSONSource)?.setData(
-      surfaceContactData(fleet),
-    );
-    (mapRef.current.getSource("combat-entities") as GeoJSONSource)?.setData(combatEntityData(fleet, selected));
     (mapRef.current.getSource("combat-projectiles") as GeoJSONSource)?.setData(combatProjectileData(fleet));
     (
       mapRef.current.getSource("surface-contact-routes") as GeoJSONSource
@@ -1326,6 +1325,45 @@ export function OperationsMap({
     );
     (mapRef.current.getSource("command-scene") as GeoJSONSource)?.setData(sceneAnnotationData(sceneAnnotations));
   }, [ready, fleet, selected, contactMissionOverlay, remainingMissionRoutes, visibleMissionGeometry, visibleHoldGroups, sceneAnnotations]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    if (contactAnimationFrame.current !== null) cancelAnimationFrame(contactAnimationFrame.current);
+    const startedAt = performance.now();
+    const durationMS = 850;
+    const starts = new Map<string, Point>();
+    const targets = new Map<string, Point>();
+    for (const contact of fleet.surface_contacts) {
+      const target: Point = [contact.position[0], contact.position[1]];
+      const generation = contact.combat?.spawn_generation ?? 0;
+      const previousGeneration = contactSpawnGenerations.current.get(contact.id);
+      const previous = contactVisualPositions.current.get(contact.id);
+      starts.set(contact.id, previous && previousGeneration === generation ? previous : target);
+      targets.set(contact.id, target);
+      contactSpawnGenerations.current.set(contact.id, generation);
+    }
+    const render = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / durationMS);
+      const eased = 1 - (1 - progress) ** 3;
+      const positions = new Map<string, Point>();
+      for (const [id, target] of targets) {
+        const start = starts.get(id) ?? target;
+        positions.set(id, [
+          start[0] + (target[0] - start[0]) * eased,
+          start[1] + (target[1] - start[1]) * eased,
+        ]);
+      }
+      contactVisualPositions.current = positions;
+      (map.getSource("surface-contacts") as GeoJSONSource)?.setData(surfaceContactData(fleet, positions));
+      (map.getSource("combat-entities") as GeoJSONSource)?.setData(combatEntityData(fleet, selected, positions));
+      if (progress < 1) contactAnimationFrame.current = requestAnimationFrame(render);
+      else contactAnimationFrame.current = null;
+    };
+    contactAnimationFrame.current = requestAnimationFrame(render);
+    return () => {
+      if (contactAnimationFrame.current !== null) cancelAnimationFrame(contactAnimationFrame.current);
+    };
+  }, [ready, fleet, selected]);
   useEffect(() => {
     if (!ready || !mapRef.current || !sceneCamera || !sceneCameraRequest) return;
     mapRef.current.easeTo({ center: sceneCamera.center, zoom: sceneCamera.zoom, bearing: sceneCamera.bearing, pitch: sceneCamera.pitch, duration: 550 });
@@ -1533,11 +1571,13 @@ export function OperationsMap({
       const hit = map.queryRenderedFeatures(e.point, {
         layers: ["vessel-symbols", "group-halos"],
       })[0];
-      if (hit?.properties?.id)
+      if (hit?.properties?.id) {
         onSelect(
           [hit.properties.id],
           e.originalEvent.shiftKey ? "toggle" : "replace",
         );
+        onVessel(String(hit.properties.id));
+      }
     };
     const dbl = (e: MapMouseEvent) => {
       e.preventDefault();
@@ -2238,11 +2278,9 @@ export function OperationsMap({
           >
             {contextContact.hostility === "hostile" ? (pirate ? "Plot an intercept" : "Plan interception") : (pirate ? "Plot a voyage involving this vessel" : "Plan mission involving this contact")}
           </button>
-          {contextContact.hostility === "hostile" && (
-            <button role="menuitem" onClick={() => { onPlanEngagement(contextContact.id); setContextMenu(null); }}>
-              {pirate ? "Hunt this hostile ship" : "Plan engagement with selected assets"}
-            </button>
-          )}
+          <button role="menuitem" onClick={() => { onPlanEngagement(contextContact.id); setContextMenu(null); }}>
+            {pirate ? "Plan an attack on this ship" : "Plan engagement with selected assets"}
+          </button>
           <p>
             {pirate
               ? "Opens the plotter only; no voyage or authority is created."

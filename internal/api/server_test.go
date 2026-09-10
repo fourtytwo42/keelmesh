@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"io/fs"
 	"log/slog"
@@ -43,6 +44,38 @@ func TestCombatV8ReadRoutesExposeBlackwake(t *testing.T) {
 	server.Handler().ServeHTTP(entity, httptest.NewRequest(http.MethodGet, "/api/v8/combat/entities/HOSTILE-0001", nil))
 	if entity.Code != http.StatusOK || !json.Valid(entity.Body.Bytes()) {
 		t.Fatalf("Blackwake lookup failed: status=%d body=%s", entity.Code, entity.Body.String())
+	}
+}
+
+func TestCombatV8ArmAndDisarmControlledVessel(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	web := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("ok"), Mode: fs.FileMode(0o644)}}
+	manager := fleetops.New("", slog.Default())
+	server := New(core.New(), slog.Default(), web, manager)
+	vesselID := manager.Snapshot().Vessels[0].ID
+
+	for _, action := range []struct {
+		suffix string
+		armed  bool
+	}{
+		{suffix: ":arm", armed: true},
+		{suffix: ":disarm", armed: false},
+	} {
+		body := []byte(`{"request_id":"test-` + action.suffix[1:] + `","idempotency_key":"key-` + action.suffix[1:] + `","actor_identity":"operator"}`)
+		request := httptest.NewRequest(http.MethodPost, "/api/v8/combat/vessels/"+vesselID+action.suffix, bytes.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, body = %s", action.suffix, recorder.Code, recorder.Body.String())
+		}
+		var entity domain.CombatEntityStateV1
+		if err := json.Unmarshal(recorder.Body.Bytes(), &entity); err != nil {
+			t.Fatal(err)
+		}
+		if entity.Armed != action.armed {
+			t.Fatalf("%s armed = %t", action.suffix, entity.Armed)
+		}
 	}
 }
 

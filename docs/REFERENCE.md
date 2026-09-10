@@ -25,7 +25,7 @@ KeelMesh preserves `/api/v1` through `/api/v8`. Public contracts are versioned, 
 | `/api/v5` | Memory, candidates, contexts, entities, sync, replay |
 | `/api/v6` | Coordination cells, logs, quorum proofs, cross-cell state, security |
 | `/api/v7` | Complete mission programs, vessel execution authority, group decision state |
-| `/api/v8` | Fictional combat state, engagement programs, repair, effects, respawn, and resumable events |
+| `/api/v8` | Fictional combat state, arm/disarm, engagement programs, repair, effects, respawn, and resumable events |
 
 Prometheus metrics are at `/metrics`. WebSocket/SSE extensions preserve earlier fields.
 
