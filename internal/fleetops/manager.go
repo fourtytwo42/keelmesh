@@ -259,7 +259,7 @@ var surfaceTraffic = []surfaceTrafficSpec{
 	{"surface-12", "NPC-4112", "SV Blue Finch", "BLUE FINCH", "yacht", "recreational island passage", "white", "#e9e7dc", "Jamestown–Block Island circuit", 1.6, 15, 1.8, []domain.GeoPointV2{{-71.405, 41.45}, {-71.43, 41.37}, {-71.49, 41.28}, {-71.56, 41.24}, {-71.53, 41.26}, {-71.46, 41.34}, {-71.41, 41.44}, {-71.405, 41.45}}},
 	{"surface-13", "NPC-4113", "FV Harbor Light", "HARBOR LIGHT", "trawler", "anchored · gear and deck maintenance", "bronze", "#bb8758", "Point Judith anchorage", 0, 31, 3.0, []domain.GeoPointV2{{-71.486, 41.348}}},
 	{"surface-14", "NPC-4114", "SV Quiet Wake", "QUIET WAKE", "yacht", "anchored · overnight coastal stop", "rose", "#d58c91", "Dutch Harbor anchorage", 0, 19, 2.2, []domain.GeoPointV2{{-71.407, 41.503}}},
-	{"surface-15", "NPC-4115", "MV Breakwater Tender", "BREAKWATER TENDER", "patrol", "anchored · fictional harbor-service standby", "steel", "#8ea6ad", "Newport outer anchorage", 0, 48, 3.5, []domain.GeoPointV2{{-71.329, 41.472}}},
+	{"surface-15", "NPC-4115", "MV Breakwater Tender", "BREAKWATER TENDER", "patrol", "anchored · fictional harbor-service standby", "steel", "#8ea6ad", "Newport outer anchorage", 0, 48, 3.5, []domain.GeoPointV2{{-71.324, 41.467}}},
 	{"surface-16", "NPC-4116", "MT Safe Haven", "SAFE HAVEN", "tanker", "anchored · simulated weather hold", "aqua", "#63b9b4", "Rhode Island Sound anchorage", 0, 138, 8.2, []domain.GeoPointV2{{-71.275, 41.285}}},
 	// Offshore through traffic traverses the full chart, exits the local Rhode
 	// Island picture, and returns only through a separate deep-water leg.
@@ -297,7 +297,8 @@ func surfaceContactAt(spec surfaceTrafficSpec, at time.Time, offsetSeconds float
 	}
 	speedMPS := surfaceTrafficSpeedMPS(spec)
 	if speedMPS <= 0 || len(spec.Route) == 1 {
-		return domain.SurfaceContactV2{ID: spec.ID, BoatID: spec.BoatID, Name: spec.Name, Callsign: spec.Callsign, Class: spec.Class, Activity: spec.Activity, ColorName: spec.ColorName, Color: spec.Color, Position: spec.Route[0], HeadingDeg: 0, SpeedMPS: 0, SpeedKnots: 0, LengthM: spec.LengthM, DraftM: spec.DraftM, NavigationState: "at anchor", RouteName: spec.RouteName, Route: clonePoints(spec.Route), Looping: false, UpdatedAt: at.UTC()}
+		position := nearestNavigationSafePoint(spec.Route[0])
+		return domain.SurfaceContactV2{ID: spec.ID, BoatID: spec.BoatID, Name: spec.Name, Callsign: spec.Callsign, Class: spec.Class, Activity: spec.Activity, ColorName: spec.ColorName, Color: spec.Color, Position: position, HeadingDeg: 0, SpeedMPS: 0, SpeedKnots: 0, LengthM: spec.LengthM, DraftM: spec.DraftM, NavigationState: "at anchor", RouteName: spec.RouteName, Route: []domain.GeoPointV2{position}, Looping: false, UpdatedAt: at.UTC()}
 	}
 	lengths, total := make([]float64, len(spec.Route)), 0.0
 	for i := range spec.Route {
@@ -318,8 +319,18 @@ func surfaceContactAt(spec surfaceTrafficSpec, at time.Time, offsetSeconds float
 	}
 	a, b := spec.Route[segment], spec.Route[next]
 	position := domain.GeoPointV2{a[0] + (b[0]-a[0])*fraction, a[1] + (b[1]-a[1])*fraction}
+	if !navigationPointSafe(position) {
+		// Route fixtures are validated in full, but the runtime still fails safe
+		// if a future or persisted fixture ever supplies an invalid point.
+		position = nearestNavigationSafePoint(position)
+		speedMPS = 0
+	}
 	heading := math.Mod(math.Atan2((b[0]-a[0])*math.Cos(position[1]*math.Pi/180), b[1]-a[1])*180/math.Pi+360, 360)
-	return domain.SurfaceContactV2{ID: spec.ID, BoatID: spec.BoatID, Name: spec.Name, Callsign: spec.Callsign, Class: spec.Class, Activity: spec.Activity, ColorName: spec.ColorName, Color: spec.Color, Position: position, HeadingDeg: heading, SpeedMPS: speedMPS, SpeedKnots: speedMPS * 1.94384, LengthM: spec.LengthM, DraftM: spec.DraftM, NavigationState: "under way using engine", RouteName: spec.RouteName, Route: clonePoints(spec.Route), Looping: true, UpdatedAt: at.UTC()}
+	navigationState, looping := "under way using engine", true
+	if speedMPS == 0 {
+		navigationState, looping = "safe hold · invalid route", false
+	}
+	return domain.SurfaceContactV2{ID: spec.ID, BoatID: spec.BoatID, Name: spec.Name, Callsign: spec.Callsign, Class: spec.Class, Activity: spec.Activity, ColorName: spec.ColorName, Color: spec.Color, Position: position, HeadingDeg: heading, SpeedMPS: speedMPS, SpeedKnots: speedMPS * 1.94384, LengthM: spec.LengthM, DraftM: spec.DraftM, NavigationState: navigationState, RouteName: spec.RouteName, Route: clonePoints(spec.Route), Looping: looping, UpdatedAt: at.UTC()}
 }
 
 func surfaceContactsAt(at time.Time) []domain.SurfaceContactV2 {

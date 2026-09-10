@@ -1479,6 +1479,9 @@ func TestSurfaceTrafficHasStableIdentityAndProgrammedTracks(t *testing.T) {
 			if first[i].Position != second[i].Position || first[i].Looping || first[i].NavigationState != "at anchor" {
 				t.Fatalf("anchored contact moved or reported underway: %#v", first[i])
 			}
+			if pointOnLand(first[i].Position, land) || distanceToShore(first[i].Position, land) < .0002 {
+				t.Fatalf("anchored contact is not in safe water: %s at %v", first[i].BoatID, first[i].Position)
+			}
 			continue
 		}
 		moving++
