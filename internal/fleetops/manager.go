@@ -358,6 +358,7 @@ func (m *Manager) SetProgramInstaller(installer func(domain.TrajectoryProgramV2,
 
 func (m *Manager) Run(ctx context.Context) {
 	m.loadPersistent(ctx)
+	defer m.flushCombatPersistence()
 	// Persist any deterministic spawn-layout migration after all retained fleet
 	// identities, groups, collections, and mission workspaces have loaded.
 	m.persistAsync()

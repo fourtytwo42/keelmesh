@@ -9,6 +9,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type combatPersistenceSnapshot struct {
+	entities     []domain.CombatEntityStateV1
+	engagements  []domain.EngagementProgramV1
+	repairs      []domain.RepairReceiptV1
+	events       []domain.CombatEventV1
+	worldTickMS  int64
+	sequence     int64
+	stateVersion int64
+	generation   uint64
+	observedAt   time.Time
+}
+
 // persistCombatAsync snapshots projections while the caller owns m.mu, then
 // writes without extending the simulation lock.
 func (m *Manager) persistCombatAsync(force bool) {
@@ -31,6 +43,29 @@ func (m *Manager) persistCombatSnapshotAsync(force, replace bool) {
 		return
 	}
 	m.combatLastPersist = now
+	snapshot := m.combatPersistenceSnapshotLocked(now)
+	go m.writeCombatPersistenceSnapshot(snapshot, replace)
+}
+
+// flushCombatPersistence records the exact final world clock and combat
+// projection during an orderly shutdown. Periodic snapshots deliberately run
+// asynchronously so simulation never waits on PostgreSQL; without this final
+// synchronous checkpoint, a restart at a high time multiplier could resume
+// behind the last state shown to the operator.
+func (m *Manager) flushCombatPersistence() {
+	if m.databaseURL == "" {
+		return
+	}
+	m.mu.Lock()
+	now := time.Now()
+	m.combatLastPersist = now
+	snapshot := m.combatPersistenceSnapshotLocked(now)
+	m.mu.Unlock()
+	m.writeCombatPersistenceSnapshot(snapshot, false)
+}
+
+// combatPersistenceSnapshotLocked must be called while m.mu is held.
+func (m *Manager) combatPersistenceSnapshotLocked(now time.Time) combatPersistenceSnapshot {
 	entities := make([]domain.CombatEntityStateV1, 0, len(m.combatEntities))
 	for _, entity := range m.combatEntities {
 		entities = append(entities, entity)
@@ -46,42 +81,44 @@ func (m *Manager) persistCombatSnapshotAsync(force, replace bool) {
 	events := append([]domain.CombatEventV1(nil), m.combatEvents...)
 	worldTickMS, sequence, stateVersion := m.simTickMS, m.combatSequence, m.combatVersion
 	generation := m.combatPersistSequence.Load()
-	go func() {
-		m.persistenceMu.Lock()
-		defer m.persistenceMu.Unlock()
-		if generation != m.combatPersistSequence.Load() {
+	return combatPersistenceSnapshot{entities: entities, engagements: engagements, repairs: repairs, events: events, worldTickMS: worldTickMS, sequence: sequence, stateVersion: stateVersion, generation: generation, observedAt: now.UTC()}
+}
+
+func (m *Manager) writeCombatPersistenceSnapshot(snapshot combatPersistenceSnapshot, replace bool) {
+	m.persistenceMu.Lock()
+	defer m.persistenceMu.Unlock()
+	if snapshot.generation != m.combatPersistSequence.Load() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, m.databaseURL)
+	if err != nil {
+		m.logger.Warn("combat persistence unavailable", "error", err)
+		return
+	}
+	defer pool.Close()
+	if replace {
+		if _, err := pool.Exec(ctx, `TRUNCATE combat_events, combat_repairs, combat_engagements, combat_entities, combat_runtime`); err != nil {
+			m.logger.Warn("combat reset persistence failed", "error", err)
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		defer cancel()
-		pool, err := pgxpool.New(ctx, m.databaseURL)
-		if err != nil {
-			m.logger.Warn("combat persistence unavailable", "error", err)
-			return
-		}
-		defer pool.Close()
-		if replace {
-			if _, err := pool.Exec(ctx, `TRUNCATE combat_events, combat_repairs, combat_engagements, combat_entities, combat_runtime`); err != nil {
-				m.logger.Warn("combat reset persistence failed", "error", err)
-				return
-			}
-		}
-		_, _ = pool.Exec(ctx, `INSERT INTO combat_runtime(id,world_tick_ms,sequence,state_version,updated_at) VALUES('primary',$1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET world_tick_ms=EXCLUDED.world_tick_ms,sequence=EXCLUDED.sequence,state_version=EXCLUDED.state_version,updated_at=EXCLUDED.updated_at WHERE combat_runtime.world_tick_ms <= EXCLUDED.world_tick_ms`, worldTickMS, sequence, stateVersion, now.UTC())
-		for _, entity := range entities {
-			payload, _ := json.Marshal(entity)
-			_, _ = pool.Exec(ctx, `INSERT INTO combat_entities(entity_id,state_version,payload,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(entity_id) DO UPDATE SET state_version=EXCLUDED.state_version,payload=EXCLUDED.payload,updated_at=EXCLUDED.updated_at WHERE combat_entities.state_version <= EXCLUDED.state_version`, entity.EntityID, entity.StateVersion, payload, entity.UpdatedAt)
-		}
-		for _, engagement := range engagements {
-			payload, _ := json.Marshal(engagement)
-			_, _ = pool.Exec(ctx, `INSERT INTO combat_engagements(id,target_id,status,content_hash,state_version,payload,created_at) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,state_version=EXCLUDED.state_version,payload=EXCLUDED.payload WHERE combat_engagements.state_version <= EXCLUDED.state_version`, engagement.ID, engagement.TargetID, engagement.Status, engagement.ContentHash, stateVersion, payload, engagement.CreatedAt)
-		}
-		for _, receipt := range repairs {
-			payload, _ := json.Marshal(receipt)
-			_, _ = pool.Exec(ctx, `INSERT INTO combat_repairs(id,vessel_id,idempotency_key,payload,created_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO NOTHING`, receipt.ID, receipt.VesselID, receipt.IdempotencyKey, payload, receipt.CreatedAt)
-		}
-		for _, event := range events {
-			payload, _ := json.Marshal(event)
-			_, _ = pool.Exec(ctx, `INSERT INTO combat_events(id,kind,entity_id,target_id,world_tick_ms,payload,created_at) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO NOTHING`, event.ID, event.Kind, event.EntityID, event.TargetID, event.WorldTickMS, payload, event.CreatedAt)
-		}
-	}()
+	}
+	_, _ = pool.Exec(ctx, `INSERT INTO combat_runtime(id,world_tick_ms,sequence,state_version,updated_at) VALUES('primary',$1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET world_tick_ms=EXCLUDED.world_tick_ms,sequence=EXCLUDED.sequence,state_version=EXCLUDED.state_version,updated_at=EXCLUDED.updated_at WHERE combat_runtime.world_tick_ms <= EXCLUDED.world_tick_ms`, snapshot.worldTickMS, snapshot.sequence, snapshot.stateVersion, snapshot.observedAt)
+	for _, entity := range snapshot.entities {
+		payload, _ := json.Marshal(entity)
+		_, _ = pool.Exec(ctx, `INSERT INTO combat_entities(entity_id,state_version,payload,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(entity_id) DO UPDATE SET state_version=EXCLUDED.state_version,payload=EXCLUDED.payload,updated_at=EXCLUDED.updated_at WHERE combat_entities.state_version <= EXCLUDED.state_version`, entity.EntityID, entity.StateVersion, payload, entity.UpdatedAt)
+	}
+	for _, engagement := range snapshot.engagements {
+		payload, _ := json.Marshal(engagement)
+		_, _ = pool.Exec(ctx, `INSERT INTO combat_engagements(id,target_id,status,content_hash,state_version,payload,created_at) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,state_version=EXCLUDED.state_version,payload=EXCLUDED.payload WHERE combat_engagements.state_version <= EXCLUDED.state_version`, engagement.ID, engagement.TargetID, engagement.Status, engagement.ContentHash, snapshot.stateVersion, payload, engagement.CreatedAt)
+	}
+	for _, receipt := range snapshot.repairs {
+		payload, _ := json.Marshal(receipt)
+		_, _ = pool.Exec(ctx, `INSERT INTO combat_repairs(id,vessel_id,idempotency_key,payload,created_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO NOTHING`, receipt.ID, receipt.VesselID, receipt.IdempotencyKey, payload, receipt.CreatedAt)
+	}
+	for _, event := range snapshot.events {
+		payload, _ := json.Marshal(event)
+		_, _ = pool.Exec(ctx, `INSERT INTO combat_events(id,kind,entity_id,target_id,world_tick_ms,payload,created_at) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO NOTHING`, event.ID, event.Kind, event.EntityID, event.TargetID, event.WorldTickMS, payload, event.CreatedAt)
+	}
 }
