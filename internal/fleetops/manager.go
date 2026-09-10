@@ -507,6 +507,12 @@ func clearVesselGroup(vessel *domain.VesselProfileV2) {
 	vessel.GroupColor = "#737973"
 	vessel.GroupColorName = "unassigned"
 	vessel.GroupPattern = "unassigned"
+	if vessel.Telemetry.MissionID == "" {
+		vessel.Telemetry.SpeedMPS = 0
+		vessel.Telemetry.Mode = "station_keep"
+		vessel.Telemetry.Route = nil
+		vessel.Telemetry.ProjectedReserve = vessel.Telemetry.Reserve
+	}
 }
 
 func withinMapBounds(point domain.GeoPointV2) bool {
@@ -3439,7 +3445,14 @@ func (m *Manager) tickUnassignedVesselsLocked() {
 		if vessel.GroupID != "" || vessel.Telemetry.MissionID != "" {
 			continue
 		}
-		vessel.Telemetry.Reserve = m.advanceEnergy(vessel, vessel.Telemetry.SpeedMPS, m.simTickMS/1000, .2)
+		// A deleted or reconciled group must not leave its former members burning
+		// propulsion indefinitely from persisted formation state. Unassigned,
+		// missionless vessels have no movement authority and always station-keep.
+		vessel.Telemetry.SpeedMPS = 0
+		vessel.Telemetry.Mode = "station_keep"
+		vessel.Telemetry.Route = nil
+		vessel.Telemetry.ProjectedReserve = vessel.Telemetry.Reserve
+		vessel.Telemetry.Reserve = m.advanceEnergy(vessel, 0, m.simTickMS/1000, .2)
 		vessel.Telemetry.Environment = environmentAt(vessel.Telemetry.Position, float64(m.simTickMS/1000))
 		m.vessels[id] = vessel
 	}

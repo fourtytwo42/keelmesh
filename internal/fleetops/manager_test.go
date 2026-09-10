@@ -1287,6 +1287,13 @@ func TestDeleteGroupUnassignsMembersAndKeepsVessels(t *testing.T) {
 	m := New("", slog.Default())
 	group := m.groups["group-01"]
 	members := cloneStrings(group.MemberIDs)
+	for _, id := range members {
+		vessel := m.vessels[id]
+		vessel.Telemetry.SpeedMPS = vessel.Class.MaxSpeedMPS * .7
+		vessel.Telemetry.Mode = "forming · column"
+		vessel.Telemetry.Route = []domain.GeoPointV2{vessel.Telemetry.Position, {-71.2, 41.2}}
+		m.vessels[id] = vessel
+	}
 	if err := m.DeleteGroup(group.ID, Mutation{RequestID: "delete-group", IdempotencyKey: "delete-group", ExpectedVersion: group.Revision}); err != nil {
 		t.Fatal(err)
 	}
@@ -1295,9 +1302,34 @@ func TestDeleteGroupUnassignsMembersAndKeepsVessels(t *testing.T) {
 	}
 	for _, id := range members {
 		vessel, exists := m.vessels[id]
-		if !exists || vessel.GroupID != "" || vessel.GroupCode != "" {
+		if !exists || vessel.GroupID != "" || vessel.GroupCode != "" || vessel.Telemetry.SpeedMPS != 0 || vessel.Telemetry.Mode != "station_keep" || len(vessel.Telemetry.Route) != 0 {
 			t.Fatalf("vessel %s was deleted or remained assigned: %#v", id, vessel)
 		}
+	}
+}
+
+func TestUnassignedTickRepairsStaleFormationMotionBeforeEnergyUse(t *testing.T) {
+	m := New("", slog.Default())
+	group := m.groups["group-01"]
+	id := group.MemberIDs[0]
+	vessel := m.vessels[id]
+	clearVesselGroup(&vessel)
+	vessel.Telemetry.Reserve = .5
+	vessel.Telemetry.SpeedMPS = vessel.Class.MaxSpeedMPS * .7
+	vessel.Telemetry.Mode = "forming · column"
+	vessel.Telemetry.Route = []domain.GeoPointV2{vessel.Telemetry.Position, {-71.2, 41.2}}
+	m.vessels[id] = vessel
+	m.simTickMS = 16 * 60 * 60 * 1000
+	m.tickUnassignedVesselsLocked()
+
+	got := m.vessels[id]
+	if got.Telemetry.SpeedMPS != 0 || got.Telemetry.Mode != "station_keep" || len(got.Telemetry.Route) != 0 {
+		t.Fatalf("stale unassigned movement was not cleared: %#v", got.Telemetry)
+	}
+	profile := energyProfile(got)
+	want := .5 - (profile.baseW*stationKeepLoadScale/1000)*(.2/3600)/profile.batteryKWH
+	if math.Abs(got.Telemetry.Reserve-want) > 1e-9 {
+		t.Fatalf("unassigned reserve %.9f used stale propulsion; want %.9f", got.Telemetry.Reserve, want)
 	}
 }
 
