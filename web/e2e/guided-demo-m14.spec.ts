@@ -38,7 +38,7 @@ test("guided demo exposes complete-program authority during execution", async ({
     await expect(page.locator('[class*="window-inspector-"]')).toBeVisible();
     await expect(page.getByText("FULL PROGRAM ONBOARD").first()).toBeVisible();
     await expect(page.getByText("AUTHORITY LEFT")).toBeVisible();
-    await expect(page.getByText("CONTINGENCY")).toBeVisible();
+    await expect(page.getByText("CONTINGENCY", { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "Stop guided demo" }).click();
     await expect(hud).toBeHidden();
