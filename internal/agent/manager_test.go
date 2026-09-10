@@ -302,6 +302,22 @@ func TestHoldPositionOrderIsNotMisclassifiedAsPositionQuestion(t *testing.T) {
 	}
 }
 
+func TestWorkspaceMissionFallbackUsesSelectionAndOptionWording(t *testing.T) {
+	manager := NewManager(Config{}, slog.Default())
+	selected, err := manager.WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{
+		Text: "Move this group two nautical miles south and hold position.", SelectedIDs: []string{"vessel-1", "vessel-2"},
+	}, domain.FleetSnapshotV2{})
+	if err != nil || selected.Mode != "mission" || selected.MissionIntent == "" {
+		t.Fatalf("selected-group mission was not preserved by fallback: %#v %v", selected, err)
+	}
+	options, err := manager.WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{
+		Text: "Give me three options to patrol the beach.",
+	}, domain.FleetSnapshotV2{})
+	if err != nil || options.Mode != "mission" || !strings.Contains(options.Speech, "Option A, Option B, and Option C") {
+		t.Fatalf("option request did not promise the generated choice labels: %#v %v", options, err)
+	}
+}
+
 func TestWorkspaceCommandConfirmsOnlySuppliedPlanChoice(t *testing.T) {
 	manager := NewManager(Config{}, slog.Default())
 	request := domain.WorkspaceAssistantRequestV1{

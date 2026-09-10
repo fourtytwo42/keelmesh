@@ -15,6 +15,11 @@ test("twelve unassigned operating vessels map one-to-one to healthy VM nodes", a
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
+  let topology = await (await page.request.get("/api/v3/network/topology")).json();
+  const restored = await page.request.post("/api/v3/network/faults", {
+    data: { ...mutation(topology.state_version, "initial-radio"), faction: "A", kind: "restore_radio" },
+  });
+  expect(restored.ok()).toBeTruthy();
   let reset;
   for (let attempt = 0; attempt < 3; attempt++) {
     const initial = await (await page.request.get("/api/v2/fleet")).json();

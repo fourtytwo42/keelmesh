@@ -258,11 +258,12 @@ test("contact rendezvous shows a live ETA and suppresses the idle hold marker", 
   test.setTimeout(90_000);
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet" });
-  await rail.getByRole("button", { name: "C04 Narragansett", exact: true }).click();
+  await rail.getByPlaceholder("Callsign, class, group, status…").fill("Petrel");
+  await rail.locator(".fleet-vessel-row", { hasText: "Petrel" }).getByRole("checkbox").check();
   await page.getByRole("button", { name: "Toggle text chat with KeelMesh AI" }).click();
   const assistant = page.getByRole("region", { name: "KeelMesh Assistant" });
   await assistant.getByRole("textbox", { name: "Message KeelMesh AI" }).fill(
-    "Have Narragansett rendezvous with Safe Haven and maintain a safe stand-off.",
+    "Have Petrel rendezvous with Safe Haven and maintain a safe stand-off.",
   );
   await assistant.getByRole("button", { name: "Send text message" }).click();
   await expect(assistant.locator("article.assistant").last()).toContainText(/confirm/i, { timeout: 60_000 });
@@ -757,9 +758,12 @@ test("global multi-leg cardinal intent creates one bounded plan", async ({ page 
   await assistant.getByRole("button", { name: "Send text message" }).click();
   await expect(assistant.locator("article.assistant").last()).toContainText(/confirm/i, { timeout: 60_000 });
   await expect(page.getByText(/COMMAND_AMBIGUOUS/)).toHaveCount(0);
+  await expect.poll(async () => {
+    const fleet = await (await page.request.get("/api/v2/fleet")).json();
+    return fleet.missions[0]?.plan_ids?.length ?? 0;
+  }, { timeout: 30_000 }).toBe(1);
   const fleet = await (await page.request.get("/api/v2/fleet")).json();
-  const active = fleet.missions.find((candidate: { id: string }) => candidate.id === fleet.missions[0].id);
-  expect(active.plan_ids).toHaveLength(1);
+  const active = fleet.missions[0];
   const routeOptions = await (await page.request.get(`/api/v2/missions/${active.id}/plans`)).json();
   expect(routeOptions.plans[0].assignments.length).toBe(6);
   expect(routeOptions.plans[0].assignments[0].route.length).toBeGreaterThanOrEqual(3);
@@ -769,7 +773,8 @@ test("beach intent resolves a depth-aware one-nautical-mile coastal patrol", asy
   test.setTimeout(90_000);
   await page.goto("/");
   const rail = page.getByRole("region", { name: "Fleet" });
-  await rail.getByRole("button", { name: "C01 Watch Shoal", exact: true }).click();
+  await rail.getByPlaceholder("Callsign, class, group, status…").fill("Gannet");
+  await rail.locator(".fleet-vessel-row", { hasText: "Gannet" }).getByRole("checkbox").check();
   await page.getByRole("button", { name: "Toggle text chat with KeelMesh AI" }).click();
   const assistant = page.getByRole("region", { name: "KeelMesh Assistant" });
   await assistant.getByRole("textbox", { name: "Message KeelMesh AI" }).fill("Give me three options to patrol the beach, stay within 1nm from the beach as long as ocean depth permits");

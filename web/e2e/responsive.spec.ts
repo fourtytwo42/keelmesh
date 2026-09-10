@@ -99,7 +99,7 @@ test.describe("touch-first responsive workspace", () => {
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
     expect(bounds!.y).toBeGreaterThanOrEqual(80);
-    await expect(planner.getByRole("textbox", { name: "Message mission AI" })).toBeVisible();
+    await expect(planner.getByRole("textbox", { name: "OBJECTIVE" })).toBeVisible();
     await planner.getByRole("button", { name: "Minimize" }).click();
     await expect(planner).toHaveCount(0);
     await page.getByRole("button", { name: "Mission", exact: true }).click();

@@ -230,6 +230,12 @@ func (m *Manager) WorkspaceCommand(ctx context.Context, request domain.Workspace
 		m.logger.Warn("workspace assistant provider returned an invalid action; using bounded fallback", "error", err)
 		return deterministicWorkspaceCommand(request, fleet), nil
 	}
+	if result.Mode == "conversation" && len(request.SelectedIDs) > 0 && strings.Contains(strings.ToLower(request.Text), "this group") && workspaceHasMissionIntent(request.Text) {
+		return deterministicWorkspaceCommand(request, fleet), nil
+	}
+	if result.Mode == "mission" && workspaceRequestsOptions(request.Text) {
+		result.Speech = "I am generating three bounded, validated alternatives. Review Option A, Option B, and Option C, then tell me which one to execute."
+	}
 	result.SchemaVersion = 1
 	result.Provider, result.Model = "openai", m.cfg.OpenAIModel
 	result.Attempts = []domain.ProviderAttemptV1{{Provider: "openai", Model: m.cfg.OpenAIModel, State: "accepted", StartedAt: started, LatencyMS: latency, StatusCode: response.StatusCode}}
@@ -880,13 +886,13 @@ func deterministicWorkspaceCommand(request domain.WorkspaceAssistantRequestV1, f
 		result.Actions = []domain.WorkspaceAssistantActionV1{{Kind: "create_group", Name: "New Operational Group", TargetIDs: append([]string(nil), request.SelectedIDs...)}}
 		return result
 	}
-	missionWords := []string{"move ", "patrol", "search", "follow", "intercept", "surround", "hold position", "waypoint", "route ", "go to", "approach"}
-	for _, word := range missionWords {
-		if strings.Contains(lower, word) {
-			result.Mode, result.MissionIntent, result.Speech = "mission", request.Text, "I am translating that request into one bounded mission plan. Say confirm to execute the validated plan, or ask me for alternatives."
-			result.Actions = []domain.WorkspaceAssistantActionV1{{Kind: "create_mission", Target: "mission", Value: 0}}
-			return result
+	if workspaceHasMissionIntent(request.Text) {
+		result.Mode, result.MissionIntent, result.Speech = "mission", request.Text, "I am translating that request into one bounded mission plan. Say confirm to execute the validated plan, or ask me for alternatives."
+		if workspaceRequestsOptions(request.Text) {
+			result.Speech = "I am generating three bounded, validated alternatives. Review Option A, Option B, and Option C, then tell me which one to execute."
 		}
+		result.Actions = []domain.WorkspaceAssistantActionV1{{Kind: "create_mission", Target: "mission", Value: 0}}
+		return result
 	}
 	windowNames := []string{"fleet", "mission", "engineer", "cutaway", "arena", "resilience", "quiet"}
 	for _, name := range windowNames {
@@ -905,6 +911,26 @@ func deterministicWorkspaceCommand(request domain.WorkspaceAssistantRequestV1, f
 		result.Speech = fmt.Sprintf("You currently have %d controlled vessels in the simulation.", len(fleet.Vessels))
 	}
 	return result
+}
+
+func workspaceHasMissionIntent(text string) bool {
+	lower := strings.ToLower(text)
+	for _, word := range []string{"move ", "patrol", "search", "follow", "intercept", "surround", "hold position", "waypoint", "route ", "go to", "approach", "rendezvous"} {
+		if strings.Contains(lower, word) {
+			return true
+		}
+	}
+	return false
+}
+
+func workspaceRequestsOptions(text string) bool {
+	lower := strings.ToLower(text)
+	for _, word := range []string{"option", "alternative", "choice", "compare", "comparison", "multiple", "three plans", "three routes", "three strategies"} {
+		if strings.Contains(lower, word) {
+			return true
+		}
+	}
+	return false
 }
 
 func uniqueWorkspaceIDs(values []string) []string {

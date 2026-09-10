@@ -1,7 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 
-test.use({ channel: "chrome" });
-
 async function resetFleet(page: Page) {
   const fleet = await (await page.request.get("/api/v2/fleet")).json();
   if (fleet.groups.length === 0 && fleet.missions.length === 0) return;
