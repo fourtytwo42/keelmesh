@@ -10,6 +10,7 @@ test.describe("touch-first responsive workspace", () => {
   test("phone layout stays in bounds and long press opens vessel actions", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator(".operations-map .maplibregl-canvas")).toBeVisible();
+    await expect(page.locator(".operations-map")).toHaveAttribute("data-map-ready", "true", { timeout: 15_000 });
     await expect(page.getByRole("button", { name: "Fleet", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Mission", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "AI Lab", exact: true })).toBeVisible();

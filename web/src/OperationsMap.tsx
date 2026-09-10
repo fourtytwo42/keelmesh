@@ -745,19 +745,8 @@ export function OperationsMap({
     mapRef.current = map;
     map.on("moveend", () => setViewportRevision((value) => value + 1));
     map.on("load", async () => {
-      for (const name of ["kestrel", "mariner", "atlas"]) {
-        const image = await map.loadImage(`/assets/vessels/${name}-2p5d.png`);
-        if (disposed || mapRef.current !== map) return;
-        map.addImage(`vessel-${name}`, image.data, { pixelRatio: 8 });
-        const pirateImage = await map.loadImage(
-          `/assets/vessels/pirate-${name}.png`,
-        );
-        if (disposed || mapRef.current !== map) return;
-        map.addImage(`pirate-vessel-${name}`, pirateImage.data, {
-          pixelRatio: 8,
-        });
-      }
-      for (const name of [
+      const vesselNames = ["kestrel", "mariner", "atlas"];
+      const trafficNames = [
         "container",
         "tanker",
         "ferry",
@@ -765,11 +754,21 @@ export function OperationsMap({
         "patrol",
         "yacht",
         "blackwake",
-      ]) {
-        const image = await map.loadImage(`/assets/traffic/${name}.png`);
-        if (disposed || mapRef.current !== map) return;
+      ];
+      const [vesselImages, pirateImages, trafficImages] = await Promise.all([
+        Promise.all(vesselNames.map((name) => map.loadImage(`/assets/vessels/${name}-2p5d.png`))),
+        Promise.all(vesselNames.map((name) => map.loadImage(`/assets/vessels/pirate-${name}.png`))),
+        Promise.all(trafficNames.map((name) => map.loadImage(`/assets/traffic/${name}.png`))),
+      ]);
+      if (disposed || mapRef.current !== map) return;
+      vesselNames.forEach((name, index) => {
+        map.addImage(`vessel-${name}`, vesselImages[index].data, { pixelRatio: 8 });
+        map.addImage(`pirate-vessel-${name}`, pirateImages[index].data, { pixelRatio: 8 });
+      });
+      trafficNames.forEach((name, index) => {
+        const image = trafficImages[index];
         map.addImage(`traffic-${name}`, image.data, { pixelRatio: 2 });
-      }
+      });
       if (disposed || mapRef.current !== map || !map.getSource("coast")) return;
       map.addLayer({
         id: "depth-contours",
@@ -2076,6 +2075,7 @@ export function OperationsMap({
       data-vessel-camera-id={vesselCameraID || undefined}
       data-mission-frame-request={missionFrameRequest || undefined}
       data-mission-frame-points={missionFramePoints?.length || undefined}
+      data-map-ready={ready}
       data-visible-hold-groups={visibleHoldGroups.features.length}
       data-remaining-route-points={remainingMissionRoutes.features.reduce(
         (count, feature) => count + (feature.geometry.type === "LineString" ? feature.geometry.coordinates.length : 0),

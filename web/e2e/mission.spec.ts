@@ -75,7 +75,10 @@ async function createSelectedMission(page: import("@playwright/test").Page) {
 
 async function openLocationInspection(page: import("@playwright/test").Page) {
   const canvas = page.locator(".operations-map .maplibregl-canvas");
+  await expect(page.locator(".operations-map")).toHaveAttribute("data-map-ready", "true", { timeout: 15_000 });
   const menu = page.getByRole("menu", { name: "Location inspection menu" });
+  const bounds = await canvas.boundingBox();
+  if (!bounds) throw new Error("map canvas has no bounding box");
   for (const position of [
     { x: 1100, y: 500 },
     { x: 1000, y: 300 },
@@ -85,7 +88,11 @@ async function openLocationInspection(page: import("@playwright/test").Page) {
     { x: 850, y: 650 },
     { x: 1180, y: 620 },
   ]) {
-    await canvas.click({ position, button: "right" });
+    await canvas.dispatchEvent("contextmenu", {
+      button: 2,
+      clientX: bounds.x + Math.min(position.x, bounds.width - 4),
+      clientY: bounds.y + Math.min(position.y, bounds.height - 4),
+    });
     if (await menu.isVisible().catch(() => false)) return menu;
     await page.keyboard.press("Escape");
   }
@@ -569,6 +576,7 @@ test("dragged geometry follows deterministic planning and the preview boundary",
   await planner.getByRole("button", { name: "Add operating area", exact: true }).click();
   await expect(planner.getByRole("button", { name: "Add operating area", exact: true })).toHaveClass(/active/);
   await expect(planner).toContainText(/include active · Escape cancels/i);
+  await expect(page.locator(".operations-map")).toHaveAttribute("data-map-ready", "true", { timeout: 15_000 });
   await page.waitForTimeout(250);
   const canvas = page.locator(".operations-map .maplibregl-canvas");
   const box = await canvas.boundingBox();
