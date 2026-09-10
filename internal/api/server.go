@@ -250,6 +250,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v7/missions/{id}/program", s.missionProgramV7)
 	mux.HandleFunc("GET /api/v7/vessels/{id}/execution", s.vesselExecutionV7)
 	mux.HandleFunc("GET /api/v7/groups/{id}/decision-state", s.groupDecisionStateV7)
+	mux.HandleFunc("GET /api/v8/combat", s.combatSnapshotV8)
+	mux.HandleFunc("GET /api/v8/combat/entities/{id}", s.combatEntityV8)
+	mux.HandleFunc("GET /api/v8/combat/engagements", s.combatEngagementsV8)
+	mux.HandleFunc("POST /api/v8/combat/engagements", s.createCombatEngagementV8)
+	mux.HandleFunc("POST /api/v8/combat/engagements/{action}", s.combatEngagementActionV8)
+	mux.HandleFunc("POST /api/v8/combat/vessels/{action}", s.repairCombatVesselV8)
+	mux.HandleFunc("GET /api/v8/combat/events", s.combatEventsV8)
+	mux.HandleFunc("POST /api/v8/scenarios/combat:reset", s.resetCombatV8)
 	mux.Handle("GET /", spaHandler(s.web))
 	handler := requestLog(s.logger, s.coordinationMutationMiddleware(mux))
 	if s.tracer != nil {
@@ -259,7 +267,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m14", "started_at": s.startedAt.Format(time.RFC3339)})
+	writeJSON(w, http.StatusOK, map[string]any{"name": "keelmesh-core", "status": "healthy", "version": "m15", "started_at": s.startedAt.Format(time.RFC3339)})
 }
 func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})

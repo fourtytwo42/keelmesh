@@ -50,6 +50,8 @@ Consequential mutations are versioned and idempotent. Plans are validated for au
 
 AI can propose typed drafts; it cannot sign a lease or approve its own effect.
 
+Fictional M15 combat uses the same separation. The Fleet runtime deterministically produces combat state and an exact `EngagementProgramV1`; AI and MCP may inspect or draft it, but only an operator-confirmed content hash activates controlled-vessel fire. Repair is a bounded beneficial action with world-time cooldown and idempotency. PostgreSQL retains projections and immutable effect receipts while visual projectiles remain presentation-only.
+
 ## Trajectory execution
 
 Missions compile into complete finite programs of signed ten-second segments. Before readiness, every assigned vessel durably stores the active and pending revisions plus explicit authorization expiry and terminal contingency. Changes become future signed revisions that activate atomically at safe boundaries.

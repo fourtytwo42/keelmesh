@@ -150,6 +150,17 @@ type Manager struct {
 	idempotency           map[string]string
 	startedPlans          map[string]string
 	programs              map[string]domain.TrajectoryProgramV2
+	combatEntities        map[string]domain.CombatEntityStateV1
+	combatEngagements     map[string]domain.EngagementProgramV1
+	combatEffects         []domain.CombatEffectV1
+	combatProjectiles     []domain.ProjectileEventV1
+	combatEvents          []domain.CombatEventV1
+	combatIdempotency     map[string]string
+	combatRepairs         map[string]domain.RepairReceiptV1
+	combatVersion         int64
+	combatSequence        int64
+	combatLastPersist     time.Time
+	combatPersistSequence atomic.Uint64
 	simTickMS             int64
 	simulationEpochMS     int64
 	simulationRate        int
@@ -296,7 +307,32 @@ func surfaceContactsAt(at time.Time) []domain.SurfaceContactV2 {
 }
 
 func (m *Manager) surfaceContactsLocked() []domain.SurfaceContactV2 {
-	return surfaceContactsAt(time.UnixMilli(m.simulationEpochMS + m.simTickMS).UTC())
+	contacts := surfaceContactsAt(time.UnixMilli(m.simulationEpochMS + m.simTickMS).UTC())
+	for index := range contacts {
+		state, ok := m.combatEntities[contacts[index].ID]
+		if !ok || state.Damage.Sunk {
+			if ok && state.Damage.Sunk {
+				contacts[index].NavigationState = "sunk · respawn pending"
+				contacts[index].SpeedMPS, contacts[index].SpeedKnots = 0, 0
+				contacts[index].Position, contacts[index].HeadingDeg, contacts[index].Route = state.Position, state.HeadingDeg, nil
+			}
+			contacts[index].Combat = cloneCombatEntity(&state)
+			continue
+		}
+		if state.BehaviorState == "escape" || state.BehaviorState == "rejoining_route" {
+			contacts[index].Position, contacts[index].HeadingDeg, contacts[index].SpeedMPS = state.Position, state.HeadingDeg, state.SpeedMPS
+			contacts[index].SpeedKnots = state.SpeedMPS * 1.94384
+			contacts[index].NavigationState = strings.ReplaceAll(state.BehaviorState, "_", " ")
+		} else {
+			state.Position, state.HeadingDeg, state.SpeedMPS = contacts[index].Position, contacts[index].HeadingDeg, contacts[index].SpeedMPS
+		}
+		contacts[index].Combat = cloneCombatEntity(&state)
+		contacts[index].Hostility = state.Profile.Hostility
+	}
+	if blackwake, ok := m.combatEntities[blackwakeID]; ok {
+		contacts = append(contacts, blackwakeContact(blackwake, time.Now().UTC()))
+	}
+	return contacts
 }
 
 func New(databaseURL string, logger *slog.Logger) *Manager {
@@ -308,8 +344,9 @@ func New(databaseURL string, logger *slog.Logger) *Manager {
 	if executionMode != "tape" && executionMode != "full_program_shadow" && executionMode != "full_program" {
 		executionMode = "full_program"
 	}
-	m := &Manager{logger: logger, databaseURL: databaseURL, secret: []byte("keelmesh-m6-runtime-authority"), fleetVersion: 1, vessels: map[string]domain.VesselProfileV2{}, groups: map[string]domain.OperationalGroupV2{}, collections: map[string]domain.SavedCollectionV2{}, missions: map[string]domain.MissionWorkspaceV2{}, drafts: map[string]domain.CommandDraftV2{}, plans: map[string]domain.FleetPlanV2{}, leases: map[string]domain.FleetLeaseV2{}, idempotency: map[string]string{}, startedPlans: map[string]string{}, programs: map[string]domain.TrajectoryProgramV2{}, simulationEpochMS: time.Now().UnixMilli(), simulationRate: 20, fleetProfile: profile, executionMode: executionMode}
+	m := &Manager{logger: logger, databaseURL: databaseURL, secret: []byte("keelmesh-m6-runtime-authority"), fleetVersion: 1, vessels: map[string]domain.VesselProfileV2{}, groups: map[string]domain.OperationalGroupV2{}, collections: map[string]domain.SavedCollectionV2{}, missions: map[string]domain.MissionWorkspaceV2{}, drafts: map[string]domain.CommandDraftV2{}, plans: map[string]domain.FleetPlanV2{}, leases: map[string]domain.FleetLeaseV2{}, idempotency: map[string]string{}, startedPlans: map[string]string{}, programs: map[string]domain.TrajectoryProgramV2{}, combatEntities: map[string]domain.CombatEntityStateV1{}, combatEngagements: map[string]domain.EngagementProgramV1{}, combatIdempotency: map[string]string{}, combatRepairs: map[string]domain.RepairReceiptV1{}, combatVersion: 1, simulationEpochMS: time.Now().UnixMilli(), simulationRate: 20, fleetProfile: profile, executionMode: executionMode}
 	m.seed()
+	m.initializeCombatLocked()
 	return m
 }
 
@@ -571,6 +608,10 @@ func (m *Manager) snapshotLocked() domain.FleetSnapshotV2 {
 		v.Telemetry.PowerDrawKW = loadKW
 		v.Telemetry.NetPowerKW = netKW
 		v.Telemetry.EnergyState = energyState(v.Telemetry.Reserve, netKW)
+		if combat, ok := m.combatEntities[v.ID]; ok {
+			combat.Position, combat.HeadingDeg, combat.SpeedMPS = v.Telemetry.Position, v.Telemetry.HeadingDeg, v.Telemetry.SpeedMPS
+			v.Combat = cloneCombatEntity(&combat)
+		}
 		vs = append(vs, v)
 	}
 	sort.Slice(vs, func(i, j int) bool { return vs[i].Designation < vs[j].Designation })
@@ -596,7 +637,7 @@ func (m *Manager) snapshotLocked() domain.FleetSnapshotV2 {
 		ms = append(ms, v)
 	}
 	sort.Slice(ms, func(i, j int) bool { return ms[i].UpdatedAt.After(ms[j].UpdatedAt) })
-	return domain.FleetSnapshotV2{SchemaVersion: 2, ExecutionMode: m.executionMode, FleetVersion: m.fleetVersion, SimulationRate: m.simulationRate, SimulationTick: m.simTickMS, GeneratedAt: now, Vessels: vs, SurfaceContacts: m.surfaceContactsLocked(), Groups: gs, Collections: cs, Missions: ms, Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, float64(m.simTickMS/1000)), Map: map[string]any{"name": "Rhode Island coastal and offshore operating picture", "center": domain.GeoPointV2{-71.34, 41.34}, "bounds": [][]float64{{-72.1, 40.75}, {-70.55, 42.05}}, "fixture": true, "navigation_warning": "Simulation only — not for navigation"}}
+	return domain.FleetSnapshotV2{SchemaVersion: 2, ExecutionMode: m.executionMode, FleetVersion: m.fleetVersion, SimulationRate: m.simulationRate, SimulationTick: m.simTickMS, GeneratedAt: now, Vessels: vs, SurfaceContacts: m.surfaceContactsLocked(), Groups: gs, Collections: cs, Missions: ms, Combat: m.combatSnapshotLocked(), Environment: environmentAt(domain.GeoPointV2{-71.34, 41.32}, float64(m.simTickMS/1000)), Map: map[string]any{"name": "Rhode Island coastal and offshore operating picture", "center": domain.GeoPointV2{-71.34, 41.34}, "bounds": [][]float64{{-72.1, 40.75}, {-70.55, 42.05}}, "fixture": true, "navigation_warning": "Simulation only — not for navigation"}}
 }
 
 func (m *Manager) SetSimulationRate(req SimulationRateRequest) (domain.FleetSnapshotV2, error) {
@@ -1853,11 +1894,23 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 				break
 			}
 		}
+		if !contactFound && strings.EqualFold(req.FollowContactID, blackwakeID) {
+			if state, exists := m.combatEntities[blackwakeID]; exists && !state.Damage.Sunk {
+				contact = blackwakeContact(state, time.Now().UTC())
+				contactFound = true
+			}
+		}
 		if !contactFound {
 			return domain.CommandDraftV2{}, &Error{"SURFACE_CONTACT_NOT_FOUND", "The selected surface contact is no longer available."}
 		}
 	} else {
 		contactSpec, contact, contactFound = resolveSurfaceContact(req.Text, time.UnixMilli(m.simulationEpochMS+m.simTickMS).UTC())
+		if !contactFound && strings.Contains(normalizeContactSpeech(req.Text), "blackwake") {
+			if state, exists := m.combatEntities[blackwakeID]; exists && !state.Damage.Sunk {
+				contact = blackwakeContact(state, time.Now().UTC())
+				contactFound = true
+			}
+		}
 	}
 	if contactFound {
 		behavior := inferContactBehavior(req.Text)
@@ -1870,7 +1923,16 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 				standoffM = math.Max(standoffM, req.CommandInterpretation.StandoffM)
 			}
 		}
-		wps = contactObjectiveWaypoints(contactSpec, contact, behavior, standoffM, len(targets), 720)
+		if contact.ID == blackwakeID {
+			wps = make([]domain.GeoPointV2, 0, 12)
+			for seconds := 60; seconds <= 720; seconds += 60 {
+				predicted := contact
+				predicted.Position = pointAtBearing(contact.Position, contact.HeadingDeg, contact.SpeedMPS*float64(seconds))
+				wps = append(wps, contactReferencePoint(predicted, behavior, standoffM, seconds, len(targets)))
+			}
+		} else {
+			wps = contactObjectiveWaypoints(contactSpec, contact, behavior, standoffM, len(targets), 720)
+		}
 		if kind == "" || kind == "waypoints" {
 			kind = "follow_contact"
 		}
@@ -2306,6 +2368,9 @@ func normalizeContactSpeech(value string) string {
 
 func inferContactBehavior(text string) string {
 	lower := strings.ToLower(text)
+	if strings.Contains(lower, "attack") || strings.Contains(lower, "engage") || strings.Contains(lower, "fire on") {
+		return "engage"
+	}
 	if strings.Contains(lower, "surround") || strings.Contains(lower, "encircle") || strings.Contains(lower, "orbit") {
 		return "surround"
 	}
@@ -3196,6 +3261,7 @@ func (m *Manager) tick() {
 	for step := 0; step < m.simulationRate; step++ {
 		m.tickStepLocked()
 	}
+	m.combatVersion++
 }
 
 func (m *Manager) tickStepLocked() {
@@ -3307,6 +3373,10 @@ func (m *Manager) tickStepLocked() {
 	// ordinary group/mission writes from racing continuous station keeping.
 	m.tickIdleGroupsLocked()
 	m.tickUnassignedVesselsLocked()
+	m.advanceCombatLocked(200)
+	if m.simTickMS%10000 == 0 {
+		m.persistCombatAsync(false)
+	}
 }
 
 // tickUnassignedVesselsLocked advances the energy model for vessels that are
@@ -3358,6 +3428,14 @@ func (m *Manager) refreshContinuousFollowLocked(mission domain.MissionWorkspaceV
 			break
 		}
 	}
+	var hostileContact *domain.SurfaceContactV2
+	if !found && plan.FollowContactID == blackwakeID {
+		if state, exists := m.combatEntities[blackwakeID]; exists && !state.Damage.Sunk {
+			value := blackwakeContact(state, time.Now().UTC())
+			hostileContact = &value
+			found = true
+		}
+	}
 	if !found {
 		return program, false
 	}
@@ -3377,7 +3455,13 @@ func (m *Manager) refreshContinuousFollowLocked(mission domain.MissionWorkspaceV
 		standoffM = math.Max(standoffM, plan.ContactStandoffM)
 	}
 	activationDelay := float64(activationTick - currentTick)
-	contact := surfaceContactAt(spec, time.UnixMilli(m.simulationEpochMS+m.simTickMS).UTC(), activationDelay)
+	contact := domain.SurfaceContactV2{}
+	if hostileContact != nil {
+		contact = *hostileContact
+		contact.Position = pointAtBearing(contact.Position, contact.HeadingDeg, contact.SpeedMPS*activationDelay)
+	} else {
+		contact = surfaceContactAt(spec, time.UnixMilli(m.simulationEpochMS+m.simTickMS).UTC(), activationDelay)
+	}
 	origins := make([]domain.GeoPointV2, 0, len(plan.Assignments))
 	speeds := make([]float64, 0, len(plan.Assignments))
 	for _, assignment := range plan.Assignments {
@@ -4070,6 +4154,9 @@ func requestedFormationSpacing(value string) (float64, bool) {
 }
 func inferGuidance(s string) string {
 	v := strings.ToLower(s)
+	if strings.Contains(v, "attack") || strings.Contains(v, "engage") || strings.Contains(v, "fire on") {
+		return "engage_hostile"
+	}
 	for _, k := range []string{"rendezvous", "regroup", "orbit", "return", "hold", "split", "merge", "heading", "search", "patrol"} {
 		if strings.Contains(v, k) {
 			return k
@@ -4509,6 +4596,21 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	var persistedCombatTick, persistedCombatSequence, persistedCombatVersion int64
+	if pool.QueryRow(ctx, `SELECT world_tick_ms,sequence,state_version FROM combat_runtime WHERE id='primary'`).Scan(&persistedCombatTick, &persistedCombatSequence, &persistedCombatVersion) == nil {
+		if persistedCombatTick > m.simTickMS {
+			m.simTickMS = persistedCombatTick
+		}
+		m.combatSequence = persistedCombatSequence
+		m.combatVersion = persistedCombatVersion
+	}
+	var latestCombatEventTick int64
+	if pool.QueryRow(ctx, `SELECT COALESCE(MAX(world_tick_ms),0) FROM combat_events`).Scan(&latestCombatEventTick) == nil && latestCombatEventTick >= m.simTickMS {
+		// Advance past the newest immutable event so a restart cannot generate an
+		// identifier at an already-used world tick, even if the last asynchronous
+		// runtime checkpoint was interrupted.
+		m.simTickMS = latestCombatEventTick + 200
+	}
 	load := func(query string, apply func([]byte)) {
 		rows, queryErr := pool.Query(ctx, query)
 		if queryErr != nil {
@@ -4586,6 +4688,32 @@ func (m *Manager) loadPersistent(ctx context.Context) {
 			}
 		}
 	})
+	load(`SELECT payload FROM combat_entities ORDER BY entity_id`, func(b []byte) {
+		var entity domain.CombatEntityStateV1
+		if json.Unmarshal(b, &entity) == nil && entity.EntityID != "" {
+			m.combatEntities[entity.EntityID] = entity
+			if entity.StateVersion > m.combatVersion {
+				m.combatVersion = entity.StateVersion
+			}
+		}
+	})
+	load(`SELECT payload FROM combat_engagements ORDER BY created_at`, func(b []byte) {
+		var engagement domain.EngagementProgramV1
+		if json.Unmarshal(b, &engagement) == nil && engagement.ID != "" {
+			m.combatEngagements[engagement.ID] = engagement
+			if engagement.IdempotencyKey != "" {
+				m.combatIdempotency[engagement.IdempotencyKey] = engagement.ID
+			}
+		}
+	})
+	load(`SELECT payload FROM combat_repairs ORDER BY created_at`, func(b []byte) {
+		var receipt domain.RepairReceiptV1
+		if json.Unmarshal(b, &receipt) == nil && receipt.ID != "" {
+			m.combatRepairs[receipt.ID] = receipt
+			m.combatIdempotency[receipt.IdempotencyKey] = receipt.ID
+		}
+	})
+	m.initializeCombatLocked()
 	for missionID, program := range m.programs {
 		mission, exists := m.missions[missionID]
 		if !exists {

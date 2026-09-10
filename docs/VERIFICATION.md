@@ -24,6 +24,7 @@ KeelMesh verifies deterministic authority first, compatibility second, integrate
 | Browser | Playwright | Mouse, touch, keyboard, responsive workflows |
 | Appliance | Compose and verifiers | Services, faults, replay, metrics, evidence |
 | Nodes | Service/API/hash checks | Binary parity, local persistence, network planes |
+| Combat | Go determinism plus API/browser checks | Exact-hash authority, range/reload, damage, repair, respawn, replay, bounded rendering |
 
 ## Scenario verifiers
 
@@ -52,6 +53,7 @@ The consolidated command is `scripts/keelmesh verify`.
 - Spoofed GNSS cannot move the fused marker.
 - Reconnection rejects stale work and bridges forward.
 - Restarts report actual persistence boundaries.
+- Controlled combat cannot begin without exact-hash approval; world-time repair, regeneration, disablement, and respawn remain deterministic from 1× through 500×.
 
 ## Performance and evidence
 
@@ -61,7 +63,7 @@ Evidence exports are bounded JSON, Markdown, and checksum manifests. They exclud
 
 ## Current status
 
-The frontend passes strict TypeScript, 13 Vitest assertions, production Vite/Docker builds, and focused deployed Playwright workflows for manual Mission editing and corrected phone gestures.
+The frontend passes strict TypeScript, 18 Vitest assertions, production Vite/Docker builds, and focused deployed Playwright workflows for manual Mission editing and corrected phone gestures. M15 adds focused Go coverage for balance, deterministic effects, approval, repair, regeneration, and respawn plus assistant/MCP boundary tests.
 
 The broad legacy Playwright suite still contains assertions for the removed embedded Mission chat. The last full run recorded 13 passing and 11 failing tests. This is visible migration debt; superseded UI must not be restored to hide it.
 

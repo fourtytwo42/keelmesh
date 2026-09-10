@@ -192,6 +192,18 @@ func validateCoordinatedRequest(method, path string, body []byte) error {
 		target = &arena.AuthorizeRequest{}
 	case method == http.MethodPost && isNestedResourcePath(path, "/api/v3/matches/", "/effects"):
 		target = &arena.EffectRequest{}
+	case method == http.MethodPost && path == "/api/v8/combat/engagements":
+		target = &fleetops.CombatEngagementRequest{}
+	case method == http.MethodPost && isCombatEngagementActionPath(path):
+		if strings.HasSuffix(path, ":authorize") {
+			target = &fleetops.CombatAuthorizeRequest{}
+		} else {
+			target = &fleetops.Mutation{}
+		}
+	case method == http.MethodPost && strings.HasPrefix(path, "/api/v8/combat/vessels/") && strings.HasSuffix(path, ":repair"):
+		target = &fleetops.CombatRepairRequest{}
+	case method == http.MethodPost && path == "/api/v8/scenarios/combat:reset":
+		target = &fleetops.Mutation{}
 	default:
 		return fmt.Errorf("unsupported coordinated route")
 	}
@@ -236,6 +248,13 @@ func isArenaEngagementActionPath(path string) bool {
 	return len(parts) == 3 && parts[0] != "" && parts[1] == "engagements" && strings.HasSuffix(parts[2], ":authorize")
 }
 
+func isCombatEngagementActionPath(path string) bool {
+	if !strings.HasPrefix(path, "/api/v8/combat/engagements/") {
+		return false
+	}
+	return strings.HasSuffix(path, ":authorize") || strings.HasSuffix(path, ":stop")
+}
+
 func (s *Server) coordinationMode() coordination.Mode {
 	if s.coordGateway != nil {
 		return s.coordGateway.Mode()
@@ -262,7 +281,7 @@ func requiresCoordination(method, path string) bool {
 	if strings.HasPrefix(path, "/api/v2/missions") || strings.HasPrefix(path, "/api/v2/groups") {
 		return true
 	}
-	return strings.HasPrefix(path, "/api/v3/matches")
+	return strings.HasPrefix(path, "/api/v3/matches") || strings.HasPrefix(path, "/api/v8/combat") || path == "/api/v8/scenarios/combat:reset"
 }
 
 func (s *Server) mutationCells(r *http.Request, metadata map[string]any) []string {
@@ -295,6 +314,7 @@ func (s *Server) mutationCells(r *http.Request, metadata map[string]any) []strin
 func (s *Server) expandedMutationTargets(r *http.Request, metadata map[string]any) []string {
 	targets := stringSliceField(metadata, "target_ids")
 	targets = append(targets, stringSliceField(metadata, "member_ids")...)
+	targets = append(targets, stringSliceField(metadata, "participant_ids")...)
 	if vesselID := stringField(metadata, "vessel_id"); vesselID != "" {
 		targets = append(targets, vesselID)
 	}
@@ -334,6 +354,8 @@ func mutationKind(method, path string) string {
 		resource = "group"
 	} else if strings.Contains(path, "/matches") {
 		resource = "arena"
+	} else if strings.Contains(path, "/combat") {
+		resource = "combat"
 	}
 	action := strings.ToLower(method)
 	if index := strings.LastIndex(path, ":"); index >= 0 {

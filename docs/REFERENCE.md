@@ -12,7 +12,7 @@
 
 ## Compatibility
 
-KeelMesh preserves `/api/v1` through `/api/v7`. Public contracts are versioned, mirrored across languages where applicable, and exercised through fixtures.
+KeelMesh preserves `/api/v1` through `/api/v8`. Public contracts are versioned, mirrored across languages where applicable, and exercised through fixtures.
 
 ## API families
 
@@ -25,6 +25,7 @@ KeelMesh preserves `/api/v1` through `/api/v7`. Public contracts are versioned, 
 | `/api/v5` | Memory, candidates, contexts, entities, sync, replay |
 | `/api/v6` | Coordination cells, logs, quorum proofs, cross-cell state, security |
 | `/api/v7` | Complete mission programs, vessel execution authority, group decision state |
+| `/api/v8` | Fictional combat state, engagement programs, repair, effects, respawn, and resumable events |
 
 Prometheus metrics are at `/metrics`. WebSocket/SSE extensions preserve earlier fields.
 
@@ -69,6 +70,7 @@ Mutations require request ID, idempotency key, actor identity where applicable, 
 |---|---|
 | `cmd/keelmesh-core` | Executable roles and embedded UI |
 | `internal/fleetops` | Fleet, groups, contacts, missions, energy |
+| `internal/fleetops/combat.go` | Deterministic fictional combat, Blackwake, repair, regeneration, and lifecycle |
 | `internal/trajectory` | Complete signed programs, ten-second segments, revision activation |
 | `internal/edgeexec` | Node-local program persistence, adaptation validation, reconciliation |
 | `internal/resilience` | Full-program, PNT, partition, and reconciliation incidents |

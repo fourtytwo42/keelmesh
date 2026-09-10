@@ -45,3 +45,22 @@ func TestControlMCPMissionDraftUsesVersionAndIdempotency(t *testing.T) {
 		t.Fatal("mission draft was not created through the canonical manager")
 	}
 }
+
+func TestControlMCPMayPlanButNotAuthorizeCombat(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	fleet := fleetops.New("", slog.Default())
+	arenaManager := arena.New()
+	snapshot := fleet.Snapshot()
+	args, _ := json.Marshal(map[string]any{
+		"request_id": "combat-plan-1", "idempotency_key": "combat-plan-1", "expected_version": snapshot.Combat.StateVersion,
+		"actor_id": "external-agent", "target_id": "HOSTILE-0001", "participant_ids": []string{snapshot.Vessels[0].ID},
+	})
+	result, err := callControlTool(context.Background(), fleet, arenaManager, "combat.plan_engagement", args)
+	if err != nil || len(result.Content) != 1 {
+		t.Fatalf("combat planning tool failed: %v", err)
+	}
+	encoded, _ := json.Marshal(result)
+	if !strings.Contains(string(encoded), "pending_approval") || strings.Contains(string(encoded), `"status":"active"`) {
+		t.Fatalf("MCP combat tool crossed approval boundary: %s", encoded)
+	}
+}

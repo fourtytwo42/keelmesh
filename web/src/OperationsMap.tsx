@@ -45,6 +45,7 @@ type Props = {
   onOpenFleet: () => void;
   onContact: (id: string) => void;
   onPlanContact: (contactID: string) => void;
+  onPlanEngagement: (contactID: string) => void;
   onGeometryFocus: (kind: "waypoint" | "include" | "exclude" | "poi", index: number) => void;
   onWaypoint: (p: Point, color: WaypointColor) => void;
   onPOI: (kind: "hold" | "orbit", p: Point) => void;
@@ -168,9 +169,45 @@ function surfaceContactData(fleet: FleetSnapshotV2): GeoJSON.FeatureCollection {
           : contact.class === "trawler" || contact.class === "yacht"
             ? 0.78
             : 1,
+        hostility: contact.hostility ?? "neutral",
+        integrity: contact.combat?.damage.integrity_percent ?? 100,
+        sunk: contact.combat?.damage.sunk ?? false,
       },
       geometry: { type: "Point", coordinates: contact.position },
     })),
+  };
+}
+function combatEntityData(fleet: FleetSnapshotV2, selected: Set<string>): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: (fleet.combat?.entities ?? []).map((entity) => ({
+      type: "Feature",
+      id: entity.entity_id,
+      properties: {
+        id: entity.entity_id,
+        hostile: entity.profile.hostility === "hostile",
+        selected: selected.has(entity.entity_id),
+        engaged: Boolean(entity.active_engagement_id) || entity.behavior_state === "engage",
+        integrity: entity.damage.integrity_percent,
+        damaged: entity.damage.integrity_percent < 99 && !entity.damage.sunk,
+        critical: entity.damage.integrity_percent < 25 && !entity.damage.sunk,
+        sunk: entity.damage.sunk,
+        wreckVisible: entity.damage.sunk && (entity.respawn.wreck_until_tick_ms ?? 0) > fleet.combat.world_tick_ms,
+        name: entity.name,
+        range: Math.max(0, ...entity.profile.weapons.map((weapon) => weapon.effective_range_m)),
+      },
+      geometry: { type: "Point", coordinates: entity.position },
+    })),
+  };
+}
+function combatProjectileData(fleet: FleetSnapshotV2): GeoJSON.FeatureCollection {
+  const projectiles = fleet.combat?.projectiles ?? [];
+  return {
+    type: "FeatureCollection",
+    features: projectiles.flatMap((projectile) => [
+      { type: "Feature" as const, properties: { kind: projectile.kind, hit: projectile.hit, damage: projectile.damage, part: "track" }, geometry: { type: "LineString" as const, coordinates: [projectile.start, projectile.end] } },
+      { type: "Feature" as const, properties: { kind: projectile.kind, hit: projectile.hit, damage: projectile.damage, part: "impact", label: projectile.hit ? `−${projectile.damage.toFixed(0)}` : "MISS" }, geometry: { type: "Point" as const, coordinates: projectile.end } },
+    ]),
   };
 }
 function surfaceRouteData(
@@ -557,6 +594,7 @@ export function OperationsMap({
   onOpenFleet,
   onContact,
   onPlanContact,
+  onPlanEngagement,
   onGeometryFocus,
   onWaypoint,
   onPOI,
@@ -609,7 +647,8 @@ export function OperationsMap({
       detail: string;
       accent?: string;
     } | null>(null),
-    [dragMarker, setDragMarker] = useState<{ x: number; y: number; color: string } | null>(null);
+    [dragMarker, setDragMarker] = useState<{ x: number; y: number; color: string } | null>(null),
+    [viewportRevision, setViewportRevision] = useState(0);
   const longPress = useRef<{
     timer: number | null;
     pointer: number;
@@ -643,6 +682,18 @@ export function OperationsMap({
     contactMissionOverlay.features.find((feature) => feature.properties?.kind === "rendezvous-eta")?.properties?.label ?? "",
   );
   const visibleHoldGroups = useMemo(() => groupAssemblyData(fleet), [fleet]);
+  const offscreenCombat = useMemo(() => {
+    void viewportRevision;
+    const map = mapRef.current;
+    const projectile = [...(fleet.combat?.projectiles ?? [])].reverse().find((item) => Date.now() - Date.parse(item.created_at) < 4500);
+    if (!map || !projectile) return null;
+    const entity = fleet.combat.entities.find((item) => item.entity_id === projectile.target_id);
+    if (!entity || map.getBounds().contains(entity.position)) return null;
+    const center = map.getCenter();
+    const dx = (entity.position[0] - center.lng) * Math.cos(center.lat * Math.PI / 180);
+    const dy = entity.position[1] - center.lat;
+    return { entity, bearing: (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360 };
+  }, [fleet.combat, ready, viewportRevision]);
   const visibleVesselIDs = () => {
     const map = mapRef.current;
     if (!map) return [];
@@ -692,6 +743,7 @@ export function OperationsMap({
       "bottom-left",
     );
     mapRef.current = map;
+    map.on("moveend", () => setViewportRevision((value) => value + 1));
     map.on("load", async () => {
       for (const name of ["kestrel", "mariner", "atlas"]) {
         const image = await map.loadImage(`/assets/vessels/${name}-2p5d.png`);
@@ -712,6 +764,7 @@ export function OperationsMap({
         "trawler",
         "patrol",
         "yacht",
+        "blackwake",
       ]) {
         const image = await map.loadImage(`/assets/traffic/${name}.png`);
         if (disposed || mapRef.current !== map) return;
@@ -1056,6 +1109,7 @@ export function OperationsMap({
         id: "surface-contact-halos",
         type: "circle",
         source: "surface-contacts",
+        filter: ["!=", ["get", "sunk"], true],
         paint: {
           "circle-radius": 13,
           "circle-color": ["get", "color"],
@@ -1068,8 +1122,9 @@ export function OperationsMap({
         id: "surface-contact-symbols",
         type: "symbol",
         source: "surface-contacts",
+        filter: ["!=", ["get", "sunk"], true],
         layout: {
-          "icon-image": ["concat", "traffic-", ["get", "class"]],
+          "icon-image": ["case", ["==", ["get", "class"], "pirate-raider"], "traffic-blackwake", ["concat", "traffic-", ["get", "class"]]],
           "icon-size": [
             "interpolate",
             ["linear"],
@@ -1097,6 +1152,16 @@ export function OperationsMap({
           "text-halo-width": 2,
         },
       });
+      map.addSource("combat-entities", { type: "geojson", data: combatEntityData(fleet, selected) });
+      map.addLayer({ id: "combat-wrecks", type: "circle", source: "combat-entities", filter: ["==", ["get", "wreckVisible"], true], paint: { "circle-radius": 12, "circle-color": "#171716", "circle-opacity": .82, "circle-stroke-color": "#d65a4d", "circle-stroke-width": 2, "circle-blur": .18 } });
+      map.addLayer({ id: "combat-wreck-labels", type: "symbol", source: "combat-entities", filter: ["==", ["get", "wreckVisible"], true], layout: { "text-field": ["concat", "WRECK · ", ["get", "name"]], "text-size": 9, "text-offset": [0, 2], "text-allow-overlap": true }, paint: { "text-color": "#e98a78", "text-halo-color": "#151819", "text-halo-width": 2 } });
+      map.addLayer({ id: "combat-range-rings", type: "circle", source: "combat-entities", filter: ["all", [">", ["get", "range"], 0], ["any", ["==", ["get", "selected"], true], ["==", ["get", "engaged"], true]]], paint: { "circle-radius": ["interpolate", ["exponential", 2], ["zoom"], 7, ["/", ["get", "range"], 1000], 11, ["/", ["get", "range"], 120], 15, ["/", ["get", "range"], 18]], "circle-color": "transparent", "circle-stroke-color": ["case", ["==", ["get", "hostile"], true], "#ef5b55", "#e7aa42"], "circle-stroke-width": 1.4, "circle-stroke-opacity": .62 } });
+      map.addLayer({ id: "combat-hull-rings", type: "circle", source: "combat-entities", filter: ["==", ["get", "damaged"], true], paint: { "circle-radius": 18, "circle-color": "transparent", "circle-stroke-color": ["interpolate", ["linear"], ["get", "integrity"], 0, "#ff3e36", 50, "#e79336", 100, "#70b88f"], "circle-stroke-width": 3, "circle-stroke-opacity": .9 } });
+      map.addLayer({ id: "combat-smoke", type: "circle", source: "combat-entities", filter: ["all", ["==", ["get", "damaged"], true], ["<", ["get", "integrity"], 50]], paint: { "circle-radius": ["case", ["==", ["get", "critical"], true], 13, 9], "circle-color": ["case", ["==", ["get", "critical"], true], "#db4b36", "#2b2b28"], "circle-opacity": .42, "circle-blur": .7 } });
+      map.addSource("combat-projectiles", { type: "geojson", data: combatProjectileData(fleet) });
+      map.addLayer({ id: "combat-projectile-tracks", type: "line", source: "combat-projectiles", filter: ["==", ["get", "part"], "track"], paint: { "line-color": ["case", ["==", ["get", "kind"], "rocket"], "#ff655b", "#ffd57a"], "line-width": ["case", ["==", ["get", "kind"], "rocket"], 3, 1.6], "line-opacity": .92, "line-dasharray": [1, 1.2] } });
+      map.addLayer({ id: "combat-impact-flashes", type: "circle", source: "combat-projectiles", filter: ["==", ["get", "part"], "impact"], paint: { "circle-radius": ["case", ["==", ["get", "hit"], true], 10, 5], "circle-color": ["case", ["==", ["get", "hit"], true], "#ff4e43", "#f1dca7"], "circle-opacity": .78, "circle-blur": .35 } });
+      map.addLayer({ id: "combat-damage-labels", type: "symbol", source: "combat-projectiles", filter: ["==", ["get", "part"], "impact"], layout: { "text-field": ["get", "label"], "text-size": 11, "text-offset": [0, -1.4], "text-allow-overlap": true }, paint: { "text-color": ["case", ["==", ["get", "hit"], true], "#ff8c78", "#efe2c5"], "text-halo-color": "#151819", "text-halo-width": 2 } });
       map.addSource("vessels", {
         type: "geojson",
         data: vesselData(fleet),
@@ -1249,6 +1314,8 @@ export function OperationsMap({
     (mapRef.current.getSource("surface-contacts") as GeoJSONSource)?.setData(
       surfaceContactData(fleet),
     );
+    (mapRef.current.getSource("combat-entities") as GeoJSONSource)?.setData(combatEntityData(fleet, selected));
+    (mapRef.current.getSource("combat-projectiles") as GeoJSONSource)?.setData(combatProjectileData(fleet));
     (
       mapRef.current.getSource("surface-contact-routes") as GeoJSONSource
     )?.setData(surfaceRouteData(fleet.surface_contacts));
@@ -1259,7 +1326,7 @@ export function OperationsMap({
       visibleHoldGroups,
     );
     (mapRef.current.getSource("command-scene") as GeoJSONSource)?.setData(sceneAnnotationData(sceneAnnotations));
-  }, [ready, fleet, contactMissionOverlay, remainingMissionRoutes, visibleMissionGeometry, visibleHoldGroups, sceneAnnotations]);
+  }, [ready, fleet, selected, contactMissionOverlay, remainingMissionRoutes, visibleMissionGeometry, visibleHoldGroups, sceneAnnotations]);
   useEffect(() => {
     if (!ready || !mapRef.current || !sceneCamera || !sceneCameraRequest) return;
     mapRef.current.easeTo({ center: sceneCamera.center, zoom: sceneCamera.zoom, bearing: sceneCamera.bearing, pitch: sceneCamera.pitch, duration: 550 });
@@ -2011,6 +2078,18 @@ export function OperationsMap({
       onClickCapture={handleMultiClickCapture}
       onPointerLeave={() => setMapHover(null)}
     >
+      {offscreenCombat && (
+        <button
+          className="offscreen-combat-warning"
+          type="button"
+          title={`Frame the off-screen attack involving ${offscreenCombat.entity.name}`}
+          onClick={() => mapRef.current?.easeTo({ center: offscreenCombat.entity.position, zoom: Math.max(mapRef.current.getZoom(), 10), duration: 500 })}
+        >
+          <span style={{ transform: `rotate(${offscreenCombat.bearing}deg)` }}>↑</span>
+          <small>COMBAT</small>
+          <b>{offscreenCombat.entity.name}</b>
+        </button>
+      )}
       {box && (
         <div
           className="selection-box"
@@ -2134,7 +2213,7 @@ export function OperationsMap({
               setContextMenu(null);
             }}
           >
-            {pirate ? "Study this vessel" : "Inspect contact details"}
+            {contextContact.hostility === "hostile" ? (pirate ? "Study this enemy" : "Inspect hostile") : (pirate ? "Study this vessel" : "Inspect contact details")}
           </button>
           <button
             role="menuitem"
@@ -2144,8 +2223,13 @@ export function OperationsMap({
               setContextMenu(null);
             }}
           >
-            {pirate ? "Plot a voyage involving this vessel" : "Plan mission involving this contact"}
+            {contextContact.hostility === "hostile" ? (pirate ? "Plot an intercept" : "Plan interception") : (pirate ? "Plot a voyage involving this vessel" : "Plan mission involving this contact")}
           </button>
+          {contextContact.hostility === "hostile" && (
+            <button role="menuitem" onClick={() => { onPlanEngagement(contextContact.id); setContextMenu(null); }}>
+              {pirate ? "Hunt this hostile ship" : "Plan engagement with selected assets"}
+            </button>
+          )}
           <p>
             {pirate
               ? "Opens the plotter only; no voyage or authority is created."

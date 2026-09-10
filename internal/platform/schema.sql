@@ -284,3 +284,45 @@ INSERT INTO incidents(id,title,summary,provenance,fixture,embedding) VALUES
 ('fixture-worker-rebalance','Consumer worker loss and cooperative recovery','A consumer child exited; partitions were reassigned and lag recovered after supervised restart.','deterministic M3 fixture',true,array_prepend(1::real,array_fill(0::real,ARRAY[383]))::vector),
 ('fixture-pnt-spoof','GNSS spoof rejected at the edge','A large GNSS jump was excluded while fused uncertainty increased and the vessel entered safe hold.','deterministic M2 fixture',true,array_prepend(0::real,array_prepend(1::real,array_fill(0::real,ARRAY[382])))::vector)
 ON CONFLICT(id) DO UPDATE SET title=excluded.title,summary=excluded.summary,provenance=excluded.provenance,fixture=excluded.fixture,embedding=excluded.embedding;
+
+-- M15 persistent fictional combat projections and immutable replay events.
+CREATE TABLE IF NOT EXISTS combat_runtime (
+  id text PRIMARY KEY,
+  world_tick_ms bigint NOT NULL,
+  sequence bigint NOT NULL,
+  state_version bigint NOT NULL,
+  updated_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS combat_entities (
+  entity_id text PRIMARY KEY,
+  state_version bigint NOT NULL,
+  payload jsonb NOT NULL,
+  updated_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS combat_engagements (
+  id text PRIMARY KEY,
+  target_id text NOT NULL,
+  status text NOT NULL,
+  content_hash text NOT NULL,
+  state_version bigint NOT NULL DEFAULT 1,
+  payload jsonb NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_combat_engagements_target ON combat_engagements(target_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS combat_repairs (
+  id text PRIMARY KEY,
+  vessel_id text NOT NULL,
+  idempotency_key text NOT NULL UNIQUE,
+  payload jsonb NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS combat_events (
+  id text PRIMARY KEY,
+  kind text NOT NULL,
+  entity_id text NOT NULL,
+  target_id text NOT NULL DEFAULT '',
+  world_tick_ms bigint NOT NULL,
+  payload jsonb NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_combat_events_tick ON combat_events(world_tick_ms DESC, id DESC);

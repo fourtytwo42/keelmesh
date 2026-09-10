@@ -44,6 +44,7 @@ The recording opens with live voice-assistant questions and AI-assisted mission 
 | [Verification strategy](docs/VERIFICATION.md) | Test layers, acceptance evidence, performance claims, and known coverage debt |
 | [API and repository reference](docs/REFERENCE.md) | Versioned APIs, service roles, important paths, and compatibility policy |
 | [Delivery status](docs/STATUS.md) | Implemented milestones, honest limitations, and next investments |
+| [Combat simulation](docs/COMBAT_SIMULATION.md) | M15 fictional combat authority, damage, repair, respawn, and replay |
 
 The current product contract is the [PRD](PRD.md). Superseded milestone plans remain recoverable through Git history rather than appearing as active documentation.
 
@@ -60,6 +61,7 @@ The current product contract is the [PRD](PRD.md). Superseded milestone plans re
 - Twelve symmetric vessel-node VMs plus a neutral referee/ingress VM for distributed-system demonstrations.
 - Two fixed six-voter Raft cells with radio-plane replication, four-signature effect proofs, cross-cell future activation, and separate Ed25519 mTLS identities; `simulated` and `shadow` remain guarded rollback modes.
 - A private, nonblocking OTLP path; SLO-backed leader, radio, and worker recovery receipts; measured capacity evidence; and a human-gated GNSS incident-to-evaluation pipeline through Dagster, MinIO, and MLflow.
+- A clearly labeled fictional combat workload with persistent Blackwake autonomy, deterministic effects, exact-hash engagement approval, world-time damage/repair/respawn, and auditable replay.
 
 ## System at a glance
 

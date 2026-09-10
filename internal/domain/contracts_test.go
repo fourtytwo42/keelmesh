@@ -157,3 +157,20 @@ func TestExecutionV7ContractFixture(t *testing.T) {
 		t.Fatalf("fixture does not satisfy M14 execution contracts: %+v", fixture)
 	}
 }
+
+func TestCombatV8ContractFixture(t *testing.T) {
+	data, err := os.ReadFile("../../contracts/fixtures/combat-v8.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Snapshot CombatSnapshotV1 `json:"snapshot"`
+		Repair   RepairReceiptV1  `json:"repair"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if len(fixture.Snapshot.Entities) != 1 || fixture.Snapshot.Entities[0].Name != "Blackwake" || fixture.Snapshot.Engagements[0].Status != "active" || fixture.Repair.RestoredHull != 22 {
+		t.Fatalf("fixture does not satisfy M15 combat contracts: %+v", fixture)
+	}
+}

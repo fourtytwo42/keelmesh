@@ -2,9 +2,9 @@
 
 ## Product Requirements Document
 
-- **Document version:** 1.0
+- **Document version:** 1.1
 - **Product maturity:** Interview-ready engineering demonstration
-- **Last verified:** 2026-09-04
+- **Last verified:** 2026-09-09
 - **Primary deployment:** VM 214 plus twelve vessel-node VMs
 - **Repository:** `fourtytwo42/keelmesh`
 
@@ -399,6 +399,10 @@ The PNT arbiter combines GNSS with simulated inertial, speed, bathymetry/shoreli
 
 An impossible GNSS jump is excluded and recorded; fused position does not follow it. Action scope and speed shrink as uncertainty grows. Dead reckoning is bounded and never presented as indefinite.
 
+### 11.5 Fictional combat workload
+
+The simulator includes a persistent hostile pirate raider named Blackwake plus deterministic hull, component, weapon-range, repair, regeneration, sinking, and respawn state. Commercial traffic remains unarmed, fictional patrol contacts may defend themselves, and controlled vessels require an exact-hash bounded engagement program before returning fire. AI and MCP may inspect or draft but cannot authorize their own engagement. All combat behavior is explicitly fictional and is not a real weapon-control capability.
+
 ## 12. Architecture and deployment
 
 ### 12.1 Runtime overview
@@ -531,6 +535,7 @@ GitHub-hosted workflows are intentionally unused. Verification runs on VM 214 an
 | M12 | Two real six-voter Raft cells, mTLS, proofs, cross-cell activation | Implemented and deployed in Raft mode |
 | M13 | Cross-process traces, SLO drills, capacity/cost evidence, GNSS evaluation flywheel | Implemented and deployed |
 | M14 | Complete onboard programs, explicit expiry, node-local stores, group/local decisions | Deployed on VM 214 and all twelve vessel nodes in `full_program` mode |
+| M15 | Persistent fictional combat, bounded engagement authority, deterministic damage, repair, sinking, and respawn | Implemented; deployment verification tracked in delivery status |
 
 ### 15.2 Verified deployment snapshot
 
@@ -585,6 +590,8 @@ Current shared delivery state lives in [Delivery status](docs/STATUS.md) and [Ve
 - [x] Group and isolated-vessel adaptations remain inside the same signed mission envelope and produce inspectable receipts.
 - [x] Loss of AI, speech, Kafka, PostgreSQL, or VM 214 does not invalidate committed local execution.
 - [x] Spoofed GNSS cannot move the fused marker; uncertainty constrains behavior.
+- [x] Controlled vessels cannot fire before exact-hash engagement confirmation; AI and MCP cannot approve their own effects.
+- [x] Damage, passive regeneration, explicit repair cooldowns, sinking, and respawn advance in deterministic world time.
 
 ### 16.4 Distributed authority
 

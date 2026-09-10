@@ -1492,7 +1492,7 @@ func TestFollowSurfaceContactCompilesPredictedTrack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planning.FollowContact == nil || planning.FollowContact.BoatID != "NPC-4101" || len(planning.SurfaceContacts) != 32 {
+	if planning.FollowContact == nil || planning.FollowContact.BoatID != "NPC-4101" || len(planning.SurfaceContacts) != 33 {
 		t.Fatalf("advisor context is missing bounded traffic state: %#v", planning)
 	}
 }

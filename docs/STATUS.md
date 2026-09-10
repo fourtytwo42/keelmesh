@@ -25,10 +25,13 @@
 | M12 | Real two-cell Raft runtime, separate-role mTLS PKI, four-signature proofs, follower forwarding, cross-cell activation, and signed leader discovery |
 | M13 | Cross-process OTLP tracing, SLO-backed recovery drills, measured capacity evidence, and a governed GNSS incident-to-evaluation flywheel |
 | M14 | Complete finite onboard mission programs, explicit expiry, node-local durable install/validation, and group/local decision scope |
+| M15 | Persistent fictional maritime combat, exact-hash engagement programs, deterministic effects, world-time repair, sinking, and respawn |
 
 M13 unifies the four operational planes in Engineer and System: edge mission execution, quorum-backed coordination, Kafka/PostgreSQL data processing, and advisory AI/ML. The deployed evidence includes a real multi-service OTLP trace, rollback-protected leader and radio-partition drills, supervised worker recovery, immutable GNSS evaluation artifacts, and a measured 1,000-producer capacity run.
 
 M14 is deployed in authoritative `full_program` execution mode on VM 214 and all twelve vessel nodes. A live quorum-backed proof installed one exact 3,663-segment program on all six Cell A nodes and continued to mission tick 108 without a rolling authority refill. The compatibility sweep passed twice; every legacy tape-depth projection is zero.
+
+M15 adds the persistent Blackwake hostile and a fictional combat workload to Fleet Operations. The software implementation and local deterministic verification are complete; deployment evidence and the final all-node binary hash are recorded here only after rollout.
 
 ## Deployment
 

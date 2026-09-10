@@ -26,9 +26,12 @@ import type {
   WorkspaceAssistantResponseV1,
   AssistantTurnV2,
   CommandSceneV1,
+  CombatEntityStateV1,
   CoordinationOverviewV1,
   ConversationTurnV1,
+  EngagementProgramV1,
   MemorySnapshotV1,
+  RepairReceiptV1,
 } from "./types";
 import { KeelMeshA2UISurface } from "./A2UISurface";
 import { OperationsMap, type WaypointColor } from "./OperationsMap";
@@ -91,6 +94,7 @@ import {
   Sun,
   Undo2,
   Square,
+  Wrench,
 } from "lucide-react";
 
 type Tool = "select" | "box" | "waypoint" | "include" | "exclude" | "hold" | "orbit";
@@ -210,6 +214,7 @@ export function FleetWorkspace() {
     [connected, setConnected] = useState(true),
     [pendingDeleteID, setPendingDeleteID] = useState(""),
     [pendingPlanID, setPendingPlanID] = useState(""),
+    [pendingEngagement, setPendingEngagement] = useState<EngagementProgramV1 | null>(null),
     [commandScenes, setCommandScenes] = useState<CommandSceneV1[]>([]),
     [activeSceneID, setActiveSceneID] = useState(""),
     [sceneCameraRequest, setSceneCameraRequest] = useState<{
@@ -1190,6 +1195,69 @@ export function FleetWorkspace() {
     setTool("select");
     open("planner");
   }
+  async function planCombatEngagement(contactID: string, requestedParticipants?: string[]) {
+    const participants = [...new Set(requestedParticipants ?? [...selected])];
+    if (participants.length === 0) {
+      setError("Select one or more armed vessels in Fleet before planning an engagement.");
+      return;
+    }
+    setError("");
+    try {
+      const program = await api<EngagementProgramV1>("/api/v8/combat/engagements", {
+        method: "POST",
+        body: JSON.stringify({
+          request_id: requestID("combat-plan"),
+          idempotency_key: requestID("combat-plan-key"),
+          expected_version: fleet?.combat.state_version ?? 0,
+          actor_identity: "demo-operator",
+          target_id: contactID,
+          participant_ids: participants,
+          duration_seconds: 900,
+        }),
+      });
+      setPendingEngagement(program);
+    } catch (reason) {
+      setError(reason instanceof KeelMeshError ? `${reason.code}: ${reason.message}` : String(reason));
+    }
+  }
+  async function authorizeCombatEngagement(program: EngagementProgramV1) {
+    try {
+      await api<EngagementProgramV1>(`/api/v8/combat/engagements/${program.id}:authorize`, {
+        method: "POST",
+        body: JSON.stringify({
+          request_id: requestID("combat-authorize"),
+          idempotency_key: requestID("combat-authorize-key"),
+          expected_version: fleet?.combat.state_version ?? 0,
+          actor_identity: "demo-operator",
+          operator_id: "demo-operator",
+          plan_hash: program.content_hash,
+        }),
+      });
+      setPendingEngagement(null);
+      await refresh();
+    } catch (reason) {
+      setError(reason instanceof KeelMeshError ? `${reason.code}: ${reason.message}` : String(reason));
+    }
+  }
+  async function repairVessel(vesselID: string) {
+    try {
+      const receipt = await api<RepairReceiptV1>(`/api/v8/combat/vessels/${vesselID}:repair`, {
+        method: "POST",
+        body: JSON.stringify({
+          request_id: requestID("combat-repair"),
+          idempotency_key: requestID("combat-repair-key"),
+          expected_version: fleet?.combat.state_version ?? 0,
+          actor_identity: "demo-operator",
+          vessel_id: vesselID,
+        }),
+      });
+      setError("");
+      setSpeechState(`repair complete · ${receipt.restored_hull.toFixed(1)} hull restored`);
+      await refresh();
+    } catch (reason) {
+      setError(reason instanceof KeelMeshError ? `${reason.code}: ${reason.message}` : String(reason));
+    }
+  }
   async function applyContactSeed(createNew: boolean) {
     if (!plannerContactSeed) return;
     let target = createNew ? await createMissionFor([...selected]) : mission;
@@ -1631,6 +1699,18 @@ export function FleetWorkspace() {
 	  const group = resolveGroup(destination);
 	  if (vessel && (group || destination.toLowerCase().trim() === "unassigned"))
 		await moveVessel(vessel.id, group?.id ?? "unassigned");
+	}
+	if (action.kind === "repair_vessel") {
+	  const vessel = resolveVessel(action.target);
+	  if (vessel) await repairVessel(vessel.id);
+	}
+	if (action.kind === "plan_engagement") {
+	  const contact = resolveContact(action.target);
+	  const participantIDs = resolveActionVesselIDs(action);
+	  if (contact && participantIDs.length > 0) {
+		setSelected(new Set(participantIDs));
+		await planCombatEngagement(contact.id, participantIDs);
+	  }
 	}
   }
 
@@ -2329,6 +2409,8 @@ export function FleetWorkspace() {
           lookup={vesselsByID}
           execution={fleet.missions.find((mission) => mission.id === vessel.telemetry.mission_id)?.execution}
           onRename={(name) => renameVessel(vessel.id, name)}
+          onRepair={() => void repairVessel(vessel.id)}
+          worldTickMS={fleet.simulation_tick_ms}
         />
       ),
     });
@@ -2342,7 +2424,7 @@ export function FleetWorkspace() {
       title: contact.name,
       icon: <Ship />,
       initial: { x: 370 + (index % 6) * 25, y: 105 + (index % 6) * 22, width: 360, height: 540 },
-      content: <SurfaceContactInspector contact={contact} />,
+      content: <SurfaceContactInspector contact={contact} worldTickMS={fleet.simulation_tick_ms} />,
     });
   if (windows.has("planner"))
     defs.push({
@@ -2747,6 +2829,7 @@ export function FleetWorkspace() {
         onOpenFleet={revealFleet}
         onContact={openContactInspector}
         onPlanContact={planSurfaceContact}
+        onPlanEngagement={(contactID) => void planCombatEngagement(contactID)}
         onGeometryFocus={(kind, index) => {
           setGeometryFocus({ kind, index });
           open("planner");
@@ -2844,6 +2927,17 @@ export function FleetWorkspace() {
                 <Play />{busy ? "VALIDATING…" : pirate ? "Confirm and make sail" : "Confirm and execute"}
               </button>
             </div>
+          </section>
+        </div>
+      )}
+      {pendingEngagement && (
+        <div className="mission-delete-backdrop">
+          <section className="mission-delete-dialog combat-approval-dialog" role="dialog" aria-modal="true" aria-labelledby="combat-approval-title">
+            <header><Swords /><div><small>FICTIONAL COMBAT AUTHORITY</small><h2 id="combat-approval-title">Authorize engagement?</h2></div></header>
+            <p>{pendingEngagement.participant_ids.length} controlled vessel(s) may engage Blackwake for up to {Math.ceil(pendingEngagement.duration_seconds / 60)} world minutes, inside a {pendingEngagement.maximum_range_m.toFixed(0)} m weapon envelope and {pendingEngagement.maximum_effects} maximum effects.</p>
+            <code>SHA-256 {pendingEngagement.content_hash.slice(0, 28)}…</code>
+            <p className="confirmation-note">This confirmation binds the exact target, participants, weapons, duration, limits, and state. It does not authorize another target or future engagement.</p>
+            <div><button autoFocus onClick={() => setPendingEngagement(null)}>Cancel</button><button className="confirm" onClick={() => void authorizeCombatEngagement(pendingEngagement)}><ShieldCheck /> Confirm exact engagement</button></div>
           </section>
         </div>
       )}
@@ -3776,12 +3870,16 @@ function VesselInspectorWindow({
   lookup,
   execution,
   onRename,
+  onRepair,
+  worldTickMS,
 }: {
   pirate: boolean;
   vessel: VesselProfileV2;
   lookup: Map<string, VesselProfileV2>;
   execution?: TrajectoryProgramSummaryV2;
   onRename: (name: string) => void;
+  onRepair: () => void;
+  worldTickMS: number;
 }) {
   const [reachability, setReachability] = useState<ReachabilityV2 | null>(null);
   useEffect(() => {
@@ -3792,7 +3890,7 @@ function VesselInspectorWindow({
       .catch(() => { if (active) setReachability(null); });
     return () => { active = false; };
   }, [vessel.id]);
-  return <VesselInspector pirate={pirate} vessel={vessel} reachability={reachability} lookup={lookup} execution={execution} onRename={onRename} />;
+  return <VesselInspector pirate={pirate} vessel={vessel} reachability={reachability} lookup={lookup} execution={execution} onRename={onRename} onRepair={onRepair} worldTickMS={worldTickMS} />;
 }
 function VesselInspector({
   pirate,
@@ -3801,6 +3899,8 @@ function VesselInspector({
   lookup,
   execution,
   onRename,
+  onRepair,
+  worldTickMS,
 }: {
   pirate: boolean;
   vessel: VesselProfileV2;
@@ -3808,6 +3908,8 @@ function VesselInspector({
   lookup: Map<string, VesselProfileV2>;
   execution?: TrajectoryProgramSummaryV2;
   onRename: (name: string) => void;
+  onRepair: () => void;
+  worldTickMS: number;
 }) {
   const t = vessel.telemetry;
   const currentEnergyState = t.energy_state || "balanced";
@@ -3848,6 +3950,7 @@ function VesselInspector({
       <div className="hot-buffer-note">
         <Route /><span><b>{execution ? "FULL PROGRAM ONBOARD" : "NO ACTIVE PROGRAM"}</b><small>{execution ? `Revision ${execution.active_revision} · ${execution.total_segments} deterministic segments · valid until T+${execution.authorization_expiry_tick}s · ${execution.terminal_contingency.replaceAll("_", " ")} contingency.` : "This vessel has no active execution authority and will not invent movement commands."}</small></span>
       </div>
+      {vessel.combat && <CombatReadiness entity={vessel.combat} worldTickMS={worldTickMS} onRepair={onRepair} />}
       <div className="vessel-nav-grid">
         <Insight icon={<BatteryCharging />} label="BATTERY FLOW" value={`${currentEnergyState.replaceAll("_", " ")} · ${signedPower(t.net_power_kw ?? 0)}`} detail={`${(t.solar_input_kw ?? 0).toFixed(2)} kW solar · ${(t.power_draw_kw ?? 0).toFixed(2)} kW load`} tone={currentEnergyState === "charging" ? "good" : currentEnergyState === "discharging" ? "bad" : ""} />
         <Insight icon={<Gauge />} label="SPEED" value={`${t.speed_mps.toFixed(1)} m/s`} detail={`${vessel.class.max_speed_mps.toFixed(1)} max`} />
@@ -3899,11 +4002,32 @@ function VesselInspector({
   );
 }
 
-function SurfaceContactInspector({ contact }: { contact: SurfaceContactV2 }) {
+function CombatReadiness({ entity, worldTickMS, onRepair }: { entity: CombatEntityStateV1; worldTickMS: number; onRepair?: () => void }) {
+  const integrity = Math.max(0, Math.min(100, entity.damage.integrity_percent));
+  const cooldownSeconds = Math.max(0, Math.ceil((entity.repair_ready_at_tick_ms - worldTickMS) / 1000));
+  return <section className={`combat-readiness ${entity.profile.hostility}`}>
+    <header><Swords /><span><small>COMBAT SIMULATION</small><b>{entity.profile.hostility.toUpperCase()} · {entity.behavior_state.replaceAll("_", " ")}</b></span><strong>{integrity.toFixed(0)}%</strong></header>
+    <div className="combat-integrity"><i><span style={{ width: `${integrity}%` }} /></i><em>{entity.damage.hull.toFixed(1)} / {entity.damage.hull_maximum.toFixed(0)} HULL</em></div>
+    <div className="combat-system-grid">
+      <span><small>ARMOR</small><b>{entity.profile.armor}</b></span>
+      <span><small>PROPULSION</small><b>{entity.damage.propulsion_percent.toFixed(0)}%</b></span>
+      <span><small>SENSORS</small><b>{entity.damage.sensors_percent.toFixed(0)}%</b></span>
+      <span><small>WEAPONS</small><b>{entity.damage.weapons_percent.toFixed(0)}%</b></span>
+    </div>
+    <div className="combat-armament">
+      <small>ARMAMENT</small>
+      {entity.profile.weapons.length ? entity.profile.weapons.map((weapon) => <span key={weapon.id}><b>{weapon.name}</b><em>{weapon.base_damage} damage · {weapon.effective_range_m.toFixed(0)} m · {weapon.reload_seconds}s reload{weapon.ammunition >= 0 ? ` · ${weapon.ammunition} remaining` : ""}</em></span>) : <span><b>Unarmed</b><em>Escape and collision-avoidance behavior only</em></span>}
+    </div>
+    {entity.current_target_id && <p className="combat-target"><small>CURRENT TARGET</small><b>{entity.current_target_id}</b></p>}
+    {onRepair && <button className="combat-repair" onClick={onRepair} disabled={entity.damage.sunk || integrity >= 100 || cooldownSeconds > 0}><Wrench />{cooldownSeconds > 0 ? `Repair ready in ${Math.ceil(cooldownSeconds / 60)} world min` : "Repair hull +20%"}</button>}
+  </section>;
+}
+
+function SurfaceContactInspector({ contact, worldTickMS }: { contact: SurfaceContactV2; worldTickMS: number }) {
   return (
     <div className="surface-contact-inspector">
       <div className="surface-contact-hero">
-        <img src={`/assets/traffic/${contact.class}.png`} alt="" />
+        <img src={`/assets/traffic/${contact.class === "pirate-raider" ? "blackwake" : contact.class}.png`} alt="" />
         <div>
           <span style={{ color: contact.color }}>
             {contact.color_name.toUpperCase()} CONTACT · {contact.class.toUpperCase()}
@@ -3913,8 +4037,9 @@ function SurfaceContactInspector({ contact }: { contact: SurfaceContactV2 }) {
         </div>
       </div>
       <div className="contact-simulation-note">
-        FICTIONAL SURFACE TRAFFIC · SIMULATED AIS-LIKE TRACK
+        {contact.hostility === "hostile" ? "FICTIONAL HOSTILE COMBAT SIMULATION" : "FICTIONAL SURFACE TRAFFIC · SIMULATED AIS-LIKE TRACK"}
       </div>
+      {contact.combat && <CombatReadiness entity={contact.combat} worldTickMS={worldTickMS} />}
       <div className="metric-grid">
         <Metric
           k="POSITION"
@@ -4173,7 +4298,7 @@ function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool,
     <div className="mission-workspace-body">
       {workspaceTab === "plan" && <section className="mission-plan-workspace">
         <div className="mission-section-heading"><span><Compass /><b>Mission definition</b><small>Describe the outcome, then place route and safety geometry directly on the map.</small></span><em>{missionType.replaceAll("_", " ")}</em></div>
-        <div className="mission-definition-grid"><label>MISSION TYPE<select aria-label="MISSION TYPE" value={missionType} onChange={(event) => setMissionType(event.target.value)}><option value="transit">Transit</option><option value="patrol">Patrol</option><option value="search">Search</option><option value="follow_contact">Follow contact</option><option value="hold">Hold</option><option value="orbit">Orbit</option><option value="custom_route">Custom route</option></select></label><label className="mission-objective-field">OBJECTIVE<textarea aria-label="OBJECTIVE" value={manualObjective} onChange={(event) => setManualObjective(event.target.value)} placeholder="What should these vessels accomplish?" /></label>{mission.target_ids.length > 1 ? <label>FORMATION<select value={mission.formation} onChange={(event) => onFormation(event.target.value)}>{formations.map((formation) => <option value={formation} key={formation}>{formation.replaceAll("_", " ")}</option>)}</select></label> : <div className="solo-mode"><Ship /><span><b>{mission.target_ids.length === 1 ? "INDEPENDENT VESSEL" : "NO ASSETS"}</b><small>{mission.target_ids.length === 1 ? "Formation controls are not required." : "Select vessels or groups in Fleet."}</small></span></div>}<button type="button" className={`mission-loop-control ${mission.loop ? "active" : ""}`} onClick={() => onLoop(!mission.loop)}><RotateCcw /><span><b>{mission.loop ? "Loop continuously" : "Hold at end"}</b><small>{mission.loop ? "Return to the first marker after completion." : "Station-keep at the final marker."}</small></span></button></div>
+        <div className="mission-definition-grid"><label>MISSION TYPE<select aria-label="MISSION TYPE" value={missionType} onChange={(event) => setMissionType(event.target.value)}><option value="transit">Transit</option><option value="patrol">Patrol</option><option value="search">Search</option><option value="follow_contact">Follow contact</option><option value="engage_hostile">Engage hostile</option><option value="hold">Hold</option><option value="orbit">Orbit</option><option value="custom_route">Custom route</option></select></label><label className="mission-objective-field">OBJECTIVE<textarea aria-label="OBJECTIVE" value={manualObjective} onChange={(event) => setManualObjective(event.target.value)} placeholder="What should these vessels accomplish?" /></label>{mission.target_ids.length > 1 ? <label>FORMATION<select value={mission.formation} onChange={(event) => onFormation(event.target.value)}>{formations.map((formation) => <option value={formation} key={formation}>{formation.replaceAll("_", " ")}</option>)}</select></label> : <div className="solo-mode"><Ship /><span><b>{mission.target_ids.length === 1 ? "INDEPENDENT VESSEL" : "NO ASSETS"}</b><small>{mission.target_ids.length === 1 ? "Formation controls are not required." : "Select vessels or groups in Fleet."}</small></span></div>}<button type="button" className={`mission-loop-control ${mission.loop ? "active" : ""}`} onClick={() => onLoop(!mission.loop)}><RotateCcw /><span><b>{mission.loop ? "Loop continuously" : "Hold at end"}</b><small>{mission.loop ? "Return to the first marker after completion." : "Station-keep at the final marker."}</small></span></button></div>
         <div className="mission-map-authoring"><div className="mission-section-heading"><span><MapPinned /><b>Map authoring</b><small>{tool === "select" ? "Choose a tool, then work on the map." : `${tool.replaceAll("_", " ")} active · Escape cancels`}</small></span><em>geometry r{mission.geometry.revision}</em></div><div className="geometry-actions"><button aria-label="Select or edit mission geometry" className={tool === "select" ? "active" : ""} onClick={() => onTool("select")} title="Select or edit"><MousePointer2 /><small>Edit</small></button><button aria-label="Add operating area" className={tool === "include" ? "active" : ""} onClick={() => onArea("include")} title="Operating area"><Plus /><small>Area</small></button><button aria-label="Add exclusion area" className={tool === "exclude" ? "active" : ""} onClick={() => onArea("exclude")} title="Exclusion area"><Ban /><small>Exclude</small></button><button aria-label="Add waypoint" className={tool === "waypoint" ? "active" : ""} onClick={() => onTool("waypoint")} title="Waypoint"><MapPinned /><small>Waypoint</small></button><button aria-label="Add hold point" className={tool === "hold" ? "active" : ""} onClick={() => onTool("hold")} title="Hold point"><CircleDot /><small>Hold</small></button><button aria-label="Add orbit point" className={tool === "orbit" ? "active" : ""} onClick={() => onTool("orbit")} title="Orbit point"><RotateCcw /><small>Orbit</small></button><button aria-label="Undo mission geometry change" onClick={onUndoGeometry} title="Undo"><Undo2 /><small>Undo</small></button></div><div className="geometry-summary"><span>{mission.geometry.included_areas.length} operating</span><span>{mission.geometry.exclusion_areas.length} exclusions</span><span>{mission.geometry.waypoints.length} waypoints</span><span>{mission.geometry.pois.length} hold/orbit</span></div><div className="geometry-inventory">{mission.geometry.included_areas.map((_, index) => <button className={geometryFocus?.kind === "include" && geometryFocus.index === index ? "selected" : ""} key={`include-${index}`} onClick={() => onFocusGeometry({ kind: "include", index })}><span>Operating area {index + 1}</span><Eye /></button>)}{mission.geometry.exclusion_areas.map((_, index) => <button className={geometryFocus?.kind === "exclude" && geometryFocus.index === index ? "selected" : ""} key={`exclude-${index}`} onClick={() => onFocusGeometry({ kind: "exclude", index })}><span>Exclusion area {index + 1}</span><Eye /></button>)}{mission.geometry.waypoints.map((_, index) => <div className={geometryFocus?.kind === "waypoint" && geometryFocus.index === index ? "selected" : ""} key={`waypoint-${index}`}><button onClick={() => onFocusGeometry({ kind: "waypoint", index })}><span>Waypoint {index + 1}</span><Eye /></button><button disabled={index === 0} onClick={() => onReorderWaypoint(index, -1)}><ChevronUp /></button><button disabled={index === mission.geometry.waypoints.length - 1} onClick={() => onReorderWaypoint(index, 1)}><ChevronDown /></button></div>)}{mission.geometry.pois.map((poi, index) => <button className={geometryFocus?.kind === "poi" && geometryFocus.index === index ? "selected" : ""} key={poi.id} onClick={() => onFocusGeometry({ kind: "poi", index })}><span>{poi.kind === "orbit" ? "Orbit" : "Hold"} point {index + 1}</span><Eye /></button>)}{geometryFocus && <button className="geometry-delete" onClick={() => onDeleteGeometry(geometryFocus)}><Trash2 />Delete selected</button>}</div><div className="geometry-clear-actions"><button onClick={() => onClearGeometry("include")}>Clear areas</button><button onClick={() => onClearGeometry("exclude")}>Clear exclusions</button><button onClick={() => onClearGeometry("waypoint")}>Clear route</button><button onClick={() => onClearGeometry("poi")}>Clear holds</button></div></div>
         <div className="mission-plan-actions"><button onClick={onOpenConstraints} disabled={busy}><SlidersHorizontal /><span><b>Constraints</b><small>Reserve, speed, separation, PNT</small></span></button><button onClick={() => onSaveDraft(manualObjective.trim())} disabled={busy || !manualObjective.trim() || (mission.draft_saved && !objectiveChanged)}><Save /><span><b>{mission.draft_saved ? objectiveChanged ? "Save changes" : "Draft saved" : "Save draft"}</b><small>{mission.draft_saved && !objectiveChanged ? "Mission is ready to revisit." : "Keep this mission and release the creator."}</small></span></button><button className="amber" onClick={() => { setWorkspaceTab("route"); onGenerateManual(missionType, manualObjective); }} disabled={busy || mission.target_ids.length === 0}><Route /><span><b>{plans.length ? "Rebuild routes" : "Build routes"}</b><small>Deterministic validation · no AI required</small></span></button></div>
       </section>}
@@ -4501,6 +4626,7 @@ function LegacyMissionCanvas({
             <option value="patrol">Patrol</option>
             <option value="search">Search</option>
             <option value="follow_contact">Follow contact</option>
+            <option value="engage_hostile">Engage hostile</option>
             <option value="hold">Hold</option>
             <option value="orbit">Orbit</option>
             <option value="custom_route">Custom route</option>

@@ -8,7 +8,8 @@ import memoryJSON from "../../contracts/fixtures/memory-snapshot-v1.json";
 import platformProofJSON from "../../contracts/fixtures/platform-proof-summary-v1.json";
 import platformDrillJSON from "../../contracts/fixtures/platform-drill-receipt-v1.json";
 import executionV7JSON from "../../contracts/fixtures/execution-v7.json";
-import type { AgentSnapshot, MemorySnapshotV1, MissionIntent, PlatformDrillReceiptV1, PlatformProofSummaryV1, PlatformSnapshot, QuietFleetSnapshot, ResilienceSnapshot } from "./types";
+import combatV8JSON from "../../contracts/fixtures/combat-v8.json";
+import type { AgentSnapshot, CombatSnapshotV1, MemorySnapshotV1, MissionIntent, PlatformDrillReceiptV1, PlatformProofSummaryV1, PlatformSnapshot, QuietFleetSnapshot, RepairReceiptV1, ResilienceSnapshot } from "./types";
 
 describe("shared contract fixtures", () => {
   it("reads MissionIntentV1 using the TypeScript contract", () => {
@@ -69,5 +70,13 @@ describe("shared contract fixtures", () => {
     expect(fixture.authority.authorized_time_remaining_seconds).toBeGreaterThan(60);
     expect(fixture.decision).toMatchObject({ decision_node_id: "node-a-01", decision_scope: "group" });
     expect(fixture.install_receipt.state).toBe("installed");
+  });
+  it("reads M15 combat and repair fixtures", () => {
+    const fixture = combatV8JSON as unknown as { snapshot: CombatSnapshotV1; repair: RepairReceiptV1 };
+    expect(fixture.snapshot.entities[0].name).toBe("Blackwake");
+    expect(fixture.snapshot.entities[0].profile.weapons).toHaveLength(2);
+    expect(fixture.snapshot.engagements[0]).toMatchObject({ status: "active", target_id: "HOSTILE-0001" });
+    expect(fixture.snapshot.intercept_estimates[0]).toMatchObject({ target_id: "HOSTILE-0001", feasible: true });
+    expect(fixture.repair.restored_hull).toBe(22);
   });
 });

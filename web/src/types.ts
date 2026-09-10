@@ -665,6 +665,7 @@ export type VesselProfileV2 = {
   navigation_source?: string;
   gnss_state?: string;
   gnss_accepted: boolean;
+  combat?: CombatEntityStateV1;
   telemetry: {
     position: Point;
     heading_deg: number;
@@ -985,7 +986,7 @@ export type SurfaceContactV2 = {
   boat_id: string;
   name: string;
   callsign: string;
-  class: "container" | "tanker" | "ferry" | "trawler" | "patrol" | "yacht";
+  class: "container" | "tanker" | "ferry" | "trawler" | "patrol" | "yacht" | "pirate-raider";
   activity: string;
   color_name: string;
   color: string;
@@ -999,7 +1000,172 @@ export type SurfaceContactV2 = {
   route_name: string;
   route: Point[];
   looping: boolean;
+  hostility?: "friendly" | "neutral" | "hostile";
+  combat?: CombatEntityStateV1;
   updated_at: string;
+};
+
+export type WeaponSystemV1 = {
+  id: string;
+  name: string;
+  kind: "cannon" | "rocket";
+  base_damage: number;
+  effective_range_m: number;
+  reload_seconds: number;
+  accuracy: number;
+  ammunition: number;
+};
+export type CombatProfileV1 = {
+  entity_id: string;
+  class: string;
+  hull_maximum: number;
+  armor: "light" | "medium" | "heavy";
+  hostility: "friendly" | "neutral" | "hostile";
+  controlled: boolean;
+  fire_risk: boolean;
+  weapons: WeaponSystemV1[];
+  recovery_point: Point;
+  recovery_delay_seconds: number;
+};
+export type DamageStateV1 = {
+  hull: number;
+  hull_maximum: number;
+  integrity_percent: number;
+  propulsion_percent: number;
+  sensors_percent: number;
+  weapons_percent: number;
+  last_damage_tick_ms: number;
+  last_regeneration_tick_ms: number;
+  disabled: boolean;
+  sunk: boolean;
+};
+export type RespawnStateV1 = {
+  status: "active" | "pending";
+  sunk_at_tick_ms?: number;
+  due_at_tick_ms?: number;
+  wreck_until_tick_ms?: number;
+};
+export type RaiderDecisionV1 = {
+  id: string;
+  state: string;
+  target_id?: string;
+  destination: Point;
+  reason: string;
+  world_tick_ms: number;
+  seed: number;
+};
+export type CombatEntityStateV1 = {
+  schema_version: 1;
+  entity_id: string;
+  boat_id: string;
+  name: string;
+  entity_kind: "controlled" | "contact" | "hostile";
+  position: Point;
+  heading_deg: number;
+  speed_mps: number;
+  profile: CombatProfileV1;
+  damage: DamageStateV1;
+  behavior_state: string;
+  current_target_id?: string;
+  active_engagement_id?: string;
+  last_decision?: RaiderDecisionV1;
+  weapon_ready_at_tick_ms: Record<string, number>;
+  repair_ready_at_tick_ms: number;
+  respawn: RespawnStateV1;
+  spawn_generation: number;
+  route_history?: Point[][];
+  route_history_ticks?: number[];
+  random_seed: number;
+  state_version: number;
+  updated_at: string;
+};
+export type EngagementProgramV1 = {
+  schema_version: 1;
+  id: string;
+  request_id: string;
+  idempotency_key: string;
+  target_id: string;
+  participant_ids: string[];
+  allowed_weapon_ids: string[];
+  maximum_range_m: number;
+  maximum_effects: number;
+  effects_applied: number;
+  duration_seconds: number;
+  issued_tick_ms: number;
+  expires_tick_ms: number;
+  disengage_hull_percent: number;
+  minimum_reserve: number;
+  status: "pending_approval" | "active" | "completed" | "stopped";
+  content_hash: string;
+  operator_id?: string;
+  mission_id?: string;
+  created_at: string;
+  authorized_at?: string;
+};
+export type CombatEffectV1 = {
+  schema_version: 1;
+  id: string;
+  engagement_id: string;
+  shot_sequence: number;
+  source_id: string;
+  target_id: string;
+  weapon_id: string;
+  range_m: number;
+  hit: boolean;
+  damage: number;
+  component?: string;
+  target_hull_remaining: number;
+  world_tick_ms: number;
+  effect_hash: string;
+  created_at: string;
+};
+export type ProjectileEventV1 = {
+  event_id: string;
+  effect_id: string;
+  source_id: string;
+  target_id: string;
+  kind: "cannon" | "rocket";
+  start: Point;
+  end: Point;
+  hit: boolean;
+  damage: number;
+  world_tick_ms: number;
+  display_time_ms: number;
+  created_at: string;
+};
+export type RepairReceiptV1 = {
+  schema_version: 1;
+  id: string;
+  vessel_id: string;
+  actor_identity: string;
+  restored_hull: number;
+  hull_after: number;
+  cleared_component?: string;
+  world_tick_ms: number;
+  ready_at_tick_ms: number;
+  idempotency_key: string;
+  resulting_state_hash: string;
+  created_at: string;
+};
+export type CombatSnapshotV1 = {
+  schema_version: 1;
+  state_version: number;
+  world_tick_ms: number;
+  entities: CombatEntityStateV1[];
+  engagements: EngagementProgramV1[];
+  projectiles: ProjectileEventV1[];
+  recent_effects: CombatEffectV1[];
+  intercept_estimates: Array<{
+    participant_id: string;
+    target_id: string;
+    distance_m: number;
+    participant_speed_mps: number;
+    target_speed_mps: number;
+    estimated_seconds: number;
+    feasible: boolean;
+  }>;
+  generated_at: string;
+  disclaimer: string;
 };
 export type FleetAssignmentV2 = {
   vessel_id: string;
@@ -1067,6 +1233,7 @@ export type FleetSnapshotV2 = {
   groups: OperationalGroupV2[];
   collections: SavedCollectionV2[];
   missions: MissionWorkspaceV2[];
+  combat: CombatSnapshotV1;
   environment: EnvironmentV2;
   map: {
     name: string;
@@ -1105,6 +1272,8 @@ export type WorkspaceAssistantActionV1 = {
 	| "create_group"
 	| "delete_group"
 	| "move_vessel_to_group"
+	| "plan_engagement"
+	| "repair_vessel"
     | "none";
   target: string;
 	secondary_target: string;

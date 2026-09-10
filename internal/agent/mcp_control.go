@@ -31,6 +31,10 @@ func (m *Manager) MCPControlHandler(fleet *fleetops.Manager, arenaManager *arena
 		{"mission.compile_intent", "Compile bounded natural-language intent into an immutable command draft.", `{"type":"object","additionalProperties":false,"properties":{"mission_id":{"type":"string"},"request_id":{"type":"string"},"idempotency_key":{"type":"string"},"expected_version":{"type":"integer","minimum":1},"text":{"type":"string","minLength":1,"maxLength":4000},"target_ids":{"type":"array","maxItems":48,"items":{"type":"string"}},"guidance_kind":{"type":"string"},"formation":{"type":"string"},"waypoints":{"type":"array","maxItems":64,"items":{"type":"array","minItems":2,"maxItems":2,"items":{"type":"number"}}}},"required":["mission_id","request_id","idempotency_key","expected_version","text"]}`},
 		{"mission.generate_plans", "Generate deterministic policy-checked candidates from an immutable draft.", `{"type":"object","additionalProperties":false,"properties":{"mission_id":{"type":"string"},"request_id":{"type":"string"},"idempotency_key":{"type":"string"},"expected_version":{"type":"integer","minimum":1},"draft_id":{"type":"string"}},"required":["mission_id","request_id","idempotency_key","expected_version","draft_id"]}`},
 		{"mission.preview_plan", "Preview exact candidate trajectories without moving vessels.", `{"type":"object","additionalProperties":false,"properties":{"mission_id":{"type":"string"},"plan_id":{"type":"string"},"plan_hash":{"type":"string"},"request_id":{"type":"string"},"idempotency_key":{"type":"string"},"expected_version":{"type":"integer","minimum":1}},"required":["mission_id","plan_id","plan_hash","request_id","idempotency_key","expected_version"]}`},
+		{"combat.get_status", "Read operator-visible fictional combat entities, hull, systems, weapons, ranges, targets, cooldowns, and recent effects.", emptySchema},
+		{"combat.list_engagements", "Read pending, active, stopped, and completed fictional engagement programs.", emptySchema},
+		{"combat.plan_engagement", "Draft one exact-hash bounded engagement against a hostile target. This never authorizes firing.", `{"type":"object","additionalProperties":false,"properties":{"request_id":{"type":"string","minLength":1},"idempotency_key":{"type":"string","minLength":1},"expected_version":{"type":"integer","minimum":0},"actor_id":{"type":"string","minLength":1},"target_id":{"type":"string","minLength":1},"participant_ids":{"type":"array","minItems":1,"maxItems":48,"uniqueItems":true,"items":{"type":"string"}},"duration_seconds":{"type":"integer","minimum":1,"maximum":3600},"maximum_effects":{"type":"integer","minimum":1,"maximum":10000},"mission_id":{"type":"string"}},"required":["request_id","idempotency_key","actor_id","target_id","participant_ids"]}`},
+		{"combat.repair_vessel", "Request the bounded twenty-percent repair for one controlled vessel. World-time cooldown and idempotency are enforced.", `{"type":"object","additionalProperties":false,"properties":{"request_id":{"type":"string","minLength":1},"idempotency_key":{"type":"string","minLength":1},"expected_version":{"type":"integer","minimum":0},"actor_id":{"type":"string","minLength":1},"vessel_id":{"type":"string","minLength":1}},"required":["request_id","idempotency_key","actor_id","vessel_id"]}`},
 		{"arena.get_player_state", "Read only one faction's server-filtered knowledge projection.", factionSchema},
 		{"arena.get_infrastructure", "Read referee infrastructure state; deployment should reserve this tool for trusted diagnostic identities.", emptySchema},
 		{"workspace.apply", "Apply a presentation-only workspace action such as selection, framing, windows, map view, or annotation.", workspaceSchema},
@@ -96,9 +100,13 @@ func (m *Manager) callControlTool(ctx context.Context, fleet *fleetops.Manager, 
 		SceneID         string              `json:"scene_id"`
 		Persona         string              `json:"persona"`
 		SelectedIDs     []string            `json:"selected_ids"`
+		TargetID        string              `json:"target_id"`
+		ParticipantIDs  []string            `json:"participant_ids"`
+		DurationSeconds int64               `json:"duration_seconds"`
+		MaximumEffects  int                 `json:"maximum_effects"`
 	}
 	_ = json.Unmarshal(raw, &args)
-	mutation := fleetops.Mutation{RequestID: args.RequestID, IdempotencyKey: args.IdempotencyKey, ExpectedVersion: args.ExpectedVersion}
+	mutation := fleetops.Mutation{RequestID: args.RequestID, IdempotencyKey: args.IdempotencyKey, ExpectedVersion: args.ExpectedVersion, ActorIdentity: args.ActorID}
 	var value any
 	var err error
 	switch name {
@@ -129,6 +137,14 @@ func (m *Manager) callControlTool(ctx context.Context, fleet *fleetops.Manager, 
 		value, err = fleet.GeneratePlans(args.MissionID, fleetops.PlansRequest{Mutation: mutation, DraftID: args.DraftID})
 	case "mission.preview_plan":
 		value, err = fleet.Preview(args.MissionID, args.PlanID, fleetops.PlanActionRequest{Mutation: mutation, PlanHash: args.PlanHash})
+	case "combat.get_status":
+		value = fleet.CombatSnapshot()
+	case "combat.list_engagements":
+		value = fleet.CombatSnapshot().Engagements
+	case "combat.plan_engagement":
+		value, err = fleet.PlanCombatEngagement(fleetops.CombatEngagementRequest{Mutation: mutation, TargetID: args.TargetID, ParticipantIDs: args.ParticipantIDs, DurationSeconds: args.DurationSeconds, MaximumEffects: args.MaximumEffects, MissionID: args.MissionID})
+	case "combat.repair_vessel":
+		value, err = fleet.RepairCombatVessel(args.VesselID, fleetops.CombatRepairRequest{Mutation: mutation, VesselID: args.VesselID})
 	case "arena.get_player_state":
 		value = arenaManager.Snapshot(args.Faction)
 	case "arena.get_infrastructure":

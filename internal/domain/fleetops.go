@@ -50,31 +50,32 @@ type VesselTelemetryV2 struct {
 }
 
 type VesselProfileV2 struct {
-	SchemaVersion    int               `json:"schema_version"`
-	ID               string            `json:"id"`
-	Designation      string            `json:"designation"`
-	Callsign         string            `json:"callsign"`
-	DisplayName      string            `json:"display_name"`
-	Class            VesselClassV2     `json:"class"`
-	GroupID          string            `json:"group_id"`
-	GroupCode        string            `json:"group_code"`
-	GroupColor       string            `json:"group_color"`
-	GroupColorName   string            `json:"group_color_name"`
-	GroupPattern     string            `json:"group_pattern"`
-	Available        bool              `json:"available"`
-	DecisionCapable  bool              `json:"decision_capable"`
-	NodeID           string            `json:"node_id,omitempty"`
-	NodeFaction      string            `json:"node_faction,omitempty"`
-	VMID             int               `json:"vm_id,omitempty"`
-	ManagementIP     string            `json:"management_ip,omitempty"`
-	NodeHost         string            `json:"node_host,omitempty"`
-	NodeStatus       string            `json:"node_status,omitempty"`
-	RadioState       string            `json:"radio_state,omitempty"`
-	InferenceState   string            `json:"inference_state,omitempty"`
-	NavigationSource string            `json:"navigation_source,omitempty"`
-	GNSSState        string            `json:"gnss_state,omitempty"`
-	GNSSAccepted     bool              `json:"gnss_accepted"`
-	Telemetry        VesselTelemetryV2 `json:"telemetry"`
+	SchemaVersion    int                  `json:"schema_version"`
+	ID               string               `json:"id"`
+	Designation      string               `json:"designation"`
+	Callsign         string               `json:"callsign"`
+	DisplayName      string               `json:"display_name"`
+	Class            VesselClassV2        `json:"class"`
+	GroupID          string               `json:"group_id"`
+	GroupCode        string               `json:"group_code"`
+	GroupColor       string               `json:"group_color"`
+	GroupColorName   string               `json:"group_color_name"`
+	GroupPattern     string               `json:"group_pattern"`
+	Available        bool                 `json:"available"`
+	DecisionCapable  bool                 `json:"decision_capable"`
+	NodeID           string               `json:"node_id,omitempty"`
+	NodeFaction      string               `json:"node_faction,omitempty"`
+	VMID             int                  `json:"vm_id,omitempty"`
+	ManagementIP     string               `json:"management_ip,omitempty"`
+	NodeHost         string               `json:"node_host,omitempty"`
+	NodeStatus       string               `json:"node_status,omitempty"`
+	RadioState       string               `json:"radio_state,omitempty"`
+	InferenceState   string               `json:"inference_state,omitempty"`
+	NavigationSource string               `json:"navigation_source,omitempty"`
+	GNSSState        string               `json:"gnss_state,omitempty"`
+	GNSSAccepted     bool                 `json:"gnss_accepted"`
+	Combat           *CombatEntityStateV1 `json:"combat,omitempty"`
+	Telemetry        VesselTelemetryV2    `json:"telemetry"`
 }
 
 type OperationalGroupV2 struct {
@@ -316,25 +317,27 @@ type MissionCommandInterpretationContextV2 struct {
 // picture. It carries no KeelMesh command authority and is safe to expose to
 // the operator and bounded mission advisor.
 type SurfaceContactV2 struct {
-	ID              string       `json:"id"`
-	BoatID          string       `json:"boat_id"`
-	Name            string       `json:"name"`
-	Callsign        string       `json:"callsign"`
-	Class           string       `json:"class"`
-	Activity        string       `json:"activity"`
-	ColorName       string       `json:"color_name"`
-	Color           string       `json:"color"`
-	Position        GeoPointV2   `json:"position"`
-	HeadingDeg      float64      `json:"heading_deg"`
-	SpeedMPS        float64      `json:"speed_mps"`
-	SpeedKnots      float64      `json:"speed_knots"`
-	LengthM         float64      `json:"length_m"`
-	DraftM          float64      `json:"draft_m"`
-	NavigationState string       `json:"navigation_state"`
-	RouteName       string       `json:"route_name"`
-	Route           []GeoPointV2 `json:"route"`
-	Looping         bool         `json:"looping"`
-	UpdatedAt       time.Time    `json:"updated_at"`
+	ID              string               `json:"id"`
+	BoatID          string               `json:"boat_id"`
+	Name            string               `json:"name"`
+	Callsign        string               `json:"callsign"`
+	Class           string               `json:"class"`
+	Activity        string               `json:"activity"`
+	ColorName       string               `json:"color_name"`
+	Color           string               `json:"color"`
+	Position        GeoPointV2           `json:"position"`
+	HeadingDeg      float64              `json:"heading_deg"`
+	SpeedMPS        float64              `json:"speed_mps"`
+	SpeedKnots      float64              `json:"speed_knots"`
+	LengthM         float64              `json:"length_m"`
+	DraftM          float64              `json:"draft_m"`
+	NavigationState string               `json:"navigation_state"`
+	RouteName       string               `json:"route_name"`
+	Route           []GeoPointV2         `json:"route"`
+	Looping         bool                 `json:"looping"`
+	Hostility       string               `json:"hostility,omitempty"`
+	Combat          *CombatEntityStateV1 `json:"combat,omitempty"`
+	UpdatedAt       time.Time            `json:"updated_at"`
 }
 
 // MissionStrategyV2 is advisory model output. It may choose a bounded planning
@@ -479,6 +482,7 @@ type FleetSnapshotV2 struct {
 	Groups          []OperationalGroupV2 `json:"groups"`
 	Collections     []SavedCollectionV2  `json:"collections"`
 	Missions        []MissionWorkspaceV2 `json:"missions"`
+	Combat          CombatSnapshotV1     `json:"combat"`
 	Environment     EnvironmentV2        `json:"environment"`
 	Map             map[string]any       `json:"map"`
 }

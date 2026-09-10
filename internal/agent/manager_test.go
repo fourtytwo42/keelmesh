@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/fourtytwo42/keelmesh/internal/domain"
+	"github.com/fourtytwo42/keelmesh/internal/fleetops"
 )
 
 func TestMissionOptionsFallsBackToDirectOpenAIWithSingleVesselSchema(t *testing.T) {
@@ -261,6 +262,24 @@ func TestWorkspaceMissionPromptForbidsPreplanningStrategyClaims(t *testing.T) {
 		if !strings.Contains(instructions, required) {
 			t.Fatalf("workspace mission instructions omitted %q", required)
 		}
+	}
+}
+
+func TestWorkspaceCombatActionsRemainBounded(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	fleet := fleetops.New("", slog.Default()).Snapshot()
+	vessel := fleet.Vessels[0]
+	manager := NewManager(Config{}, slog.Default())
+	repair, err := manager.WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{Text: "Repair " + vessel.Callsign}, fleet)
+	if err != nil || len(repair.Actions) != 1 || repair.Actions[0].Kind != "repair_vessel" || repair.Actions[0].Target != vessel.ID {
+		t.Fatalf("repair command was not resolved to one bounded vessel action: %#v %v", repair, err)
+	}
+	engage, err := manager.WorkspaceCommand(context.Background(), domain.WorkspaceAssistantRequestV1{Text: "Have " + vessel.Callsign + " intercept and attack Blackwake"}, fleet)
+	if err != nil || len(engage.Actions) != 1 || engage.Actions[0].Kind != "plan_engagement" || engage.Actions[0].Target != "HOSTILE-0001" {
+		t.Fatalf("engagement command was not resolved to a pending exact-plan action: %#v %v", engage, err)
+	}
+	if engage.Mode != "workspace" || !strings.Contains(strings.ToLower(engage.Speech), "confirm") {
+		t.Fatalf("engagement response crossed or obscured approval boundary: %#v", engage)
 	}
 }
 

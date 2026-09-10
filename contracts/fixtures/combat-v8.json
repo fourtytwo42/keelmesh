@@ -1,0 +1,88 @@
+{
+  "snapshot": {
+    "schema_version": 1,
+    "state_version": 42,
+    "world_tick_ms": 360000,
+    "entities": [
+      {
+        "schema_version": 1,
+        "entity_id": "HOSTILE-0001",
+        "boat_id": "HOSTILE-0001",
+        "name": "Blackwake",
+        "entity_kind": "hostile",
+        "position": [-71.48, 40.88],
+        "heading_deg": 64,
+        "speed_mps": 2.6,
+        "profile": {
+          "entity_id": "HOSTILE-0001",
+          "class": "pirate-raider",
+          "hull_maximum": 170,
+          "armor": "medium",
+          "hostility": "hostile",
+          "controlled": false,
+          "fire_risk": false,
+          "weapons": [
+            {"id":"twin-deck-cannons","name":"Twin deck cannons","kind":"cannon","base_damage":14,"effective_range_m":750,"reload_seconds":12,"accuracy":0.74,"ammunition":-1},
+            {"id":"limited-rockets","name":"Limited rockets","kind":"rocket","base_damage":24,"effective_range_m":1400,"reload_seconds":45,"accuracy":0.66,"ammunition":8}
+          ],
+          "recovery_point": [-71.78, 40.93],
+          "recovery_delay_seconds": 300
+        },
+        "damage": {"hull":136,"hull_maximum":170,"integrity_percent":80,"propulsion_percent":100,"sensors_percent":100,"weapons_percent":100,"last_damage_tick_ms":300000,"last_regeneration_tick_ms":300000,"disabled":false,"sunk":false},
+        "behavior_state": "intercept",
+        "current_target_id": "surface-01",
+        "weapon_ready_at_tick_ms": {"limited-rockets": 370000},
+        "repair_ready_at_tick_ms": 0,
+        "respawn": {"status":"active"},
+        "spawn_generation": 1,
+        "route_history": [[[-71.78,40.93],[-71.48,40.88]]],
+        "route_history_ticks": [0],
+        "random_seed": 15001337,
+        "state_version": 8,
+        "updated_at": "2026-09-09T12:06:00Z"
+      }
+    ],
+    "engagements": [
+      {
+        "schema_version": 1,
+        "id": "engagement-fixture",
+        "request_id": "request-fixture",
+        "idempotency_key": "engagement-fixture",
+        "target_id": "HOSTILE-0001",
+        "participant_ids": ["vm-vessel-220"],
+        "allowed_weapon_ids": ["vm-vessel-220:remote-cannon"],
+        "maximum_range_m": 650,
+        "maximum_effects": 80,
+        "effects_applied": 1,
+        "duration_seconds": 900,
+        "issued_tick_ms": 300000,
+        "expires_tick_ms": 1200000,
+        "disengage_hull_percent": 20,
+        "minimum_reserve": 0.2,
+        "status": "active",
+        "content_hash": "sha256:engagement",
+        "operator_id": "demo-operator",
+        "created_at": "2026-09-09T12:05:00Z",
+        "authorized_at": "2026-09-09T12:05:01Z"
+      }
+    ],
+    "projectiles": [],
+    "recent_effects": [],
+    "intercept_estimates": [{"participant_id":"vm-vessel-220","target_id":"HOSTILE-0001","distance_m":8200,"participant_speed_mps":3.4,"target_speed_mps":2.6,"estimated_seconds":10250,"feasible":true}],
+    "generated_at": "2026-09-09T12:06:00Z",
+    "disclaimer": "Fictional deterministic combat simulation — not a real weapon-control system."
+  },
+  "repair": {
+    "schema_version": 1,
+    "id": "repair-fixture",
+    "vessel_id": "vm-vessel-220",
+    "actor_identity": "demo-operator",
+    "restored_hull": 22,
+    "hull_after": 88,
+    "world_tick_ms": 360000,
+    "ready_at_tick_ms": 660000,
+    "idempotency_key": "repair-fixture",
+    "resulting_state_hash": "sha256:repair",
+    "created_at": "2026-09-09T12:06:00Z"
+  }
+}
