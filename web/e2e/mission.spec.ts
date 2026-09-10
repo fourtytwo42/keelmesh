@@ -118,7 +118,7 @@ test("global assistant plots one mission silently and accepts one exact confirma
 	await page.goto("/");
 	await page.getByRole("button", { name: "Toggle text chat with KeelMesh AI" }).click();
 	const assistant = page.getByRole("region", { name: "KeelMesh Assistant" });
-	await assistant.getByRole("textbox", { name: "Message KeelMesh AI" }).fill("Move Watch Shoal one nautical mile east and hold position.");
+	await assistant.getByRole("textbox", { name: "Message KeelMesh AI" }).fill("Move Block Guard one nautical mile east and hold position.");
 	await assistant.getByRole("button", { name: "Send text message" }).click();
 	await expect(assistant.locator("article.assistant").last()).toContainText(/confirm/i, { timeout: 60_000 });
 	await expect(page.getByRole("region", { name: "Mission" })).toHaveCount(0);
@@ -400,7 +400,7 @@ test("mission planner owns map authoring and presents alternatives only when req
   await expect(planner.locator(".mission-map-authoring")).toContainText("Map authoring");
   await planner.getByLabel("MISSION TYPE").selectOption("transit");
   await planner.getByRole("button", { name: "Add waypoint", exact: true }).click();
-  await expect(planner).toContainText("WAYPOINT ACTIVE · ESC TO CANCEL");
+  await expect(planner).toContainText(/waypoint active · Escape cancels/i);
   await canvas.click({ position: { x: 780, y: 570 } });
   await expect(planner.getByText("1 waypoints", { exact: true })).toBeVisible();
   await planner.getByRole("textbox", { name: "OBJECTIVE" }).fill("Transit to the numbered waypoint and hold position.");
@@ -430,9 +430,9 @@ test("executing routes and waypoints are consumed instead of leaving trails", as
     return { request_id: key, idempotency_key: key, expected_version: version };
   };
   let fleet = await (await page.request.get("/api/v2/fleet")).json();
-  const group = fleet.groups.find((candidate: { code: string }) => candidate.code === "C02")!;
-  expect(group).toBeTruthy();
-  const groupVessels = fleet.vessels.filter((vessel: { id: string }) => group.member_ids.includes(vessel.id));
+  const petrel = fleet.vessels.find((candidate: { callsign: string }) => candidate.callsign === "Petrel")!;
+  expect(petrel).toBeTruthy();
+  const groupVessels = [petrel];
   const origin = [
     groupVessels.reduce((sum: number, vessel: { telemetry: { position: number[] } }) => sum + vessel.telemetry.position[0], 0) / groupVessels.length,
     groupVessels.reduce((sum: number, vessel: { telemetry: { position: number[] } }) => sum + vessel.telemetry.position[1], 0) / groupVessels.length,
@@ -441,7 +441,7 @@ test("executing routes and waypoints are consumed instead of leaving trails", as
     ...mutation("mission", fleet.fleet_version),
     name: "Consumable Route Test",
     objective: "Proceed through the waypoints and hold",
-    target_ids: group.member_ids,
+    target_ids: [petrel.id],
   }});
   expect(missionResponse.ok()).toBeTruthy();
   let mission = await missionResponse.json();
@@ -664,16 +664,16 @@ test("workspace windows move, minimize, restore, dock, and top navigation toggle
   const rail = page.getByRole("region", { name: "Fleet" });
   await rail.getByPlaceholder("Callsign, class, group, status…").fill("Gannet");
   await rail.getByRole("button", { name: "View status of Gannet" }).click();
-  const vessel = page.getByRole("region", { name: /Gannet \(KM-214\)/ });
+  const vessel = page.getByRole("region", { name: /Gannet \(KM-220\)/ });
   await vessel.getByRole("button", { name: "Minimize" }).click();
   const detailBar = page.getByRole("group", { name: "Minimized detail windows" });
-  await expect(detailBar).toContainText("Gannet (KM-214)");
-  await detailBar.getByRole("button", { name: "Restore Gannet (KM-214)", exact: true }).click();
+  await expect(detailBar).toContainText("Gannet (KM-220)");
+  await detailBar.getByRole("button", { name: "Restore Gannet (KM-220)", exact: true }).click();
   await expect(vessel).toBeVisible();
-  await expect(detailBar).not.toContainText("Gannet (KM-214)");
+  await expect(detailBar).not.toContainText("Gannet (KM-220)");
   await vessel.getByRole("button", { name: "Minimize" }).click();
-  await detailBar.getByRole("button", { name: "Close Gannet (KM-214)" }).click();
-  await expect(detailBar).not.toContainText("Gannet (KM-214)");
+  await detailBar.getByRole("button", { name: "Close Gannet (KM-220)" }).click();
+  await expect(detailBar).not.toContainText("Gannet (KM-220)");
   await rail.getByRole("button", { name: "View status of Gannet" }).click();
   await expect(vessel).toBeVisible();
   await vessel.getByRole("button", { name: "Close" }).click();
@@ -746,7 +746,7 @@ test("global multi-leg cardinal intent creates one bounded plan", async ({ page 
   await page.getByRole("button", { name: "Toggle text chat with KeelMesh AI" }).click();
   const assistant = page.getByRole("region", { name: "KeelMesh Assistant" });
   await assistant.getByRole("textbox", { name: "Message KeelMesh AI" }).fill(
-    "I want this group to go two nautical miles south then two nautical miles west and then hold position.",
+    "I want Block Guard to go two nautical miles south then two nautical miles west and then hold position.",
   );
   await assistant.getByRole("button", { name: "Send text message" }).click();
   await expect(assistant.locator("article.assistant").last()).toContainText(/confirm/i, { timeout: 60_000 });
