@@ -194,7 +194,7 @@ function combatEntityData(fleet: FleetSnapshotV2, selected: Set<string>): GeoJSO
         sunk: entity.damage.sunk,
         wreckVisible: entity.damage.sunk && (entity.respawn.wreck_until_tick_ms ?? 0) > fleet.combat.world_tick_ms,
         name: entity.name,
-        range: Math.max(0, ...entity.profile.weapons.map((weapon) => weapon.effective_range_m)),
+        range: Math.max(0, ...(entity.profile.weapons ?? []).map((weapon) => weapon.effective_range_m)),
       },
       geometry: { type: "Point", coordinates: entity.position },
     })),

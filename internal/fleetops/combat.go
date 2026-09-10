@@ -41,7 +41,7 @@ type CombatRepairRequest struct {
 }
 
 func controlledCombatProfile(vessel domain.VesselProfileV2) domain.CombatProfileV1 {
-	profile := domain.CombatProfileV1{EntityID: vessel.ID, Class: vessel.Class.ID, Armor: "light", Hostility: "friendly", Controlled: true, RecoveryPoint: vessel.Telemetry.Position, RecoveryDelayS: 300}
+	profile := domain.CombatProfileV1{EntityID: vessel.ID, Class: vessel.Class.ID, Armor: "light", Hostility: "friendly", Controlled: true, RecoveryPoint: vessel.Telemetry.Position, RecoveryDelayS: 300, Weapons: []domain.WeaponSystemV1{}}
 	switch vessel.Class.ID {
 	case "kestrel":
 		profile.HullMaximum = 110
@@ -57,7 +57,7 @@ func controlledCombatProfile(vessel domain.VesselProfileV2) domain.CombatProfile
 }
 
 func contactCombatProfile(contact domain.SurfaceContactV2) domain.CombatProfileV1 {
-	profile := domain.CombatProfileV1{EntityID: contact.ID, Class: contact.Class, Armor: "light", Hostility: "neutral", RecoveryPoint: contact.Position, RecoveryDelayS: 180}
+	profile := domain.CombatProfileV1{EntityID: contact.ID, Class: contact.Class, Armor: "light", Hostility: "neutral", RecoveryPoint: contact.Position, RecoveryDelayS: 180, Weapons: []domain.WeaponSystemV1{}}
 	switch contact.Class {
 	case "yacht":
 		profile.HullMaximum = 40
@@ -129,7 +129,7 @@ func cloneCombatEntity(value *domain.CombatEntityStateV1) *domain.CombatEntitySt
 		return nil
 	}
 	copy := *value
-	copy.Profile.Weapons = append([]domain.WeaponSystemV1(nil), value.Profile.Weapons...)
+	copy.Profile.Weapons = append(make([]domain.WeaponSystemV1, 0, len(value.Profile.Weapons)), value.Profile.Weapons...)
 	copy.WeaponReadyAtTickMS = map[string]int64{}
 	for key, tick := range value.WeaponReadyAtTickMS {
 		copy.WeaponReadyAtTickMS[key] = tick
@@ -148,6 +148,7 @@ func blackwakeContact(state domain.CombatEntityStateV1, now time.Time) domain.Su
 func (m *Manager) combatSnapshotLocked() domain.CombatSnapshotV1 {
 	entities := make([]domain.CombatEntityStateV1, 0, len(m.combatEntities))
 	for _, entity := range m.combatEntities {
+		entity.Profile.Weapons = append(make([]domain.WeaponSystemV1, 0, len(entity.Profile.Weapons)), entity.Profile.Weapons...)
 		entities = append(entities, entity)
 	}
 	sort.Slice(entities, func(i, j int) bool { return entities[i].BoatID < entities[j].BoatID })

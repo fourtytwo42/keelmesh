@@ -4016,7 +4016,7 @@ function CombatReadiness({ entity, worldTickMS, onRepair }: { entity: CombatEnti
     </div>
     <div className="combat-armament">
       <small>ARMAMENT</small>
-      {entity.profile.weapons.length ? entity.profile.weapons.map((weapon) => <span key={weapon.id}><b>{weapon.name}</b><em>{weapon.base_damage} damage · {weapon.effective_range_m.toFixed(0)} m · {weapon.reload_seconds}s reload{weapon.ammunition >= 0 ? ` · ${weapon.ammunition} remaining` : ""}</em></span>) : <span><b>Unarmed</b><em>Escape and collision-avoidance behavior only</em></span>}
+      {(entity.profile.weapons ?? []).length ? (entity.profile.weapons ?? []).map((weapon) => <span key={weapon.id}><b>{weapon.name}</b><em>{weapon.base_damage} damage · {weapon.effective_range_m.toFixed(0)} m · {weapon.reload_seconds}s reload{weapon.ammunition >= 0 ? ` · ${weapon.ammunition} remaining` : ""}</em></span>) : <span><b>Unarmed</b><em>Escape and collision-avoidance behavior only</em></span>}
     </div>
     {entity.current_target_id && <p className="combat-target"><small>CURRENT TARGET</small><b>{entity.current_target_id}</b></p>}
     {onRepair && <button className="combat-repair" onClick={onRepair} disabled={entity.damage.sunk || integrity >= 100 || cooldownSeconds > 0}><Wrench />{cooldownSeconds > 0 ? `Repair ready in ${Math.ceil(cooldownSeconds / 60)} world min` : "Repair hull +20%"}</button>}
