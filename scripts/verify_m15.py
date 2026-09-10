@@ -42,7 +42,7 @@ assert blackwake["name"] == "Blackwake"
 assert blackwake["profile"]["class"] == "pirate-raider"
 assert blackwake["profile"]["hostility"] == "hostile"
 assert blackwake["profile"]["hull_maximum"] == 170
-assert 0 <= blackwake["speed_mps"] <= 2.7
+assert 0 <= blackwake["speed_mps"] <= 3.0
 weapons = {weapon["id"]: weapon for weapon in blackwake["profile"]["weapons"]}
 assert weapons["twin-deck-cannons"]["effective_range_m"] == 750
 assert weapons["limited-rockets"]["effective_range_m"] == 1400

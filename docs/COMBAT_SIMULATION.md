@@ -8,7 +8,7 @@ M15 adds a fictional, deterministic combat workload to the Fleet operating pictu
 
 `HOSTILE-0001 / Blackwake` is a persistent medium pirate raider. Its state machine progresses through roam, detection, stalking, interception, engagement, withdrawal, repair, and return. Destinations come from water-safe offshore points, recent segments are penalized for thirty world minutes, and the deterministic seed, route history, target, damage, cooldowns, and spawn generation survive a core restart.
 
-Blackwake has 170 hull, medium armor, a 2.7 m/s speed ceiling, twin simulated deck cannons, and a finite simulated rocket load. That ceiling is ten percent below the slowest controlled Fleet class. Its authoritative motion is distance-bounded on every simulation step; only a documented post-sinking respawn may relocate it to a different safe offshore entry. Commercial contacts escape but remain unarmed. Fictional patrol contacts may defend themselves. Blackwake withdraws below 25% integrity or when three or more armed controlled vessels create an overwhelming local response.
+Blackwake has 170 hull, medium armor, a 3.0 m/s speed ceiling, twin simulated deck cannons, and a finite simulated rocket load. That ceiling matches the slowest controlled Fleet class while remaining below the faster Kestrel and Mariner classes. Its authoritative motion is distance-bounded on every simulation step; only a documented post-sinking respawn may relocate it to a different safe offshore entry. Commercial contacts escape but remain unarmed. Fictional patrol contacts may defend themselves. Blackwake withdraws below 25% integrity or when three or more armed controlled vessels create an overwhelming local response.
 
 ## Authority model
 

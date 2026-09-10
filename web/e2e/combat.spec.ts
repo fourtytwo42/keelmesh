@@ -28,7 +28,7 @@ test("v8 exposes deterministic fictional combat and exact-hash authority", async
   const blackwake = combat.entities.find((entity: { entity_id: string }) => entity.entity_id === "HOSTILE-0001");
   const participant = combat.entities.find((entity: { profile: { controlled: boolean; weapons: unknown[] } }) => entity.profile.controlled && entity.profile.weapons.length);
   expect(blackwake).toMatchObject({ name: "Blackwake", profile: { hull_maximum: 170, armor: "medium", hostility: "hostile" } });
-  expect(blackwake.speed_mps).toBeLessThanOrEqual(2.7);
+  expect(blackwake.speed_mps).toBeLessThanOrEqual(3.0);
   expect(blackwake.profile.weapons.map((weapon: { effective_range_m: number }) => weapon.effective_range_m)).toEqual([750, 1400]);
 
   const armKey = `e2e-arm-${Date.now()}`;

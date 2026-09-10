@@ -14,7 +14,7 @@ import (
 )
 
 const blackwakeID = "HOSTILE-0001"
-const blackwakeMaximumSpeedMPS = 2.7
+const blackwakeMaximumSpeedMPS = 3.0
 
 var blackwakePatrol = []domain.GeoPointV2{
 	{-71.78, 40.93}, {-71.48, 40.88}, {-71.12, 40.92}, {-70.78, 41.02},
