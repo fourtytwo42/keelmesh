@@ -69,6 +69,28 @@ test("v8 exposes deterministic fictional combat and exact-hash authority", async
   expect(status.engagements.find((engagement: { id: string }) => engagement.id === planned.id).effects_applied).toBe(0);
 });
 
+test("Fleet inspector keeps automatic defense opt-in and separate from weapons", async ({ page }) => {
+  await page.goto("/");
+  const fleet = page.getByRole("region", { name: "Fleet" });
+  await fleet.getByPlaceholder("Callsign, class, group, status…").fill("Gannet");
+  await fleet.getByRole("button", { name: "View status of Gannet" }).click();
+  const inspector = page.getByRole("region", { name: /Gannet \(KM-220\)/ });
+  const autoDefense = inspector.getByRole("checkbox", { name: /AUTO DEFENSE/ });
+  const response = inspector.getByRole("combobox", { name: "Automatic defense response" });
+  await expect(autoDefense).not.toBeChecked();
+  await expect(response).toBeDisabled();
+  await expect(inspector).toContainText("Off · notify and station-keep until ordered.");
+
+  await autoDefense.check();
+  await expect(response).toBeEnabled();
+  await expect.poll(async () => {
+    const combat = await (await page.request.get("/api/v8/combat")).json();
+    return combat.entities.find((entity: { entity_id: string }) => entity.entity_id === "vm-vessel-220")?.auto_defense;
+  }).toBe(true);
+  await autoDefense.uncheck();
+  await expect(autoDefense).not.toBeChecked();
+});
+
 test("assistant can inspect Blackwake and stage one bounded engagement confirmation", async ({ page }) => {
   test.setTimeout(90_000);
   const browserErrors: string[] = [];
