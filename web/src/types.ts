@@ -1072,6 +1072,8 @@ export type CombatEntityStateV1 = {
   armed: boolean;
   arm_state_source?: string;
   armed_by_mission_id?: string;
+  auto_defense: boolean;
+  auto_defense_response: "retreat" | "retaliate";
   last_attacker_id?: string;
   last_attacked_tick_ms?: number;
   current_target_id?: string;
@@ -1093,6 +1095,7 @@ export type EngagementPolicyV1 = {
   designated_target_ids?: string[];
   auto_arm: boolean;
   return_fire: boolean;
+  defensive_response: "notify_only" | "retreat" | "retaliate";
   require_target_in_mission_area: boolean;
   maximum_range_m: number;
   maximum_effects: number;
@@ -1122,6 +1125,7 @@ export type EngagementProgramV1 = {
   mission_id?: string;
   target_scope: string;
   return_fire: boolean;
+  defensive_response: "notify_only" | "retreat" | "retaliate";
   require_target_in_mission_area: boolean;
   operating_areas?: number[][][];
   auto_armed_ids?: string[];
@@ -1303,6 +1307,8 @@ export type WorkspaceAssistantActionV1 = {
 	| "repair_vessel"
 	| "arm_vessel"
 	| "disarm_vessel"
+	| "enable_auto_defense"
+	| "disable_auto_defense"
     | "none";
   target: string;
 	secondary_target: string;

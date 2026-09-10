@@ -2048,20 +2048,39 @@ func (m *Manager) Compile(id string, req CompileRequest) (domain.CommandDraftV2,
 		mission.GuidanceKind = kind
 		missionChanged = true
 	}
-	if kind == "engage_hostile" || kind == "engage_contact" {
+	if req.EngagementPolicy != nil || kind == "engage_hostile" || kind == "engage_contact" {
 		policy := defaultEngagementPolicy()
 		if req.EngagementPolicy != nil {
 			policy = normalizeEngagementPolicy(*req.EngagementPolicy, followContactID)
 		} else {
 			policy = normalizeEngagementPolicy(policy, followContactID)
 		}
+		if kind != "engage_hostile" && kind != "engage_contact" {
+			policy.Enabled = false
+		}
 		if hashAny(policy) != hashAny(mission.EngagementPolicy) {
 			mission.EngagementPolicy = policy
 			missionChanged = true
 		}
-	} else if mission.EngagementPolicy.Enabled {
-		mission.EngagementPolicy = defaultEngagementPolicy()
-		missionChanged = true
+	}
+	if req.EngagementPolicy == nil {
+		if response, explicit := requestedDefensiveResponse(req.Text); explicit {
+			policy := mission.EngagementPolicy
+			if policy.TargetScope == "" {
+				policy = defaultEngagementPolicy()
+			}
+			policy.DefensiveResponse = response
+			policy.ReturnFire = response == "retaliate"
+			policy.AutoArm = response == "retaliate"
+			policy = normalizeEngagementPolicy(policy, followContactID)
+			if kind != "engage_hostile" && kind != "engage_contact" {
+				policy.Enabled = false
+			}
+			if hashAny(policy) != hashAny(mission.EngagementPolicy) {
+				mission.EngagementPolicy = policy
+				missionChanged = true
+			}
+		}
 	}
 	constraints := mission.Constraints
 	if req.CommandInterpretation != nil {
@@ -3091,6 +3110,7 @@ func (m *Manager) Start(mid, pid string, req PlanActionRequest) (domain.MissionW
 		v.Telemetry.ProjectedReserve = p.MinimumReserve
 		m.vessels[v.ID] = v
 	}
+	m.applyMissionDefensePolicyLocked(mission)
 	if mission.EngagementPolicy.Enabled {
 		if err := m.activateMissionEngagementLocked(mission); err != nil {
 			return mission, err
@@ -3718,6 +3738,11 @@ func (m *Manager) releaseMissionVesselsLocked(missionID, source string) {
 		vessel.Telemetry.SpeedMPS = 0
 		vessel.Telemetry.TapeDepthSeconds = 0
 		m.vessels[vesselID] = vessel
+		if entity, exists := m.combatEntities[vesselID]; exists && entity.ArmedByMissionID == missionID && entity.ActiveEngagementID == "" {
+			entity.Armed, entity.ArmStateSource, entity.ArmedByMissionID = false, "weapons_safe", ""
+			entity.StateVersion++
+			m.combatEntities[vesselID] = entity
+		}
 	}
 	for groupID, positions := range touchedGroups {
 		group, exists := m.groups[groupID]
@@ -4135,10 +4160,30 @@ func (m *Manager) sign(v any) string {
 
 func defaultEngagementPolicy() domain.EngagementPolicyV1 {
 	return domain.EngagementPolicyV1{
-		TargetScope: "designated", AutoArm: true, ReturnFire: true,
+		TargetScope: "designated", AutoArm: false, ReturnFire: false, DefensiveResponse: "notify_only",
 		RequireTargetInMissionArea: true, MaximumEffects: 80,
 		DurationSeconds: 900, DisengageHullPercent: 20,
 	}
+}
+
+func requestedDefensiveResponse(text string) (string, bool) {
+	text = strings.ToLower(strings.TrimSpace(text))
+	for _, phrase := range []string{"notify only", "do not retaliate", "don't retaliate", "no return fire", "maintain mission if attacked", "hold position if attacked"} {
+		if strings.Contains(text, phrase) {
+			return "notify_only", true
+		}
+	}
+	for _, phrase := range []string{"retaliation permitted", "return fire", "retaliate if attacked", "fight back if attacked", "defend themselves if attacked"} {
+		if strings.Contains(text, phrase) {
+			return "retaliate", true
+		}
+	}
+	for _, phrase := range []string{"retreat priority", "retreat if attacked", "withdraw if attacked", "evade if attacked", "run away if attacked"} {
+		if strings.Contains(text, phrase) {
+			return "retreat", true
+		}
+	}
+	return "", false
 }
 
 func normalizeEngagementPolicy(value domain.EngagementPolicyV1, contactID string) domain.EngagementPolicyV1 {
@@ -4166,12 +4211,8 @@ func normalizeEngagementPolicy(value domain.EngagementPolicyV1, contactID string
 	}
 	value.DisengageHullPercent = math.Max(5, math.Min(80, value.DisengageHullPercent))
 	value.MaximumRangeM = math.Max(0, value.MaximumRangeM)
-	// An attack mission always arms its assigned vessels at activation. Arming
-	// remains separate from the permission to initiate fire after the mission.
-	value.AutoArm = true
-	// Return fire follows the vessel's armed state. A mission may bound
-	// initiating fire, but it cannot silently disable that self-defense rule.
-	value.ReturnFire = true
+	value.DefensiveResponse = normalizeDefensiveResponse(value.DefensiveResponse, value.ReturnFire)
+	value.ReturnFire = value.DefensiveResponse == "retaliate"
 	value.Enabled = true
 	return value
 }

@@ -22,7 +22,9 @@ Controlled vessels never fire merely because an AI, MCP client, or map menu requ
 4. The UI presents the exact program for confirmation.
 5. Only the hash-confirmed program becomes active. Shots inside that envelope do not require repeated prompts.
 
-Controlled vessels also expose a persistent armed/weapons-safe state. Arming authorizes short-lived return fire against the exact recent attacker when it remains in weapon range; it never authorizes pursuit or initiating fire. Disarmed vessels cannot fire. A confirmed attack mission automatically arms its assigned vessels for the mission envelope, while an operator may arm or disarm individual vessels directly or through AI. AI can inspect combat state, execute an eligible bounded repair, change controlled arm state, and draft an engagement. Capability-scoped MCP can read status, list engagements, draft an engagement, request a controlled-vessel repair, or change arm state. MCP cannot authorize its own engagement.
+Controlled vessels expose separate weapons-ready and automatic-defense controls. Automatic defense is disabled by default: a missionless vessel that is attacked stays in station keeping, raises one deduplicated critical notification, and waits for the operator to maintain station, retreat, defend itself, or send nearby/group backup. Enabling automatic defense selects either retreat priority or retaliation when armed. Arming alone makes weapons available but never initiates movement, pursuit, or fire.
+
+Every mission also carries an explicit response-if-attacked policy: notify and maintain the mission, retreat priority, or retaliation permitted. The mission policy overrides the vessel-level setting while that mission is active. A retaliation policy can auto-arm only the assigned mission participants, and they are returned to their previous safe state when mission authority ends. A confirmed attack mission automatically arms its assigned vessels inside its exact engagement envelope. Operators and the AI can inspect or change vessel-level arm/automatic-defense state, while spoken mission instructions such as `retreat if attacked` or `retaliation permitted` are preserved in the confirmed mission policy. Capability-scoped MCP remains unable to authorize its own engagement.
 
 ## Damage and repair
 
@@ -53,6 +55,7 @@ The public read/mutation family is `/api/v8`:
 - `POST /api/v8/combat/vessels/{id}:repair`
 - `POST /api/v8/combat/vessels/{id}:arm`
 - `POST /api/v8/combat/vessels/{id}:disarm`
+- `POST /api/v8/combat/vessels/{id}:defense`
 - `GET /api/v8/combat/events`
 - `POST /api/v8/scenarios/combat:reset`
 
@@ -60,4 +63,4 @@ PostgreSQL stores combat projections, engagement programs, immutable events, and
 
 ## Verification
 
-The M15 suite covers balance contracts, exact-hash approval, deterministic hit resolution, world-time regeneration and respawn, repair cooldown/idempotency, assistant action classification, MCP approval boundaries, full Go tests/vet, TypeScript/Vitest, production UI build, browser interaction, API compatibility, and live deployment checks.
+The M15 suite covers balance contracts, exact-hash approval, deterministic hit resolution, world-time regeneration and respawn, repair cooldown/idempotency, default-off automatic defense, mission policy precedence, idle station keeping under attack, deduplicated attack choices, assistant action classification, MCP approval boundaries, full Go tests/vet, TypeScript/Vitest, production UI build, browser interaction, API compatibility, and live deployment checks.

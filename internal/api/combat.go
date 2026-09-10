@@ -84,6 +84,15 @@ func (s *Server) repairCombatVesselV8(w http.ResponseWriter, r *http.Request) {
 		respondV2(w, value, err, http.StatusOK)
 		return
 	}
+	if id, ok := cutAction(action, ":defense"); ok {
+		var req fleetops.CombatDefenseRequest
+		if !decode(w, r, &req) {
+			return
+		}
+		value, err := s.fleetops.SetCombatDefense(id, req)
+		respondV2(w, value, err, http.StatusOK)
+		return
+	}
 	id, ok := cutAction(action, ":repair")
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"code": "COMBAT_ENTITY_NOT_FOUND", "message": "Unknown vessel combat action."})

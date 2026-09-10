@@ -52,6 +52,12 @@ type CombatArmRequest struct {
 	Armed bool `json:"armed"`
 }
 
+type CombatDefenseRequest struct {
+	Mutation
+	Enabled  bool   `json:"enabled"`
+	Response string `json:"response"`
+}
+
 func controlledCombatProfile(vessel domain.VesselProfileV2) domain.CombatProfileV1 {
 	profile := domain.CombatProfileV1{EntityID: vessel.ID, Class: vessel.Class.ID, Armor: "light", Hostility: "friendly", Controlled: true, RecoveryPoint: vessel.Telemetry.Position, RecoveryDelayS: 300, Weapons: []domain.WeaponSystemV1{}}
 	switch vessel.Class.ID {
@@ -95,6 +101,7 @@ func newCombatEntity(id, boatID, name, kind string, position domain.GeoPointV2, 
 	return domain.CombatEntityStateV1{
 		SchemaVersion: 1, EntityID: id, BoatID: boatID, Name: name, EntityKind: kind,
 		Position: position, Profile: profile, BehaviorState: "operational", Armed: !profile.Controlled && len(profile.Weapons) > 0,
+		AutoDefense: !profile.Controlled, AutoDefenseResponse: "retaliate",
 		Damage:              domain.DamageStateV1{Hull: profile.HullMaximum, HullMaximum: profile.HullMaximum, IntegrityPercent: 100, PropulsionPercent: 100, SensorsPercent: 100, WeaponsPercent: 100},
 		WeaponReadyAtTickMS: map[string]int64{}, Respawn: domain.RespawnStateV1{Status: "active"}, SpawnGeneration: 1,
 		RandomSeed: seed, StateVersion: 1, UpdatedAt: now,
@@ -260,7 +267,7 @@ func (m *Manager) PlanCombatEngagement(req CombatEngagementRequest) (domain.Enga
 	if maximumEffects <= 0 {
 		maximumEffects = len(participants) * 80
 	}
-	program := domain.EngagementProgramV1{SchemaVersion: 1, ID: "engagement-" + shortHash(req.IdempotencyKey), RequestID: req.RequestID, IdempotencyKey: req.IdempotencyKey, TargetID: target.EntityID, EligibleTargetIDs: []string{target.EntityID}, ParticipantIDs: participants, AllowedWeaponIDs: weapons, MaximumRangeM: maxRange, MaximumEffects: maximumEffects, DurationSeconds: duration, IssuedTickMS: m.simTickMS, ExpiresTickMS: m.simTickMS + duration*1000, DisengageHullPercent: 20, MinimumReserve: .2, Status: "pending_approval", MissionID: req.MissionID, TargetScope: "designated", ReturnFire: true, CreatedAt: time.Now().UTC()}
+	program := domain.EngagementProgramV1{SchemaVersion: 1, ID: "engagement-" + shortHash(req.IdempotencyKey), RequestID: req.RequestID, IdempotencyKey: req.IdempotencyKey, TargetID: target.EntityID, EligibleTargetIDs: []string{target.EntityID}, ParticipantIDs: participants, AllowedWeaponIDs: weapons, MaximumRangeM: maxRange, MaximumEffects: maximumEffects, DurationSeconds: duration, IssuedTickMS: m.simTickMS, ExpiresTickMS: m.simTickMS + duration*1000, DisengageHullPercent: 20, MinimumReserve: .2, Status: "pending_approval", MissionID: req.MissionID, TargetScope: "designated", ReturnFire: true, DefensiveResponse: "retaliate", CreatedAt: time.Now().UTC()}
 	program.ContentHash = engagementContentHash(program)
 	if existingID, exists := m.combatIdempotency[req.IdempotencyKey]; exists {
 		existing := m.combatEngagements[existingID]
@@ -356,6 +363,51 @@ func (m *Manager) ArmCombatVessel(id string, req CombatArmRequest) (domain.Comba
 	m.combatIdempotency[req.IdempotencyKey] = actionKey
 	m.combatVersion++
 	m.recordCombatEventLocked("arm_state_changed", id, "", map[string]any{"armed": req.Armed, "source": entity.ArmStateSource, "actor": req.ActorIdentity})
+	m.persistCombatAsync(true)
+	return entity, nil
+}
+
+func (m *Manager) SetCombatDefense(id string, req CombatDefenseRequest) (domain.CombatEntityStateV1, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if req.RequestID == "" || req.IdempotencyKey == "" {
+		return domain.CombatEntityStateV1{}, &Error{"INVALID_REQUEST", "request_id and idempotency_key are required."}
+	}
+	response := strings.ToLower(strings.TrimSpace(req.Response))
+	if response == "" {
+		response = "retreat"
+	}
+	if response != "retreat" && response != "retaliate" {
+		return domain.CombatEntityStateV1{}, &Error{"DEFENSE_POLICY_INVALID", "Auto-defense response must be retreat or retaliate."}
+	}
+	actionKey := fmt.Sprintf("defense:%s:%t:%s", id, req.Enabled, response)
+	if previous, exists := m.combatIdempotency[req.IdempotencyKey]; exists {
+		if previous != actionKey {
+			return domain.CombatEntityStateV1{}, &Error{"COMBAT_STATE_STALE", "Idempotency key was already used for a different combat action."}
+		}
+		return m.combatEntities[id], nil
+	}
+	entity, ok := m.combatEntities[id]
+	if !ok || !entity.Profile.Controlled {
+		return domain.CombatEntityStateV1{}, &Error{"DEFENSE_TARGET_DENIED", "Auto defense is available only for controlled Fleet vessels."}
+	}
+	if entity.Damage.Sunk || entity.Damage.Disabled {
+		return domain.CombatEntityStateV1{}, &Error{"VESSEL_SUNK", "A disabled vessel cannot change its defense policy."}
+	}
+	entity.AutoDefense, entity.AutoDefenseResponse = req.Enabled, response
+	if !req.Enabled && entity.ActiveEngagementID == "" {
+		entity.BehaviorState = "operational"
+		if vessel, exists := m.vessels[id]; exists && vessel.Telemetry.MissionID == "" {
+			vessel.Telemetry.SpeedMPS, vessel.Telemetry.Mode, vessel.Telemetry.Route = 0, "station_keep", nil
+			m.vessels[id] = vessel
+		}
+	}
+	entity.StateVersion++
+	entity.UpdatedAt = time.Now().UTC()
+	m.combatEntities[id] = entity
+	m.combatIdempotency[req.IdempotencyKey] = actionKey
+	m.combatVersion++
+	m.recordCombatEventLocked("auto_defense_changed", id, "", map[string]any{"enabled": req.Enabled, "response": response, "actor": req.ActorIdentity})
 	m.persistCombatAsync(true)
 	return entity, nil
 }
@@ -707,13 +759,18 @@ func (m *Manager) advanceCommercialEscapeLocked(deltaMS int64) {
 	}
 	for id, entity := range m.combatEntities {
 		if entity.Profile.Controlled {
-			if raider.CurrentTargetID == id && entity.ActiveEngagementID == "" && !entity.Damage.Sunk && combatDistanceM(entity.Position, raider.Position) <= 3000 {
+			response := m.controlledDefenseResponseLocked(id)
+			recentAttack := entity.LastAttackerID == blackwakeID && m.simTickMS-entity.LastAttackedTickMS <= 5*60*1000
+			if recentAttack && response == "retreat" && entity.ActiveEngagementID == "" && !entity.Damage.Sunk {
 				vessel := m.vessels[id]
 				destination := pointAtBearing(entity.Position, combatBearingDeg(raider.Position, entity.Position), 4000)
 				moveCombatEntity(&entity, destination, vessel.Class.MaxSpeedMPS*math.Max(.35, entity.Damage.PropulsionPercent/100), float64(deltaMS)/1000)
 				entity.BehaviorState = "defensive_evasion"
 				vessel.Telemetry.Position, vessel.Telemetry.HeadingDeg, vessel.Telemetry.SpeedMPS, vessel.Telemetry.Mode = entity.Position, entity.HeadingDeg, entity.SpeedMPS, "bounded defensive evasion"
 				m.vessels[id], m.combatEntities[id] = vessel, entity
+			} else if entity.BehaviorState == "defensive_evasion" && entity.ActiveEngagementID == "" {
+				entity.BehaviorState = "operational"
+				m.combatEntities[id] = entity
 			}
 			continue
 		}
@@ -951,7 +1008,7 @@ func (m *Manager) activateMissionEngagementLocked(mission domain.MissionWorkspac
 		ExpiresTickMS:        m.simTickMS + policy.DurationSeconds*1000,
 		DisengageHullPercent: policy.DisengageHullPercent, MinimumReserve: mission.Constraints.MinimumReserve,
 		Status: "active", MissionID: mission.ID, TargetScope: policy.TargetScope,
-		ReturnFire: policy.ReturnFire, RequireTargetInArea: policy.RequireTargetInMissionArea,
+		ReturnFire: policy.ReturnFire, DefensiveResponse: policy.DefensiveResponse, RequireTargetInArea: policy.RequireTargetInMissionArea,
 		OperatingAreas: mission.Geometry.IncludedAreas, AutoArmedIDs: autoArmed, CreatedAt: time.Now().UTC(),
 	}
 	program.ContentHash = engagementContentHash(program)
@@ -959,6 +1016,24 @@ func (m *Manager) activateMissionEngagementLocked(mission domain.MissionWorkspac
 	m.recordCombatEventLocked("mission_engagement_activated", id, targetID, map[string]any{"hash": program.ContentHash, "scope": policy.TargetScope, "participants": participants})
 	m.combatVersion++
 	return nil
+}
+
+func (m *Manager) applyMissionDefensePolicyLocked(mission domain.MissionWorkspaceV2) {
+	policy := normalizeEngagementPolicy(mission.EngagementPolicy, mission.FollowContactID)
+	if policy.DefensiveResponse != "retaliate" || !policy.AutoArm {
+		return
+	}
+	for _, vesselID := range uniqueStrings(mission.TargetIDs) {
+		entity, ok := m.combatEntities[vesselID]
+		if !ok || !entity.Profile.Controlled || entity.Damage.Sunk || entity.Damage.Disabled {
+			continue
+		}
+		if !entity.Armed {
+			entity.Armed, entity.ArmStateSource, entity.ArmedByMissionID = true, "mission_defense", mission.ID
+			entity.StateVersion++
+			m.combatEntities[vesselID] = entity
+		}
+	}
 }
 
 func (m *Manager) resolveMissionEngagementTargetLocked(participants []string, policy domain.EngagementPolicyV1) string {
@@ -1031,7 +1106,7 @@ func (m *Manager) advanceMilitaryDefenseLocked() {
 
 func (m *Manager) advanceControlledSelfDefenseLocked() {
 	for id, entity := range m.combatEntities {
-		if !entity.Profile.Controlled || !entity.Armed || entity.Damage.Sunk || entity.Damage.Disabled || entity.LastAttackerID == "" {
+		if !entity.Profile.Controlled || !entity.Armed || m.controlledDefenseResponseLocked(id) != "retaliate" || entity.Damage.Sunk || entity.Damage.Disabled || entity.LastAttackerID == "" {
 			continue
 		}
 		// Arming grants bounded return fire, not pursuit. The authorization is
@@ -1045,6 +1120,36 @@ func (m *Manager) advanceControlledSelfDefenseLocked() {
 		}
 		m.fireBestWeaponLocked(&entity, &attacker, "return-fire-"+id+"-"+attacker.EntityID)
 		m.combatEntities[id], m.combatEntities[attacker.EntityID] = entity, attacker
+	}
+}
+
+func (m *Manager) controlledDefenseResponseLocked(id string) string {
+	entity, ok := m.combatEntities[id]
+	if !ok || !entity.Profile.Controlled {
+		return "notify_only"
+	}
+	if vessel, exists := m.vessels[id]; exists && vessel.Telemetry.MissionID != "" {
+		if mission, found := m.missions[vessel.Telemetry.MissionID]; found {
+			// The active mission's rules of engagement are authoritative even
+			// when the selected response is explicitly notify-only.
+			return normalizeDefensiveResponse(mission.EngagementPolicy.DefensiveResponse, mission.EngagementPolicy.ReturnFire)
+		}
+	}
+	if !entity.AutoDefense {
+		return "notify_only"
+	}
+	return normalizeDefensiveResponse(entity.AutoDefenseResponse, false)
+}
+
+func normalizeDefensiveResponse(value string, legacyReturnFire bool) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "retaliate", "retreat", "notify_only":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		if legacyReturnFire {
+			return "retaliate"
+		}
+		return "notify_only"
 	}
 }
 
@@ -1251,9 +1356,10 @@ func engagementContentHash(program domain.EngagementProgramV1) string {
 		MissionID            string        `json:"mission_id,omitempty"`
 		TargetScope          string        `json:"target_scope"`
 		ReturnFire           bool          `json:"return_fire"`
+		DefensiveResponse    string        `json:"defensive_response"`
 		RequireTargetInArea  bool          `json:"require_target_in_mission_area"`
 		OperatingAreas       [][][]float64 `json:"operating_areas,omitempty"`
-	}{program.TargetID, program.EligibleTargetIDs, program.ParticipantIDs, program.AllowedWeaponIDs, program.MaximumRangeM, program.MaximumEffects, program.DurationSeconds, program.DisengageHullPercent, program.MinimumReserve, program.MissionID, program.TargetScope, program.ReturnFire, program.RequireTargetInArea, program.OperatingAreas})
+	}{program.TargetID, program.EligibleTargetIDs, program.ParticipantIDs, program.AllowedWeaponIDs, program.MaximumRangeM, program.MaximumEffects, program.DurationSeconds, program.DisengageHullPercent, program.MinimumReserve, program.MissionID, program.TargetScope, program.ReturnFire, program.DefensiveResponse, program.RequireTargetInArea, program.OperatingAreas})
 }
 func appendBoundedEffect(values []domain.CombatEffectV1, value domain.CombatEffectV1, maximum int) []domain.CombatEffectV1 {
 	values = append(values, value)

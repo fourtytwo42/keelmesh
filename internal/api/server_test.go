@@ -79,6 +79,33 @@ func TestCombatV8ArmAndDisarmControlledVessel(t *testing.T) {
 	}
 }
 
+func TestCombatV8AutoDefenseDefaultsOffAndCanBeEnabled(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	web := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("ok"), Mode: fs.FileMode(0o644)}}
+	manager := fleetops.New("", slog.Default())
+	server := New(core.New(), slog.Default(), web, manager)
+	vesselID := manager.Snapshot().Vessels[0].ID
+	before, _ := manager.CombatEntity(vesselID)
+	if before.AutoDefense {
+		t.Fatal("auto defense must default disabled")
+	}
+	body := []byte(`{"request_id":"defense","idempotency_key":"defense-key","actor_identity":"operator","enabled":true,"response":"retreat"}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/v8/combat/vessels/"+vesselID+":defense", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("defense status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var entity domain.CombatEntityStateV1
+	if err := json.Unmarshal(recorder.Body.Bytes(), &entity); err != nil {
+		t.Fatal(err)
+	}
+	if !entity.AutoDefense || entity.AutoDefenseResponse != "retreat" {
+		t.Fatalf("unexpected defense state: %#v", entity)
+	}
+}
+
 func TestSPAIndexIsNeverCachedAcrossDeployments(t *testing.T) {
 	web := fstest.MapFS{
 		"index.html":         &fstest.MapFile{Data: []byte("ok"), Mode: fs.FileMode(0o644)},

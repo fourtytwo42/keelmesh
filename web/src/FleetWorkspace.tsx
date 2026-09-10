@@ -1256,7 +1256,7 @@ export function FleetWorkspace() {
   async function planCombatEngagement(contactID: string, requestedParticipants?: string[]) {
     const participants = [...new Set(requestedParticipants ?? [...selected])];
     if (participants.length === 0) {
-      setError("Select one or more armed vessels in Fleet before planning an engagement.");
+      setError("Select one or more operational vessels in Fleet before planning an engagement.");
       return;
     }
     setError("");
@@ -1326,6 +1326,24 @@ export function FleetWorkspace() {
           expected_version: fleet?.combat.state_version ?? 0,
           actor_identity: "demo-operator",
           armed,
+        }),
+      });
+      await refresh();
+    } catch (reason) {
+      setError(reason instanceof KeelMeshError ? `${reason.code}: ${reason.message}` : String(reason));
+    }
+  }
+  async function setVesselAutoDefense(vesselID: string, enabled: boolean, response: "retreat" | "retaliate") {
+    try {
+      await api<CombatEntityStateV1>(`/api/v8/combat/vessels/${vesselID}:defense`, {
+        method: "POST",
+        body: JSON.stringify({
+          request_id: requestID("combat-defense"),
+          idempotency_key: requestID("combat-defense-key"),
+          expected_version: fleet?.combat.state_version ?? 0,
+          actor_identity: "demo-operator",
+          enabled,
+          response,
         }),
       });
       await refresh();
@@ -1787,6 +1805,11 @@ export function FleetWorkspace() {
 		await Promise.all(vesselIDs.map((vesselID) => setVesselArmed(vesselID, action.kind === "arm_vessel")));
 	  }
 	}
+	if (action.kind === "enable_auto_defense" || action.kind === "disable_auto_defense") {
+	  const vesselIDs = resolveActionVesselIDs(action);
+	  const response = action.secondary_target === "retaliate" ? "retaliate" : "retreat";
+	  if (vesselIDs.length > 0) await Promise.all(vesselIDs.map((vesselID) => setVesselAutoDefense(vesselID, action.kind === "enable_auto_defense", response)));
+	}
 	if (action.kind === "plan_engagement") {
 	  const contact = resolveContact(action.target);
 	  const participantIDs = resolveActionVesselIDs(action);
@@ -1889,6 +1912,19 @@ export function FleetWorkspace() {
   async function applySceneAction(scene: CommandSceneV1, action: CommandSceneV1["suggested_actions"][number]) {
     if (action.kind === "pin_scene") { await mutateScene(scene, "pin"); return; }
     if (action.kind === "dismiss_scene") { await mutateScene(scene, "dismiss"); return; }
+    if (action.kind === "hold_station") { await mutateScene(scene, "dismiss"); return; }
+    if (action.kind === "set_defense_retreat") {
+      if (action.target_id) await setVesselAutoDefense(action.target_id, true, "retreat");
+      await mutateScene(scene, "dismiss");
+      return;
+    }
+    if (action.kind === "plan_engagement" || action.kind === "plan_backup_engagement") {
+      const attackerID = String(action.payload?.attacker_id ?? "");
+      const participantIDs = Array.isArray(action.payload?.participant_ids) ? action.payload.participant_ids.map(String) : action.target_id ? [action.target_id] : [];
+      if (attackerID) await planCombatEngagement(attackerID, participantIDs);
+      await mutateScene(scene, "dismiss");
+      return;
+    }
     if (action.kind === "frame_entities" && scene.map_camera) {
       focusCommandScene(scene.id);
       return;
@@ -2498,6 +2534,7 @@ export function FleetWorkspace() {
           onRename={(name) => renameVessel(vessel.id, name)}
           onRepair={() => void repairVessel(vessel.id)}
           onArm={(armed) => void setVesselArmed(vessel.id, armed)}
+          onAutoDefense={(enabled, response) => void setVesselAutoDefense(vessel.id, enabled, response)}
           worldTickMS={fleet.simulation_tick_ms}
         />
       ),
@@ -3960,6 +3997,7 @@ function VesselInspectorWindow({
   onRename,
   onRepair,
   onArm,
+  onAutoDefense,
   worldTickMS,
 }: {
   pirate: boolean;
@@ -3969,6 +4007,7 @@ function VesselInspectorWindow({
   onRename: (name: string) => void;
   onRepair: () => void;
   onArm: (armed: boolean) => void;
+  onAutoDefense: (enabled: boolean, response: "retreat" | "retaliate") => void;
   worldTickMS: number;
 }) {
   const [reachability, setReachability] = useState<ReachabilityV2 | null>(null);
@@ -3980,7 +4019,7 @@ function VesselInspectorWindow({
       .catch(() => { if (active) setReachability(null); });
     return () => { active = false; };
   }, [vessel.id]);
-  return <VesselInspector pirate={pirate} vessel={vessel} reachability={reachability} lookup={lookup} execution={execution} onRename={onRename} onRepair={onRepair} onArm={onArm} worldTickMS={worldTickMS} />;
+  return <VesselInspector pirate={pirate} vessel={vessel} reachability={reachability} lookup={lookup} execution={execution} onRename={onRename} onRepair={onRepair} onArm={onArm} onAutoDefense={onAutoDefense} worldTickMS={worldTickMS} />;
 }
 function VesselInspector({
   pirate,
@@ -3991,6 +4030,7 @@ function VesselInspector({
   onRename,
   onRepair,
   onArm,
+  onAutoDefense,
   worldTickMS,
 }: {
   pirate: boolean;
@@ -4001,6 +4041,7 @@ function VesselInspector({
   onRename: (name: string) => void;
   onRepair: () => void;
   onArm: (armed: boolean) => void;
+  onAutoDefense: (enabled: boolean, response: "retreat" | "retaliate") => void;
   worldTickMS: number;
 }) {
   const t = vessel.telemetry;
@@ -4042,7 +4083,7 @@ function VesselInspector({
       <div className="hot-buffer-note">
         <Route /><span><b>{execution ? "FULL PROGRAM ONBOARD" : "NO ACTIVE PROGRAM"}</b><small>{execution ? `Revision ${execution.active_revision} · ${execution.total_segments} deterministic segments · valid until T+${execution.authorization_expiry_tick}s · ${execution.terminal_contingency.replaceAll("_", " ")} contingency.` : "This vessel has no active execution authority and will not invent movement commands."}</small></span>
       </div>
-      {vessel.combat && <CombatReadiness entity={vessel.combat} worldTickMS={worldTickMS} onRepair={onRepair} onArm={onArm} />}
+      {vessel.combat && <CombatReadiness entity={vessel.combat} worldTickMS={worldTickMS} onRepair={onRepair} onArm={onArm} onAutoDefense={onAutoDefense} />}
       <div className="vessel-nav-grid">
         <Insight icon={<BatteryCharging />} label="BATTERY FLOW" value={`${currentEnergyState.replaceAll("_", " ")} · ${signedPower(t.net_power_kw ?? 0)}`} detail={`${(t.solar_input_kw ?? 0).toFixed(2)} kW solar · ${(t.power_draw_kw ?? 0).toFixed(2)} kW load`} tone={currentEnergyState === "charging" ? "good" : currentEnergyState === "discharging" ? "bad" : ""} />
         <Insight icon={<Gauge />} label="SPEED" value={`${t.speed_mps.toFixed(1)} m/s`} detail={`${vessel.class.max_speed_mps.toFixed(1)} max`} />
@@ -4094,7 +4135,7 @@ function VesselInspector({
   );
 }
 
-function CombatReadiness({ entity, worldTickMS, onRepair, onArm }: { entity: CombatEntityStateV1; worldTickMS: number; onRepair?: () => void; onArm?: (armed: boolean) => void }) {
+function CombatReadiness({ entity, worldTickMS, onRepair, onArm, onAutoDefense }: { entity: CombatEntityStateV1; worldTickMS: number; onRepair?: () => void; onArm?: (armed: boolean) => void; onAutoDefense?: (enabled: boolean, response: "retreat" | "retaliate") => void }) {
   const integrity = Math.max(0, Math.min(100, entity.damage.integrity_percent));
   const cooldownSeconds = Math.max(0, Math.ceil((entity.repair_ready_at_tick_ms - worldTickMS) / 1000));
   return <section className={`combat-readiness ${entity.profile.hostility}`}>
@@ -4107,10 +4148,11 @@ function CombatReadiness({ entity, worldTickMS, onRepair, onArm }: { entity: Com
       <span><small>WEAPONS</small><b>{entity.damage.weapons_percent.toFixed(0)}%</b></span>
     </div>
     <div className="combat-armament">
-      <small>ARMAMENT · {entity.armed ? "ARMED · RETURN FIRE ENABLED" : "WEAPONS SAFE"}</small>
-      {(entity.profile.weapons ?? []).length ? (entity.profile.weapons ?? []).map((weapon) => <span key={weapon.id}><b>{weapon.name}</b><em>{weapon.base_damage} damage · {weapon.effective_range_m.toFixed(0)} m · {weapon.reload_seconds}s reload{weapon.ammunition >= 0 ? ` · ${weapon.ammunition} remaining` : ""}</em></span>) : <span><b>Unarmed</b><em>Escape and collision-avoidance behavior only</em></span>}
+      <small>ARMAMENT · {entity.armed ? "WEAPONS READY" : "WEAPONS SAFE"}</small>
+      {(entity.profile.weapons ?? []).length ? (entity.profile.weapons ?? []).map((weapon) => <span key={weapon.id}><b>{weapon.name}</b><em>{weapon.base_damage} damage · {weapon.effective_range_m.toFixed(0)} m · {weapon.reload_seconds}s reload{weapon.ammunition >= 0 ? ` · ${weapon.ammunition} remaining` : ""}</em></span>) : <span><b>Unarmed</b><em>Collision avoidance remains available; hostile-response movement requires policy.</em></span>}
     </div>
-    {onArm && <button className={`combat-arm ${entity.armed ? "armed" : ""}`} onClick={() => onArm(!entity.armed)} disabled={entity.damage.sunk || entity.damage.disabled}><ShieldCheck />{entity.armed ? "Disarm · weapons safe" : "Arm · return fire only"}</button>}
+    {onArm && <button className={`combat-arm ${entity.armed ? "armed" : ""}`} onClick={() => onArm(!entity.armed)} disabled={entity.damage.sunk || entity.damage.disabled}><ShieldCheck />{entity.armed ? "Disarm · weapons safe" : "Arm · return fire capable"}</button>}
+    {onAutoDefense && <div className="combat-defense-control"><label><input type="checkbox" checked={entity.auto_defense} onChange={(event) => onAutoDefense(event.target.checked, entity.auto_defense_response || "retreat")} /><span><b>AUTO DEFENSE</b><small>{entity.auto_defense ? "Respond automatically after a verified attack." : "Off · notify and station-keep until ordered."}</small></span></label><select aria-label="Automatic defense response" value={entity.auto_defense_response || "retreat"} disabled={!entity.auto_defense} onChange={(event) => onAutoDefense(true, event.target.value as "retreat" | "retaliate")}><option value="retreat">Prioritize retreat</option><option value="retaliate">Retaliate if armed</option></select></div>}
     {entity.current_target_id && <p className="combat-target"><small>CURRENT TARGET</small><b>{entity.current_target_id}</b></p>}
     {onRepair && <button className="combat-repair" onClick={onRepair} disabled={entity.damage.sunk || integrity >= 100 || cooldownSeconds > 0}><Wrench />{cooldownSeconds > 0 ? `Repair ready in ${Math.ceil(cooldownSeconds / 60)} world min` : "Repair hull +20%"}</button>}
   </section>;
@@ -4352,7 +4394,7 @@ function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool,
   const [aiInstruction, setAIInstruction] = useState("");
   const [aiAlternatives, setAIAlternatives] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<"plan" | "route">("plan");
-  const [engagementPolicy, setEngagementPolicy] = useState<EngagementPolicyV1>(() => mission?.engagement_policy ?? { enabled: true, target_scope: "designated", designated_target_ids: [], auto_arm: true, return_fire: true, require_target_in_mission_area: true, maximum_range_m: 0, maximum_effects: 80, duration_seconds: 900, disengage_hull_percent: 20 });
+  const [engagementPolicy, setEngagementPolicy] = useState<EngagementPolicyV1>(() => mission?.engagement_policy ?? { enabled: false, target_scope: "designated", designated_target_ids: [], auto_arm: false, return_fire: false, defensive_response: "notify_only", require_target_in_mission_area: true, maximum_range_m: 0, maximum_effects: 80, duration_seconds: 900, disengage_hull_percent: 20 });
   useEffect(() => { if (contactSeed) setMissionType("follow_contact"); }, [contactSeed]);
   useEffect(() => setManualObjective(mission?.objective ?? ""), [mission?.id, mission?.objective]);
   useEffect(() => {
@@ -4362,7 +4404,7 @@ function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool,
     setAIAlternatives(false);
     setWorkspaceTab("plan");
     setMissionType(mission?.guidance_kind || "patrol");
-    setEngagementPolicy(mission?.engagement_policy ?? { enabled: true, target_scope: "designated", designated_target_ids: [], auto_arm: true, return_fire: true, require_target_in_mission_area: true, maximum_range_m: 0, maximum_effects: 80, duration_seconds: 900, disengage_hull_percent: 20 });
+    setEngagementPolicy(mission?.engagement_policy ?? { enabled: false, target_scope: "designated", designated_target_ids: [], auto_arm: false, return_fire: false, defensive_response: "notify_only", require_target_in_mission_area: true, maximum_range_m: 0, maximum_effects: 80, duration_seconds: 900, disengage_hull_percent: 20 });
   }, [mission?.id]);
   useEffect(() => {
     if (showExecution && mission?.execution) setWorkspaceTab("route");
@@ -4397,16 +4439,17 @@ function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool,
       {workspaceTab === "plan" && <section className="mission-plan-workspace">
         <div className="mission-section-heading"><span><Compass /><b>Mission definition</b><small>Describe the outcome, then place route and safety geometry directly on the map.</small></span><em>{missionType.replaceAll("_", " ")}</em></div>
         <div className="mission-definition-grid"><label>MISSION TYPE<select aria-label="MISSION TYPE" value={missionType} onChange={(event) => setMissionType(event.target.value)}><option value="transit">Transit</option><option value="patrol">Patrol</option><option value="search">Search</option><option value="follow_contact">Follow contact</option><option value="engage_hostile">Engage contact</option><option value="hold">Hold</option><option value="orbit">Orbit</option><option value="custom_route">Custom route</option></select></label><label className="mission-objective-field">OBJECTIVE<textarea aria-label="OBJECTIVE" value={manualObjective} onChange={(event) => setManualObjective(event.target.value)} placeholder="What should these vessels accomplish?" /></label>{mission.target_ids.length > 1 ? <label>FORMATION<select value={mission.formation} onChange={(event) => onFormation(event.target.value)}>{formations.map((formation) => <option value={formation} key={formation}>{formation.replaceAll("_", " ")}</option>)}</select></label> : <div className="solo-mode"><Ship /><span><b>{mission.target_ids.length === 1 ? "INDEPENDENT VESSEL" : "NO ASSETS"}</b><small>{mission.target_ids.length === 1 ? "Formation controls are not required." : "Select vessels or groups in Fleet."}</small></span></div>}<button type="button" className={`mission-loop-control ${mission.loop ? "active" : ""}`} onClick={() => onLoop(!mission.loop)}><RotateCcw /><span><b>{mission.loop ? "Loop continuously" : "Hold at end"}</b><small>{mission.loop ? "Return to the first marker after completion." : "Station-keep at the final marker."}</small></span></button></div>
-        {missionType === "engage_hostile" && <div className="mission-engagement-policy"><div><Swords /><span><b>Engagement authority</b><small>Attack missions arm assigned vessels automatically. Armed vessels retain bounded return fire; initiating fire remains limited by this exact confirmed envelope.</small></span></div><label>TARGET SCOPE<select value={engagementPolicy.target_scope} onChange={(event) => setEngagementPolicy((current) => ({ ...current, target_scope: event.target.value as EngagementPolicyV1["target_scope"] }))}><option value="designated">Named contact only</option><option value="hostile_contacts">Any hostile contact</option><option value="any_contact">Any non-Fleet contact</option></select></label><label>MAX EFFECTS<input type="number" min="1" max="10000" value={engagementPolicy.maximum_effects} onChange={(event) => setEngagementPolicy((current) => ({ ...current, maximum_effects: Number(event.target.value) }))} /></label><label>DURATION (MIN)<input type="number" min="1" max="60" value={engagementPolicy.duration_seconds / 60} onChange={(event) => setEngagementPolicy((current) => ({ ...current, duration_seconds: Number(event.target.value) * 60 }))} /></label><label>DISENGAGE BELOW<input type="number" min="5" max="80" value={engagementPolicy.disengage_hull_percent} onChange={(event) => setEngagementPolicy((current) => ({ ...current, disengage_hull_percent: Number(event.target.value) }))} /></label><label className="engagement-check"><input type="checkbox" checked={engagementPolicy.require_target_in_mission_area} onChange={(event) => setEngagementPolicy((current) => ({ ...current, require_target_in_mission_area: event.target.checked }))} />Target must remain in mission area</label></div>}
+        <div className="mission-defense-policy"><ShieldCheck /><span><b>Response if attacked</b><small>Choose whether assigned vessels hold and notify, retreat, or return fire during this mission.</small></span><select aria-label="Mission defensive response" value={engagementPolicy.defensive_response || "notify_only"} onChange={(event) => { const response = event.target.value as EngagementPolicyV1["defensive_response"]; setEngagementPolicy((current) => ({ ...current, defensive_response: response, return_fire: response === "retaliate", auto_arm: response === "retaliate" })); }}><option value="notify_only">Notify · maintain mission</option><option value="retreat">Retreat priority</option><option value="retaliate">Retaliation permitted</option></select></div>
+        {missionType === "engage_hostile" && <div className="mission-engagement-policy"><div><Swords /><span><b>Engagement authority</b><small>Attack missions arm assigned vessels automatically. Initiating fire remains limited by this exact confirmed envelope.</small></span></div><label>TARGET SCOPE<select value={engagementPolicy.target_scope} onChange={(event) => setEngagementPolicy((current) => ({ ...current, enabled: true, auto_arm: true, target_scope: event.target.value as EngagementPolicyV1["target_scope"] }))}><option value="designated">Named contact only</option><option value="hostile_contacts">Any hostile contact</option><option value="any_contact">Any non-Fleet contact</option></select></label><label>MAX EFFECTS<input type="number" min="1" max="10000" value={engagementPolicy.maximum_effects} onChange={(event) => setEngagementPolicy((current) => ({ ...current, enabled: true, auto_arm: true, maximum_effects: Number(event.target.value) }))} /></label><label>DURATION (MIN)<input type="number" min="1" max="60" value={engagementPolicy.duration_seconds / 60} onChange={(event) => setEngagementPolicy((current) => ({ ...current, enabled: true, auto_arm: true, duration_seconds: Number(event.target.value) * 60 }))} /></label><label>DISENGAGE BELOW<input type="number" min="5" max="80" value={engagementPolicy.disengage_hull_percent} onChange={(event) => setEngagementPolicy((current) => ({ ...current, enabled: true, auto_arm: true, disengage_hull_percent: Number(event.target.value) }))} /></label><label className="engagement-check"><input type="checkbox" checked={engagementPolicy.require_target_in_mission_area} onChange={(event) => setEngagementPolicy((current) => ({ ...current, enabled: true, auto_arm: true, require_target_in_mission_area: event.target.checked }))} />Target must remain in mission area</label></div>}
         <div className="mission-map-authoring"><div className="mission-section-heading"><span><MapPinned /><b>Map authoring</b><small>{tool === "select" ? "Choose a tool, then work on the map." : `${tool.replaceAll("_", " ")} active · Escape cancels`}</small></span><em>geometry r{mission.geometry.revision}</em></div><div className="geometry-actions"><button aria-label="Select or edit mission geometry" className={tool === "select" ? "active" : ""} onClick={() => onTool("select")} title="Select or edit"><MousePointer2 /><small>Edit</small></button><button aria-label="Add operating area" className={tool === "include" ? "active" : ""} onClick={() => onArea("include")} title="Operating area"><Plus /><small>Area</small></button><button aria-label="Add exclusion area" className={tool === "exclude" ? "active" : ""} onClick={() => onArea("exclude")} title="Exclusion area"><Ban /><small>Exclude</small></button><button aria-label="Add waypoint" className={tool === "waypoint" ? "active" : ""} onClick={() => onTool("waypoint")} title="Waypoint"><MapPinned /><small>Waypoint</small></button><button aria-label="Add hold point" className={tool === "hold" ? "active" : ""} onClick={() => onTool("hold")} title="Hold point"><CircleDot /><small>Hold</small></button><button aria-label="Add orbit point" className={tool === "orbit" ? "active" : ""} onClick={() => onTool("orbit")} title="Orbit point"><RotateCcw /><small>Orbit</small></button><button aria-label="Undo mission geometry change" onClick={onUndoGeometry} title="Undo"><Undo2 /><small>Undo</small></button></div><div className="geometry-summary"><span>{mission.geometry.included_areas.length} operating</span><span>{mission.geometry.exclusion_areas.length} exclusions</span><span>{mission.geometry.waypoints.length} waypoints</span><span>{mission.geometry.pois.length} hold/orbit</span></div><div className="geometry-inventory">{mission.geometry.included_areas.map((_, index) => <button className={geometryFocus?.kind === "include" && geometryFocus.index === index ? "selected" : ""} key={`include-${index}`} onClick={() => onFocusGeometry({ kind: "include", index })}><span>Operating area {index + 1}</span><Eye /></button>)}{mission.geometry.exclusion_areas.map((_, index) => <button className={geometryFocus?.kind === "exclude" && geometryFocus.index === index ? "selected" : ""} key={`exclude-${index}`} onClick={() => onFocusGeometry({ kind: "exclude", index })}><span>Exclusion area {index + 1}</span><Eye /></button>)}{mission.geometry.waypoints.map((_, index) => <div className={geometryFocus?.kind === "waypoint" && geometryFocus.index === index ? "selected" : ""} key={`waypoint-${index}`}><button onClick={() => onFocusGeometry({ kind: "waypoint", index })}><span>Waypoint {index + 1}</span><Eye /></button><button disabled={index === 0} onClick={() => onReorderWaypoint(index, -1)}><ChevronUp /></button><button disabled={index === mission.geometry.waypoints.length - 1} onClick={() => onReorderWaypoint(index, 1)}><ChevronDown /></button></div>)}{mission.geometry.pois.map((poi, index) => <button className={geometryFocus?.kind === "poi" && geometryFocus.index === index ? "selected" : ""} key={poi.id} onClick={() => onFocusGeometry({ kind: "poi", index })}><span>{poi.kind === "orbit" ? "Orbit" : "Hold"} point {index + 1}</span><Eye /></button>)}{geometryFocus && <button className="geometry-delete" onClick={() => onDeleteGeometry(geometryFocus)}><Trash2 />Delete selected</button>}</div><div className="geometry-clear-actions"><button onClick={() => onClearGeometry("include")}>Clear areas</button><button onClick={() => onClearGeometry("exclude")}>Clear exclusions</button><button onClick={() => onClearGeometry("waypoint")}>Clear route</button><button onClick={() => onClearGeometry("poi")}>Clear holds</button></div></div>
-        <div className="mission-plan-actions"><button onClick={onOpenConstraints} disabled={busy}><SlidersHorizontal /><span><b>Constraints</b><small>Reserve, speed, separation, PNT</small></span></button><button onClick={() => onSaveDraft(manualObjective.trim())} disabled={busy || !manualObjective.trim() || (mission.draft_saved && !objectiveChanged)}><Save /><span><b>{mission.draft_saved ? objectiveChanged ? "Save changes" : "Draft saved" : "Save draft"}</b><small>{mission.draft_saved && !objectiveChanged ? "Mission is ready to revisit." : "Keep this mission and release the creator."}</small></span></button><button className="amber" onClick={() => { setWorkspaceTab("route"); onGenerateManual(missionType, manualObjective, missionType === "engage_hostile" ? engagementPolicy : undefined); }} disabled={busy || mission.target_ids.length === 0}><Route /><span><b>{plans.length ? "Rebuild routes" : "Build routes"}</b><small>Deterministic validation · no AI required</small></span></button></div>
+        <div className="mission-plan-actions"><button onClick={onOpenConstraints} disabled={busy}><SlidersHorizontal /><span><b>Constraints</b><small>Reserve, speed, separation, PNT</small></span></button><button onClick={() => onSaveDraft(manualObjective.trim())} disabled={busy || !manualObjective.trim() || (mission.draft_saved && !objectiveChanged)}><Save /><span><b>{mission.draft_saved ? objectiveChanged ? "Save changes" : "Draft saved" : "Save draft"}</b><small>{mission.draft_saved && !objectiveChanged ? "Mission is ready to revisit." : "Keep this mission and release the creator."}</small></span></button><button className="amber" onClick={() => { setWorkspaceTab("route"); onGenerateManual(missionType, manualObjective, engagementPolicy); }} disabled={busy || mission.target_ids.length === 0}><Route /><span><b>{plans.length ? "Rebuild routes" : "Build routes"}</b><small>Deterministic validation · no AI required</small></span></button></div>
       </section>}
       {workspaceTab === "route" && <section className="mission-route-workspace">
         <div className="mission-section-heading"><span><ShieldCheck /><b>Review &amp; execute</b><small>{plans.length > 1 ? `${plans.length} validated alternatives · select one to preview` : plans.length === 1 ? "One validated route ready for review" : "Build a route from the Plan tab first."}</small></span>{activePlan && <em>{activePlan.advisor_source === "deterministic" ? "MANUAL" : "AI REFINED"}</em>}</div>
         {mission.execution && <ProgramSummary execution={mission.execution} />}
         {plans.length === 0 ? <div className="route-workbench-empty"><Route /><b>No routes yet</b><span>Return to Plan, define the task, and build validated routes.</span><button onClick={() => setWorkspaceTab("plan")}>Open Plan</button></div> : <div className="candidate-list mission-route-choices" aria-label="Mission route options">{plans.slice(0, 3).map((plan, index) => { const expanded = expandedPlans.has(plan.id), label = String.fromCharCode(65 + index); return <article key={plan.id} className={`${activePlan?.id === plan.id ? "selected" : ""} ${expanded ? "expanded" : "collapsed"} ${plan.policy_status}`}><header><button className="candidate-select" aria-label={`Preview option ${label}: ${plan.name}`} aria-pressed={activePlan?.id === plan.id} disabled={busy || plan.policy_status === "prohibited"} onClick={() => onChoose(plan.id)}><span className="option-letter">{label}</span><b>{plan.name}</b></button>{plan.recommended && <em>{pirate ? "CAPTAIN'S PICK" : "RECOMMENDED"}</em>}<button className="candidate-expand" aria-label={`${expanded ? "Collapse" : "Expand"} option ${label}`} onClick={() => setExpandedPlans((current) => { const next = new Set(current); next.has(plan.id) ? next.delete(plan.id) : next.add(plan.id); return next; })}>{expanded ? <ChevronUp /> : <ChevronDown />}</button></header><div className="candidate-quick-metrics"><span>{plan.duration_minutes.toFixed(0)} min</span><span>{reservePercent(plan.minimum_reserve)}% reserve</span><span>{plan.minimum_separation_m} m sep</span></div><div className="candidate-detail"><p>{plan.description}</p><small>{plan.maneuvers.join(" → ")}</small><code>{plan.content_hash.slice(0, 18)}…</code></div></article>; })}</div>}
         {activePlan && <button className="mission-start-action" disabled={busy || activePlan.policy_status === "prohibited"} onClick={() => onConfirmPlan(activePlan.id)}><ShieldCheck />Confirm and start selected route</button>}
-        <details className="ai-refine-panel" open={aiRefineOpen} onToggle={(event) => setAIRefineOpen(event.currentTarget.open)}><summary><Sparkles /><span><b>AI mission assistant</b><small>Optionally improve this plan without changing the authority boundary.</small></span><em>{aiRefineOpen ? "CLOSE" : "OPEN"}</em></summary><div><label>WHAT SHOULD AI IMPROVE?<textarea aria-label="AI refinement instruction" value={aiInstruction} onChange={(event) => setAIInstruction(event.target.value)} placeholder="Example: reduce shallow-water exposure and preserve more reserve." /></label><label className="ai-alternatives-toggle"><input type="checkbox" checked={aiAlternatives} onChange={(event) => setAIAlternatives(event.target.checked)} /><span><b>Offer alternatives</b><small>Return three routes instead of one recommendation.</small></span></label><button className="wide" disabled={busy || mission.target_ids.length === 0} onClick={() => onRefineAI(missionType, manualObjective, aiInstruction, aiAlternatives, missionType === "engage_hostile" ? engagementPolicy : undefined)}><Sparkles />{aiAlternatives ? "Generate alternatives" : "Refine selected mission"}</button>{busy && <div className="agent-work-chips"><span><Sparkles /> Reviewing mission</span><span>Checking constraints</span><span>Validating route</span></div>}</div></details>
+        <details className="ai-refine-panel" open={aiRefineOpen} onToggle={(event) => setAIRefineOpen(event.currentTarget.open)}><summary><Sparkles /><span><b>AI mission assistant</b><small>Optionally improve this plan without changing the authority boundary.</small></span><em>{aiRefineOpen ? "CLOSE" : "OPEN"}</em></summary><div><label>WHAT SHOULD AI IMPROVE?<textarea aria-label="AI refinement instruction" value={aiInstruction} onChange={(event) => setAIInstruction(event.target.value)} placeholder="Example: reduce shallow-water exposure and preserve more reserve." /></label><label className="ai-alternatives-toggle"><input type="checkbox" checked={aiAlternatives} onChange={(event) => setAIAlternatives(event.target.checked)} /><span><b>Offer alternatives</b><small>Return three routes instead of one recommendation.</small></span></label><button className="wide" disabled={busy || mission.target_ids.length === 0} onClick={() => onRefineAI(missionType, manualObjective, aiInstruction, aiAlternatives, engagementPolicy)}><Sparkles />{aiAlternatives ? "Generate alternatives" : "Refine selected mission"}</button>{busy && <div className="agent-work-chips"><span><Sparkles /> Reviewing mission</span><span>Checking constraints</span><span>Validating route</span></div>}</div></details>
       </section>}
     </div>
   </div>;

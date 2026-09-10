@@ -596,7 +596,23 @@ func liveSceneEntity(id string, fleet domain.FleetSnapshotV2) (map[string]any, b
 func (m *Manager) evaluateProactiveLocked(fleet domain.FleetSnapshotV2) {
 	for _, vessel := range fleet.Vessels {
 		condition, detail := "", ""
-		if vessel.Telemetry.PNTIntegrity == "unsafe" || vessel.Telemetry.UncertaintyM > 45 {
+		attackerID, attackedTick := "", int64(0)
+		for _, entity := range fleet.Combat.Entities {
+			if entity.EntityID == vessel.ID {
+				attackerID, attackedTick = entity.LastAttackerID, entity.LastAttackedTickMS
+				break
+			}
+		}
+		if attackerID != "" && attackedTick > 0 && fleet.SimulationTick-attackedTick <= 10*60*1000 {
+			attackerName := attackerID
+			for _, entity := range fleet.Combat.Entities {
+				if entity.EntityID == attackerID {
+					attackerName = entity.Name
+					break
+				}
+			}
+			condition, detail = "vessel_attacked", fmt.Sprintf("%s is under attack from %s. It is holding its assigned state until you choose a response.", vessel.DisplayName, attackerName)
+		} else if vessel.Telemetry.PNTIntegrity == "unsafe" || vessel.Telemetry.UncertaintyM > 45 {
 			condition, detail = "unsafe_pnt", fmt.Sprintf("%s PNT uncertainty is %.0f m; mission motion requires operator review.", vessel.DisplayName, vessel.Telemetry.UncertaintyM)
 		} else if remaining, ok := vesselAuthorityRemaining(vessel, fleet); ok && remaining <= 120 {
 			condition, detail = "authority_expiring", fmt.Sprintf("%s has %d seconds of approved mission authority remaining and will enter its signed contingency at expiry.", vessel.DisplayName, remaining)
@@ -604,10 +620,18 @@ func (m *Manager) evaluateProactiveLocked(fleet domain.FleetSnapshotV2) {
 			condition, detail = "reserve_threshold", fmt.Sprintf("%s reserve crossed the 20 percent critical threshold.", vessel.DisplayName)
 		}
 		key := vessel.ID + ":" + condition
+		if condition == "vessel_attacked" {
+			// A later attack is a new transition, while repeated polling of the
+			// same authoritative hit must not reopen the alert.
+			key = fmt.Sprintf("%s:%d", key, attackedTick)
+		}
 		if condition == "" {
 			continue
 		}
 		transition := fmt.Sprintf("%s:%d", condition, fleet.SimulationTick/1000)
+		if condition == "vessel_attacked" {
+			transition = fmt.Sprintf("%s:%d", condition, attackedTick)
+		}
 		if m.proactiveSeen[key] != "" {
 			continue
 		}
@@ -623,12 +647,68 @@ func (m *Manager) evaluateProactiveLocked(fleet domain.FleetSnapshotV2) {
 		scene := composeCommandScene(request, assistant, fleet, now)
 		scene.ID, scene.Type, scene.Title, scene.Critical = sceneID, "status_matrix", "Critical operational transition", true
 		scene.Summary, scene.SpokenSummary = detail, detail
+		if condition == "vessel_attacked" {
+			backup := defenseBackupIDs(vessel.ID, fleet)
+			scene.Title = "Fleet vessel under attack"
+			scene.SuggestedActions = []domain.ArtifactActionV1{
+				combatSceneAction(sceneID, "hold_station", "Maintain station · acknowledge", vessel.ID, attackerID, []string{vessel.ID}, fleet.FleetVersion, "presentation"),
+				combatSceneAction(sceneID, "set_defense_retreat", "Retreat now", vessel.ID, attackerID, []string{vessel.ID}, fleet.FleetVersion, "safer"),
+				combatSceneAction(sceneID, "plan_engagement", "Defend this vessel", vessel.ID, attackerID, []string{vessel.ID}, fleet.FleetVersion, "effect"),
+				combatSceneAction(sceneID, "plan_backup_engagement", "Send backup · engage as a group", vessel.ID, attackerID, backup, fleet.FleetVersion, "effect"),
+			}
+		}
 		scene.MapAnnotations, scene.MapCamera = sceneMapContext(entities, fleet, sceneID)
 		m.scenes[scene.ID] = scene
 		m.sceneOrder = append(m.sceneOrder, scene.ID)
 		m.activeScenes[sceneSessionKey(scene.ActorID, scene.SessionID)] = scene.ID
 		m.appendSceneEventLocked("proactive.critical", scene.ID, "", domain.ProactiveSceneTriggerV1{ID: key, EntityID: vessel.ID, Condition: condition, Transition: transition, Severity: "critical", DetectedAt: now})
 	}
+}
+
+func combatSceneAction(sceneID, kind, label, vesselID, attackerID string, participants []string, version int64, authority string) domain.ArtifactActionV1 {
+	action := domain.ArtifactActionV1{ID: sceneID + "-" + kind, Kind: kind, Label: label, AuthorityClass: authority, TargetID: vesselID, Payload: map[string]any{"attacker_id": attackerID, "participant_ids": participants}}
+	action.ActionHash = hashCanonical(action.Kind, action.TargetID, attackerID, strings.Join(participants, ","), fmt.Sprint(version))
+	return action
+}
+
+func defenseBackupIDs(attackedID string, fleet domain.FleetSnapshotV2) []string {
+	attacked := domain.GeoPointV2{}
+	groupID := ""
+	for _, vessel := range fleet.Vessels {
+		if vessel.ID == attackedID {
+			attacked, groupID = vessel.Telemetry.Position, vessel.GroupID
+			break
+		}
+	}
+	if groupID != "" {
+		for _, group := range fleet.Groups {
+			if group.ID == groupID {
+				return append([]string(nil), group.MemberIDs...)
+			}
+		}
+	}
+	type candidate struct {
+		id       string
+		distance float64
+	}
+	values := []candidate{{id: attackedID}}
+	for _, vessel := range fleet.Vessels {
+		if vessel.ID == attackedID || !vessel.Available {
+			continue
+		}
+		dx := (vessel.Telemetry.Position[0] - attacked[0]) * 85000
+		dy := (vessel.Telemetry.Position[1] - attacked[1]) * 111000
+		values = append(values, candidate{id: vessel.ID, distance: dx*dx + dy*dy})
+	}
+	sort.Slice(values[1:], func(i, j int) bool { return values[i+1].distance < values[j+1].distance })
+	if len(values) > 4 {
+		values = values[:4]
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, value.id)
+	}
+	return result
 }
 
 func vesselAuthorityRemaining(vessel domain.VesselProfileV2, fleet domain.FleetSnapshotV2) (int64, bool) {

@@ -38,6 +38,34 @@ func TestRefreshScenesKeepsCriticalOrderAndLifecycleTimestampStable(t *testing.T
 	}
 }
 
+func TestAttackedVesselSceneOffersHoldRetreatAndBackup(t *testing.T) {
+	manager := NewManager(Config{OpenAIKeyFile: t.TempDir() + "/missing"}, slog.Default())
+	fleet := domain.FleetSnapshotV2{FleetVersion: 31, SimulationTick: 120000,
+		Vessels: []domain.VesselProfileV2{
+			{ID: "vessel-1", DisplayName: "Petrel", Available: true, Telemetry: domain.VesselTelemetryV2{Position: domain.GeoPointV2{-71.3, 41.1}, Reserve: .8}},
+			{ID: "vessel-2", DisplayName: "Tern", Available: true, Telemetry: domain.VesselTelemetryV2{Position: domain.GeoPointV2{-71.31, 41.1}, Reserve: .8}},
+		},
+		SurfaceContacts: []domain.SurfaceContactV2{{ID: "HOSTILE-0001", Name: "Blackwake", Position: domain.GeoPointV2{-71.29, 41.1}}},
+		Combat: domain.CombatSnapshotV1{Entities: []domain.CombatEntityStateV1{
+			{EntityID: "vessel-1", Name: "Petrel", Profile: domain.CombatProfileV1{Controlled: true}, LastAttackerID: "HOSTILE-0001", LastAttackedTickMS: 119000},
+			{EntityID: "HOSTILE-0001", Name: "Blackwake", Profile: domain.CombatProfileV1{Hostility: "hostile"}},
+		}},
+	}
+	manager.RefreshScenes(fleet)
+	scenes := manager.Scenes("demo-operator", "browser-test")
+	if len(scenes) != 1 || scenes[0].Title != "Fleet vessel under attack" || len(scenes[0].SuggestedActions) != 4 {
+		t.Fatalf("unexpected attack scene: %#v", scenes)
+	}
+	kinds := []string{}
+	for _, action := range scenes[0].SuggestedActions {
+		kinds = append(kinds, action.Kind)
+	}
+	expected := []string{"hold_station", "set_defense_retreat", "plan_engagement", "plan_backup_engagement"}
+	if !reflect.DeepEqual(kinds, expected) {
+		t.Fatalf("unexpected attack actions: %v", kinds)
+	}
+}
+
 func TestCommandSceneUsesTrustedOrderedSurfaceAndReplacement(t *testing.T) {
 	manager := NewManager(Config{OpenAIKeyFile: t.TempDir() + "/missing"}, slog.Default())
 	fleet := domain.FleetSnapshotV2{FleetVersion: 7, Vessels: []domain.VesselProfileV2{{ID: "vessel-1", Callsign: "Gannet", DisplayName: "Gannet (KM-214)", Telemetry: domain.VesselTelemetryV2{Position: domain.GeoPointV2{-71.3, 41.4}, Reserve: .82, Mode: "hold"}}}}

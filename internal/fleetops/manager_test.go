@@ -257,6 +257,38 @@ func TestManualCompileAndExplicitContactAreStructured(t *testing.T) {
 	}
 }
 
+func TestMissionCompileCapturesSpokenDefensivePolicy(t *testing.T) {
+	for _, test := range []struct {
+		text     string
+		response string
+		autoArm  bool
+	}{
+		{text: "Patrol the route, retreat if attacked", response: "retreat"},
+		{text: "Patrol the route with retaliation permitted", response: "retaliate", autoArm: true},
+		{text: "Patrol the route, notify only if attacked", response: "notify_only"},
+	} {
+		t.Run(test.response, func(t *testing.T) {
+			m := New("", slog.Default())
+			snapshot := m.Snapshot()
+			mission, err := m.CreateMission(CreateMissionRequest{Mutation: Mutation{RequestID: "mission-" + test.response, IdempotencyKey: "mission-" + test.response, ExpectedVersion: snapshot.FleetVersion}, TargetIDs: []string{snapshot.Vessels[0].ID}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			mission, err = m.SetGeometry(mission.ID, GeometryRequest{Mutation: Mutation{RequestID: "geometry-" + test.response, IdempotencyKey: "geometry-" + test.response, ExpectedVersion: mission.Version}, Waypoints: []domain.GeoPointV2{{-71.40, 41.36}, {-71.38, 41.34}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = m.Compile(mission.ID, CompileRequest{Mutation: Mutation{RequestID: "compile-" + test.response, IdempotencyKey: "compile-" + test.response, ExpectedVersion: mission.Version}, Text: test.text, PlanningMode: "ai_assisted", GuidanceKind: "patrol"}); err != nil {
+				t.Fatal(err)
+			}
+			policy := m.missions[mission.ID].EngagementPolicy
+			if policy.DefensiveResponse != test.response || policy.AutoArm != test.autoArm || policy.ReturnFire != test.autoArm {
+				t.Fatalf("spoken defense policy not captured: %#v", policy)
+			}
+		})
+	}
+}
+
 func TestLocalAdjustmentStopsAndEscalatesOutsideGuardrails(t *testing.T) {
 	m := New("", slog.Default())
 	vessel := m.vessels[m.groups["group-01"].MemberIDs[1]]

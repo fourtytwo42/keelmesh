@@ -56,6 +56,8 @@ type CombatEntityStateV1 struct {
 	Armed               bool              `json:"armed"`
 	ArmStateSource      string            `json:"arm_state_source,omitempty"`
 	ArmedByMissionID    string            `json:"armed_by_mission_id,omitempty"`
+	AutoDefense         bool              `json:"auto_defense"`
+	AutoDefenseResponse string            `json:"auto_defense_response"`
 	LastAttackerID      string            `json:"last_attacker_id,omitempty"`
 	LastAttackedTickMS  int64             `json:"last_attacked_tick_ms,omitempty"`
 	CurrentTargetID     string            `json:"current_target_id,omitempty"`
@@ -81,6 +83,7 @@ type EngagementPolicyV1 struct {
 	DesignatedTargetIDs        []string `json:"designated_target_ids,omitempty"`
 	AutoArm                    bool     `json:"auto_arm"`
 	ReturnFire                 bool     `json:"return_fire"`
+	DefensiveResponse          string   `json:"defensive_response"`
 	RequireTargetInMissionArea bool     `json:"require_target_in_mission_area"`
 	MaximumRangeM              float64  `json:"maximum_range_m"`
 	MaximumEffects             int      `json:"maximum_effects"`
@@ -111,6 +114,7 @@ type EngagementProgramV1 struct {
 	MissionID            string        `json:"mission_id,omitempty"`
 	TargetScope          string        `json:"target_scope"`
 	ReturnFire           bool          `json:"return_fire"`
+	DefensiveResponse    string        `json:"defensive_response"`
 	RequireTargetInArea  bool          `json:"require_target_in_mission_area"`
 	OperatingAreas       [][][]float64 `json:"operating_areas,omitempty"`
 	AutoArmedIDs         []string      `json:"auto_armed_ids,omitempty"`

@@ -44,6 +44,9 @@ func TestArmStateAllowsReturnFireButNotInitiation(t *testing.T) {
 	if err != nil || !armed.Armed || armed.ArmStateSource != "operator" {
 		t.Fatalf("arm failed: %#v %v", armed, err)
 	}
+	if _, err := m.SetCombatDefense(vesselID, CombatDefenseRequest{Mutation: Mutation{RequestID: "defense", IdempotencyKey: "defense-key", ActorIdentity: "operator"}, Enabled: true, Response: "retaliate"}); err != nil {
+		t.Fatal(err)
+	}
 	m.mu.Lock()
 	vessel, raider := m.combatEntities[vesselID], m.combatEntities[blackwakeID]
 	vessel.Position, raider.Position = domain.GeoPointV2{-71.48, 40.88}, domain.GeoPointV2{-71.479, 40.88}
@@ -64,6 +67,38 @@ func TestArmStateAllowsReturnFireButNotInitiation(t *testing.T) {
 	}
 }
 
+func TestControlledVesselHoldsUntilDefensePolicyAllowsResponse(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	m := New("", slog.Default())
+	vesselID := m.Snapshot().Vessels[0].ID
+	m.mu.Lock()
+	vessel, raider := m.combatEntities[vesselID], m.combatEntities[blackwakeID]
+	vessel.Position, raider.Position = domain.GeoPointV2{-71.48, 40.88}, domain.GeoPointV2{-71.479, 40.88}
+	vessel.LastAttackerID, vessel.LastAttackedTickMS = blackwakeID, m.simTickMS
+	raider.CurrentTargetID = vesselID
+	m.combatEntities[vesselID], m.combatEntities[blackwakeID] = vessel, raider
+	before := vessel.Position
+	m.advanceCommercialEscapeLocked(10000)
+	after := m.combatEntities[vesselID]
+	m.mu.Unlock()
+	if after.Position != before || after.BehaviorState == "defensive_evasion" {
+		t.Fatalf("default-disabled auto defense moved an idle vessel: before=%v after=%#v", before, after)
+	}
+	if after.AutoDefense {
+		t.Fatal("controlled auto defense must default off")
+	}
+	if _, err := m.SetCombatDefense(vesselID, CombatDefenseRequest{Mutation: Mutation{RequestID: "retreat", IdempotencyKey: "retreat-key", ActorIdentity: "operator"}, Enabled: true, Response: "retreat"}); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	m.advanceCommercialEscapeLocked(10000)
+	retreating := m.combatEntities[vesselID]
+	m.mu.Unlock()
+	if retreating.Position == before || retreating.BehaviorState != "defensive_evasion" {
+		t.Fatalf("explicit retreat defense did not move after attack: %#v", retreating)
+	}
+}
+
 func TestExplicitEngagementMayTargetNeutralContact(t *testing.T) {
 	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
 	m := New("", slog.Default())
@@ -81,7 +116,8 @@ func TestEngagementHashBindsRulesOfEngagement(t *testing.T) {
 		MaximumRangeM: 650, MaximumEffects: 8, DurationSeconds: 300,
 		DisengageHullPercent: 25, MinimumReserve: .3, TargetScope: "designated",
 		ReturnFire: true, RequireTargetInArea: true,
-		OperatingAreas: [][][]float64{{{-71.6, 41.0}, {-71.4, 41.0}, {-71.4, 41.2}, {-71.6, 41.0}}},
+		DefensiveResponse: "retaliate",
+		OperatingAreas:    [][][]float64{{{-71.6, 41.0}, {-71.4, 41.0}, {-71.4, 41.2}, {-71.6, 41.0}}},
 	}
 	baseHash := engagementContentHash(base)
 	modified := base
@@ -94,6 +130,11 @@ func TestEngagementHashBindsRulesOfEngagement(t *testing.T) {
 	modified.OperatingAreas = nil
 	if engagementContentHash(modified) == baseHash {
 		t.Fatal("engagement geography must be part of the exact engagement hash")
+	}
+	modified = base
+	modified.DefensiveResponse = "retreat"
+	if engagementContentHash(modified) == baseHash {
+		t.Fatal("defensive response must be part of the exact engagement hash")
 	}
 }
 

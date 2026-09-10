@@ -53,7 +53,7 @@ The consolidated command is `scripts/keelmesh verify`.
 - Spoofed GNSS cannot move the fused marker.
 - Reconnection rejects stale work and bridges forward.
 - Restarts report actual persistence boundaries.
-- Controlled combat cannot begin without exact-hash approval; world-time repair, regeneration, disablement, and respawn remain deterministic from 1× through 500×.
+- Controlled combat cannot begin without exact-hash approval. Automatic defense defaults off; attacked missionless vessels remain station-keeping and produce one actionable notification. Mission-level notify, retreat, or retaliation policy overrides vessel defaults. World-time repair, regeneration, disablement, and respawn remain deterministic from 1× through 500×.
 
 ## Performance and evidence
 

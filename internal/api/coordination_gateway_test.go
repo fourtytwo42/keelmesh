@@ -40,6 +40,10 @@ func TestValidateCoordinatedRequestAcceptsActorContracts(t *testing.T) {
 			t.Fatalf("valid combat %s request rejected: %v", action, err)
 		}
 	}
+	defenseBody := []byte(`{"request_id":"request-4","idempotency_key":"key-4","expected_version":1,"actor_identity":"operator-1","enabled":true,"response":"retreat"}`)
+	if err := validateCoordinatedRequest("POST", "/api/v8/combat/vessels/vm-vessel-220:defense", defenseBody); err != nil {
+		t.Fatalf("valid combat defense request rejected: %v", err)
+	}
 }
 
 func TestValidateCoordinatedRequestRejectsTrailingObjectsAndUnknownRoutes(t *testing.T) {
