@@ -110,7 +110,13 @@ func newCombatEntity(id, boatID, name, kind string, position domain.GeoPointV2, 
 
 func (m *Manager) initializeCombatLocked() {
 	for _, vessel := range m.vessels {
-		if _, exists := m.combatEntities[vessel.ID]; exists {
+		if existing, exists := m.combatEntities[vessel.ID]; exists {
+			if existing.AutoDefenseResponse == "" {
+				// Preserve the default-off value from older projections while
+				// assigning the dormant control its safe opt-in response.
+				existing.AutoDefenseResponse = "retreat"
+				m.combatEntities[vessel.ID] = existing
+			}
 			continue
 		}
 		profile := controlledCombatProfile(vessel)
@@ -118,10 +124,13 @@ func (m *Manager) initializeCombatLocked() {
 	}
 	for _, contact := range surfaceContactsAt(time.UnixMilli(m.simulationEpochMS + m.simTickMS).UTC()) {
 		if existing, exists := m.combatEntities[contact.ID]; exists {
+			if existing.AutoDefenseResponse == "" {
+				existing.AutoDefense, existing.AutoDefenseResponse = true, "retaliate"
+			}
 			if len(existing.Profile.Weapons) > 0 && !existing.Armed {
 				existing.Armed, existing.ArmStateSource = true, "npc_self_defense"
-				m.combatEntities[contact.ID] = existing
 			}
+			m.combatEntities[contact.ID] = existing
 			continue
 		}
 		profile := contactCombatProfile(contact)
@@ -147,6 +156,7 @@ func (m *Manager) initializeCombatLocked() {
 	} else {
 		blackwake := m.combatEntities[blackwakeID]
 		blackwake.Armed, blackwake.ArmStateSource = true, "hostile_autonomy"
+		blackwake.AutoDefense, blackwake.AutoDefenseResponse = true, "retaliate"
 		m.combatEntities[blackwakeID] = blackwake
 	}
 }

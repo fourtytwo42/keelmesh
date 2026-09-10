@@ -36,6 +36,29 @@ func TestCombatProfilesAndBlackwakeBalance(t *testing.T) {
 	}
 }
 
+func TestInitializeCombatMigratesLegacyDefenseDefaultsWithoutArmingFleet(t *testing.T) {
+	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
+	m := New("", slog.Default())
+	vesselID := m.Snapshot().Vessels[0].ID
+	controlled := m.combatEntities[vesselID]
+	controlled.AutoDefense, controlled.AutoDefenseResponse = false, ""
+	m.combatEntities[vesselID] = controlled
+	contactID := surfaceTraffic[0].ID
+	contact := m.combatEntities[contactID]
+	contact.AutoDefense, contact.AutoDefenseResponse = false, ""
+	m.combatEntities[contactID] = contact
+
+	m.initializeCombatLocked()
+	controlled = m.combatEntities[vesselID]
+	if controlled.AutoDefense || controlled.AutoDefenseResponse != "retreat" {
+		t.Fatalf("legacy Fleet policy was not migrated safely: %#v", controlled)
+	}
+	contact = m.combatEntities[contactID]
+	if !contact.AutoDefense || contact.AutoDefenseResponse != "retaliate" {
+		t.Fatalf("legacy NPC policy was not restored: %#v", contact)
+	}
+}
+
 func TestArmStateAllowsReturnFireButNotInitiation(t *testing.T) {
 	t.Setenv("KEELMESH_FLEET_PROFILE", "vm12")
 	m := New("", slog.Default())
