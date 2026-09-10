@@ -2297,6 +2297,7 @@ export function FleetWorkspace() {
           tool={tool}
           contactSeed={plannerContactSeed}
           geometryFocus={geometryFocus}
+          showExecution={demoState.running && demoState.focus === "execution"}
           onFormation={(f) => updateMission({ formation: f })}
           onLoop={(loop) => {
             setDraft(null);
@@ -3756,7 +3757,7 @@ function VesselInspector({
         </div>
       </div>
       <div className="hot-buffer-note">
-        <Route /><span><b>{execution ? "FULL PROGRAM ONBOARD" : "NO ACTIVE PROGRAM"}</b><small>{execution ? `Revision ${execution.active_revision} · ${execution.total_segments} deterministic segments · bounded decisions validated onboard.` : "This vessel has no active execution authority and will not invent movement commands."}</small></span>
+        <Route /><span><b>{execution ? "FULL PROGRAM ONBOARD" : "NO ACTIVE PROGRAM"}</b><small>{execution ? `Revision ${execution.active_revision} · ${execution.total_segments} deterministic segments · valid until T+${execution.authorization_expiry_tick}s · ${execution.terminal_contingency.replaceAll("_", " ")} contingency.` : "This vessel has no active execution authority and will not invent movement commands."}</small></span>
       </div>
       <div className="vessel-nav-grid">
         <Insight icon={<BatteryCharging />} label="BATTERY FLOW" value={`${currentEnergyState.replaceAll("_", " ")} · ${signedPower(t.net_power_kw ?? 0)}`} detail={`${(t.solar_input_kw ?? 0).toFixed(2)} kW solar · ${(t.power_draw_kw ?? 0).toFixed(2)} kW load`} tone={currentEnergyState === "charging" ? "good" : currentEnergyState === "discharging" ? "bad" : ""} />
@@ -4001,7 +4002,7 @@ function EditableTitle({
     </form>
   );
 }
-function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool, contactSeed, geometryFocus, onFormation, onLoop, onSaveDraft, onArea, onTool, onGenerateManual, onRefineAI, onOpenConstraints, onApplyContactSeed, onClearContactSeed, onUndoGeometry, onClearGeometry, onDeleteGeometry, onFocusGeometry, onReorderWaypoint, onChoose, onConfirmPlan, onStatus, onRename, onDelete }: {
+function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool, contactSeed, geometryFocus, showExecution, onFormation, onLoop, onSaveDraft, onArea, onTool, onGenerateManual, onRefineAI, onOpenConstraints, onApplyContactSeed, onClearContactSeed, onUndoGeometry, onClearGeometry, onDeleteGeometry, onFocusGeometry, onReorderWaypoint, onChoose, onConfirmPlan, onStatus, onRename, onDelete }: {
   pirate: boolean;
   mission: MissionWorkspaceV2 | null;
   groups: FleetSnapshotV2["groups"];
@@ -4013,6 +4014,7 @@ function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool,
   tool: Tool;
   contactSeed: SurfaceContactV2 | null;
   geometryFocus: GeometryFocus | null;
+  showExecution: boolean;
   onFormation: (value: string) => void;
   onLoop: (loop: boolean) => void;
   onSaveDraft: (value: string) => void;
@@ -4050,6 +4052,9 @@ function MissionCanvas({ pirate, mission, groups, plans, activePlan, busy, tool,
     setAIAlternatives(false);
     setWorkspaceTab("plan");
   }, [mission?.id]);
+  useEffect(() => {
+    if (showExecution && mission?.execution) setWorkspaceTab("route");
+  }, [showExecution, mission?.execution?.program_id]);
   if (!mission) return <div className="window-empty planner-seed-empty">{contactSeed ? <><Ship /><b>{contactSeed.name}</b><span>{contactSeed.boat_id} · {contactSeed.class} · uncommitted planning context</span><button className="wide amber" onClick={() => onApplyContactSeed(true)} disabled={busy}><Plus /> {pirate ? "Create shadowing voyage" : "Create follow mission"}</button><button className="wide" onClick={onClearContactSeed}>Cancel</button></> : pirate ? "Chart a new voyage from the + tab." : "Create a mission from the + tab."}</div>;
 
   const coveredTargets = new Set<string>();
